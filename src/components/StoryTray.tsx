@@ -1,13 +1,12 @@
 /**
  * Top 5 Trending 24h Story Tray
- * Ref: Gambar 6 — Instagram-style circular story rings on top of My Chat.
+ * Monochrome Warden AI styling with clean anime story avatars.
  */
 
 import React from 'react';
 import { View, Text, ScrollView, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import { Flame } from 'lucide-react-native';
 import { Character } from '../types';
-import { colors } from '../theme/colors';
 
 interface StoryTrayProps {
   trendingCharacters: Character[];
@@ -15,11 +14,13 @@ interface StoryTrayProps {
 }
 
 export const StoryTray: React.FC<StoryTrayProps> = ({ trendingCharacters, onOpenStory }) => {
+  if (trendingCharacters.length === 0) return null;
+
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
         <View style={styles.headerTitleContainer}>
-          <Flame size={16} color={colors.lime} style={{ marginRight: 6 }} />
+          <Flame size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
           <Text style={styles.headerTitle}>Trending 24h</Text>
         </View>
         <Text style={styles.headerBadge}>Top 5</Text>
@@ -37,8 +38,13 @@ export const StoryTray: React.FC<StoryTrayProps> = ({ trendingCharacters, onOpen
             onPress={() => onOpenStory(char, index)}
             activeOpacity={0.8}
           >
-            {/* Glowing Gradient Ring */}
-            <View style={[styles.avatarRing, { borderColor: index === 0 ? colors.lime : colors.lavender }]}>
+            {/* Story Ring (Pure sleek outline) */}
+            <View
+              style={[
+                styles.avatarRing,
+                { borderColor: index === 0 ? '#FFFFFF' : 'rgba(255, 255, 255, 0.35)' },
+              ]}
+            >
               <Image source={{ uri: char.avatar }} style={styles.avatarImage} />
             </View>
             <Text style={styles.storyName} numberOfLines={1}>
@@ -67,19 +73,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerTitle: {
-    color: colors.textPrimary,
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
     letterSpacing: 0.2,
   },
   headerBadge: {
-    color: colors.lime,
-    fontSize: 11,
+    color: '#FFFFFF',
+    fontSize: 10,
     fontWeight: '700',
-    backgroundColor: 'rgba(204, 255, 0, 0.12)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   scrollContent: {
     paddingHorizontal: 16,
@@ -90,26 +98,25 @@ const styles = StyleSheet.create({
     width: 68,
   },
   avatarRing: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    padding: 3,
-    borderWidth: 2,
-    backgroundColor: '#000',
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    padding: 2.5,
+    borderWidth: 1.5,
+    backgroundColor: '#0c0e14',
     justifyContent: 'center',
     alignItems: 'center',
   },
   avatarImage: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+    width: '100%',
+    height: '100%',
+    borderRadius: 28,
   },
   storyName: {
-    color: colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.85)',
     fontSize: 11,
     fontWeight: '600',
     marginTop: 6,
     textAlign: 'center',
   },
 });
-

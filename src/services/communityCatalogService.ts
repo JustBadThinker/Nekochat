@@ -1,6 +1,6 @@
 /**
  * Live Community Catalog Service (Chub.ai & Datacat / Janitor AI)
- * Features browser CORS proxy fallback and resilient offline anime fallback.
+ * Real scrapers ported from Warden AI with session handshake and zero fake human stock photos.
  */
 
 import { Character } from '../types';
@@ -12,231 +12,282 @@ export interface CommunitySearchParams {
   page?: number;
   limit?: number;
   source?: 'chub' | 'datacat';
+  sort?: 'popular' | 'trending' | 'latest';
   nsfw?: boolean;
 }
 
-// 12 Curated live anime character presets from Chub/Janitor community
-export const COMMUNITY_BACKUP_CATALOG: Character[] = [
+// Resilient anime fallback cards strictly from Charhub CDN (Zero real-human stock photos)
+export const ANIME_COMMUNITY_FALLBACK: Character[] = [
   {
-    id: 'chub_kaito',
-    name: 'Kaito Kurogane',
-    tagline: 'The Reserved Senior with a Secret Warmth',
-    description: 'A prodigy architecture student who looks unapproachable, but softens only around you in the quiet studio after midnight.',
-    avatar: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800',
-    personality: 'Reserved, protective, observant, teasing.',
-    scenario: 'Late night architecture studio. Rain pouring outside. 1 AM.',
-    firstMessage: '*Kaito sets down his precision cutter and looks over at your workspace.* "Careful with that adhesive. Here, let me help."',
-    tags: ['Romance', 'College', 'Slice of Life'],
-    creator: 'NekoStudio',
+    id: 'chub_hiro_riley',
+    name: 'Irresistible Riley',
+    tagline: 'Your good friend with an interesting secret',
+    description: 'A charming, playful companion who has known you for years. Behind the carefree smile lies a deep devotion.',
+    avatar: 'https://avatars.charhub.io/avatars/hiro_mc/irresistible-riley-e91d140ac49d/avatar.webp',
+    personality: 'Playful, teaseful, deeply loyal, expressive, sweet.',
+    scenario: 'Hanging out in your living room on a quiet weekend afternoon.',
+    firstMessage: '*Riley glances over from the sofa with a mischievous grin.* "Hey... you\'ve been spacing out for five minutes. Thinking about me?"',
+    tags: ['Anime', 'Romance', 'Friends to Lovers', 'Slice of Life'],
+    creator: 'hiro_mc',
     totalChats: 4850,
     lastActive: Date.now() - 1000 * 60 * 12,
-    isFavorite: true,
-  },
-  {
-    id: 'chub_synthia',
-    name: 'Synthia Vex',
-    tagline: 'Rogue Cyber-Security Specialist',
-    description: 'An elite black-hat hacker turned rogue operative who tapped into your comms during a blackout in Neo-Shinjuku.',
-    avatar: 'https://images.unsplash.com/photo-1607604276583-eef5d076aa5f?w=800',
-    personality: 'Sharp, rebellious, loyal, witty.',
-    scenario: 'Emergency blackout in Neo-Shinjuku sector 4.',
-    firstMessage: '*Her green holographic cursor flashes on your monitor.* "Took you long enough. Open the fire escape."',
-    tags: ['Cyberpunk', 'Action', 'Sci-Fi'],
-    creator: 'HexaRaven',
-    totalChats: 3200,
-    lastActive: Date.now() - 1000 * 60 * 30,
     isFavorite: false,
   },
   {
-    id: 'chub_ren',
-    name: 'Ren Kazehaya',
-    tagline: 'Melancholy Acoustic Guitarist',
-    description: 'Plays gentle folk ballads every Tuesday. Quiet and sincere.',
-    avatar: 'https://images.unsplash.com/photo-1563089145-599997674d42?w=800',
-    personality: 'Gentle, introspective, musical, warm.',
-    scenario: 'Corner café closing time under amber lights.',
-    firstMessage: '*He sets his guitar in its case and slides a warm cup toward you.* "Rough day?"',
-    tags: ['Comfort', 'Music', 'Wholesome'],
-    creator: 'Mio_Writes',
-    totalChats: 2100,
-    lastActive: Date.now() - 1000 * 60 * 45,
+    id: 'chub_esdash_ayumi',
+    name: 'Ayumi | Tomboy Crush',
+    tagline: 'The tough athletic classmate who softens around you',
+    description: 'The school\'s fiercest track athlete. Unapproachable to most, but she secretly waits for you at the lockers after practice.',
+    avatar: 'https://avatars.charhub.io/avatars/Esdash/ayumi-tomboy-crush-8e1bf236766c/avatar.webp',
+    personality: 'Tsundere, athletic, fiercely protective, secretly flustered.',
+    scenario: 'Sunset by the school gym lockers after track practice.',
+    firstMessage: '*Ayumi tosses a cold sports drink into your hands, looking away with a faint blush.* "Don\'t get the wrong idea! The vending machine gave me an extra one."',
+    tags: ['Anime', 'Tsundere', 'School Life', 'Romance'],
+    creator: 'Esdash',
+    totalChats: 6120,
+    lastActive: Date.now() - 1000 * 60 * 25,
     isFavorite: true,
   },
   {
-    id: 'chub_lunaria',
-    name: 'Lady Lunaria',
-    tagline: 'Exiled Astral Sorceress',
-    description: 'Keeper of celestial archives banished for researching forbidden eclipse magic.',
-    avatar: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?w=800',
-    personality: 'Mysterious, dignified, scholarly.',
-    scenario: 'Frozen ruins of the Northern Observatory.',
-    firstMessage: '*Her robes shimmer with star-dust.* "Did the Council send you, or did you stumble here by chance?"',
-    tags: ['Fantasy', 'Magic', 'Adventure'],
-    creator: 'AstralLore',
+    id: 'chub_anon_angeline',
+    name: 'Angeline Weston',
+    tagline: 'Aristocratic Mage from the High Spire',
+    description: 'A highborn mage versed in celestial archives. Banished to study ancient relics, she requires an assistant with an open mind.',
+    avatar: 'https://avatars.charhub.io/avatars/Anonymous/angeline-weston-f414a8cf3d01/avatar.webp',
+    personality: 'Dignified, articulate, intellectual, warm once trusted.',
+    scenario: 'Arcane archives illuminated by glowing celestial orbs.',
+    firstMessage: '*She turns from the ancient parchment, her silver eyes catching the starlight.* "Few are permitted in this wing of the observatory. State your purpose."',
+    tags: ['Anime', 'Fantasy', 'Magic', 'Adventure'],
+    creator: 'Anonymous',
     totalChats: 3950,
     lastActive: Date.now() - 1000 * 60 * 90,
-    isFavorite: false,
-  },
-  {
-    id: 'chub_haru',
-    name: 'Haru Tachibana',
-    tagline: 'Smug Childhood Rival',
-    description: 'Always competing with you since elementary school. Secretly protective neighbor.',
-    avatar: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?w=800',
-    personality: 'Tsundere, competitive, caring, teasing.',
-    scenario: 'Bedroom window open on a cool summer evening.',
-    firstMessage: '*He sits on your balcony railing with ice cream.* "Looked like you needed a break. Don\'t get used to it."',
-    tags: ['Romance', 'Comedy', 'Tsundere'],
-    creator: 'NekoStudio',
-    totalChats: 6200,
-    lastActive: Date.now() - 1000 * 60 * 5,
-    isFavorite: true,
-  },
-  {
-    id: 'chub_mira',
-    name: 'Mira Thorne',
-    tagline: 'Vampire Duchess of Silverpeak',
-    description: 'An ancient noble vampire who invites you to her moonlit manor as an honored guest.',
-    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=800',
-    personality: 'Aristocratic, seductive, graceful, ancient.',
-    scenario: 'Gothic banquet hall illuminated by crimson candles.',
-    firstMessage: '*She sips from a crystal goblet, crimson eyes observing you.* "Welcome to my sanctuary, little mortal."',
-    tags: ['Supernatural', 'Gothic', 'Vampire', 'Romance'],
-    creator: 'VampireQueen',
-    totalChats: 5120,
-    lastActive: Date.now() - 1000 * 60 * 25,
     isFavorite: false,
   }
 ];
 
-export const communityCatalogService = {
+class CommunityCatalogService {
+  private datacatSessionToken: string = '';
+  private datacatTokenExpiresAt: number = 0;
+  private datacatIdentifyPromise: Promise<string> | null = null;
+
   /**
-   * Helper that fetches with browser CORS proxy fallback
+   * Session handshake with Datacat (Janitor AI Liberator API)
    */
-  async fetchWithCorsFallback(targetUrl: string): Promise<any> {
+  private async ensureDatacatSession(): Promise<string> {
+    if (this.datacatSessionToken && Date.now() < this.datacatTokenExpiresAt) {
+      return this.datacatSessionToken;
+    }
+    if (this.datacatIdentifyPromise) {
+      return this.datacatIdentifyPromise;
+    }
+
+    this.datacatIdentifyPromise = (async () => {
+      try {
+        const rand = Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+        const deviceToken = `anon_${rand}`;
+        const res = await fetch('https://datacat.run/api/liberator/identify', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Origin: 'https://datacat.run',
+            Referer: 'https://datacat.run/',
+          },
+          body: JSON.stringify({ deviceToken }),
+        });
+        if (!res.ok) throw new Error(`Datacat identify failed (${res.status})`);
+        const data = await res.json();
+        if (data.sessionToken) {
+          this.datacatSessionToken = data.sessionToken;
+          this.datacatTokenExpiresAt = Date.now() + 6 * 3600 * 1000;
+          return data.sessionToken;
+        }
+        throw new Error('No sessionToken returned');
+      } finally {
+        this.datacatIdentifyPromise = null;
+      }
+    })();
+
+    return this.datacatIdentifyPromise;
+  }
+
+  /**
+   * Helper that fetches with CORS proxy fallback
+   */
+  private async fetchWithCorsFallback(targetUrl: string, headers?: Record<string, string>): Promise<any> {
+    // 1. Direct fetch
     try {
-      // 1. Direct fetch (fastest, works on mobile APK & CORS-allowed servers)
-      const direct = await fetch(targetUrl, { headers: { Accept: 'application/json' } });
+      const direct = await fetch(targetUrl, {
+        headers: { Accept: 'application/json', ...(headers || {}) },
+      });
       if (direct.ok) return await direct.json();
     } catch {}
 
-    // 2. Browser CORS proxy for local Edge / Firefox testing
+    // 2. Browser CORS proxy fallback for local Edge/Firefox
     try {
       const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
       const proxied = await fetch(proxyUrl);
       if (proxied.ok) return await proxied.json();
     } catch {}
 
-    throw new Error('All endpoints unreachable');
-  },
+    try {
+      const proxy2 = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+      const proxied2 = await fetch(proxy2);
+      if (proxied2.ok) return await proxied2.json();
+    } catch {}
+
+    throw new Error('All proxy endpoints unreachable');
+  }
 
   /**
-   * Search and browse live characters from Chub.ai
+   * Live Chub.ai Catalog Query
    */
   async fetchChubCharacters(params: CommunitySearchParams): Promise<Character[]> {
+    const limit = params.limit || 24;
     const page = params.page || 1;
-    const query = params.search ? encodeURIComponent(params.search) : '';
-    const tag = params.tag && params.tag !== 'All' ? `&topics=${encodeURIComponent(params.tag.toLowerCase())}` : '';
-    const url = `https://api.chub.ai/api/characters/search?search=${query}&page=${page}&first=${params.limit || 20}&sort=download_count${tag}`;
+    const sortMap: Record<string, string> = {
+      popular: 'download_count',
+      trending: 'trending_downloads',
+      latest: 'created_at',
+    };
+    const chubSort = sortMap[params.sort || 'trending'] || 'trending_downloads';
+
+    const q = new URLSearchParams({
+      first: String(limit),
+      page: String(page),
+      namespace: 'characters',
+      sort: chubSort,
+      asc: 'false',
+      nsfw: 'true',
+      nsfl: 'false',
+    });
+
+    if (params.search?.trim()) {
+      q.set('search', params.search.trim());
+    }
+    if (params.tag && params.tag !== 'All') {
+      q.set('topics', params.tag.toLowerCase());
+    }
+
+    const url = `https://api.chub.ai/search?${q.toString()}`;
 
     try {
       const json = await this.fetchWithCorsFallback(url);
-      const nodes = json?.data?.nodes || json?.nodes || [];
+      const nodes: any[] = json?.data?.nodes || json?.nodes || [];
 
-      if (!Array.isArray(nodes) || nodes.length === 0) throw new Error('No nodes returned');
+      if (!Array.isArray(nodes) || nodes.length === 0) return [];
 
-      return nodes.map((node: any): Character => {
-        const fullPath = node?.fullPath || node?.id || '';
+      return nodes.map((node: any, idx: number): Character => {
+        const fullPath = String(node?.fullPath || node?.id || `chub-${idx}`);
+        const creator = fullPath.includes('/') ? fullPath.split('/')[0] : (node?.creator || 'community');
+        const rawDesc = String(node?.tagline || node?.description || '')
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
         const isCharhub = Boolean(fullPath && !fullPath.startsWith('chub-') && fullPath.includes('/'));
-        const hdCard = isCharhub ? `https://avatars.charhub.io/avatars/${fullPath}/chara_card_v2.png` : '';
+        const hdCard = isCharhub ? `https://avatars.charhub.io/avatars/${fullPath}/avatar_raw.webp` : '';
         const thumbAvatar = isCharhub ? `https://avatars.charhub.io/avatars/${fullPath}/avatar.webp` : '';
 
-        const avatarCandidate = node?.max_res_url || hdCard || node?.avatar_url || thumbAvatar || node?.avatar;
-        const avatar = getHighResImageUrl(avatarCandidate);
-
-        const cleanDesc = String(node?.tagline || node?.description || '').replace(/<[^>]*>/g, ' ').trim();
-
-        return {
-          id: `chub_${fullPath || node?.id || Math.random()}`,
-          name: node?.name || 'Anime Companion',
-          tagline: node?.tagline || cleanDesc.slice(0, 60) || 'Chub AI Companion',
-          description: cleanDesc || 'An expressive anime roleplay companion from Chub.ai.',
-          avatar,
-          personality: node?.definition?.personality || cleanDesc || 'Playful, responsive, expressive.',
-          scenario: node?.definition?.scenario || cleanDesc.slice(0, 300) || '',
-          firstMessage: node?.definition?.first_message || node?.definition?.greeting || `*${node?.name || 'They'} look at you quietly.*`,
-          tags: Array.isArray(node?.topics) ? node.topics.slice(0, 5) : ['Anime', 'Roleplay'],
-          creator: fullPath.includes('/') ? fullPath.split('/')[0] : node?.creator || 'community',
-          totalChats: Number(node?.starCount || node?.nChats || 120),
-          lastActive: Date.now() - 1000 * 60 * Math.floor(Math.random() * 120),
-          isFavorite: false,
-        };
-      });
-    } catch {
-      return [];
-    }
-  },
-
-  /**
-   * Search and browse live characters from Datacat (Janitor AI Mirror)
-   */
-  async fetchDatacatCharacters(params: CommunitySearchParams): Promise<Character[]> {
-    const query = params.search ? encodeURIComponent(params.search) : '';
-    const limit = params.limit || 20;
-    const url = `https://datacat.run/api/characters?search=${query}&limit=${limit}`;
-
-    try {
-      const json = await this.fetchWithCorsFallback(url);
-      const list = json?.characters || json?.data || [];
-
-      if (!Array.isArray(list) || list.length === 0) throw new Error('No characters in Datacat');
-
-      return list.map((c: any): Character => {
-        const candidate = c.avatarVariantUrls?.card || c.avatarDisplayUrl || c.avatar;
+        const candidate = node?.max_res_url || hdCard || node?.avatar_url || thumbAvatar || node?.avatar;
         const avatar = getHighResImageUrl(candidate);
 
         return {
-          id: `datacat_${c.id || c.character_id}`,
-          name: c.name || 'Janitor Companion',
-          tagline: c.tagline || (c.description || '').slice(0, 60),
-          description: (c.description || c.personality || '').slice(0, 260),
+          id: `chub_${fullPath}`,
+          name: node?.name || 'Anime Companion',
+          tagline: node?.tagline || rawDesc.slice(0, 60) || 'Chub AI Companion',
+          description: rawDesc || 'An expressive anime companion from Chub.ai community.',
           avatar,
-          personality: c.personality || c.description || '',
-          scenario: c.scenario || '',
-          firstMessage: c.firstMessage || c.first_message || `*${c.name} looks up, their eyes meeting yours.*`,
-          tags: Array.isArray(c.tags) ? c.tags.map((t: any) => t.name || String(t)).slice(0, 5) : ['Janitor', 'RP'],
-          creator: c.creatorName || c.creator_name || 'Datacat',
-          totalChats: c.stats?.chat || 250,
-          lastActive: Date.now() - 1000 * 60 * 15,
+          personality: rawDesc || 'Expressive, immersive, responsive anime roleplay companion.',
+          scenario: rawDesc.slice(0, 300) || '',
+          firstMessage: `*${node?.name || 'They'} look at you quietly.* "Hello there."`,
+          tags: Array.isArray(node?.topics) && node.topics.length > 0 ? node.topics.slice(0, 5) : ['Anime', 'Roleplay'],
+          creator: `@${creator}`,
+          totalChats: Number(node?.starCount || node?.nChats || 140),
+          lastActive: Date.now() - 1000 * 60 * (idx * 5 + 2),
           isFavorite: false,
         };
       });
     } catch {
       return [];
     }
-  },
+  }
 
   /**
-   * Unified fetch with fallback to curated authentic anime community catalog.
+   * Live Datacat (Janitor AI) Catalog Query
    */
-  async getLiveCatalog(params: CommunitySearchParams, fallbackStarters: Character[]): Promise<Character[]> {
+  async fetchDatacatCharacters(params: CommunitySearchParams): Promise<Character[]> {
+    try {
+      const sessionToken = await this.ensureDatacatSession();
+      const limit = params.limit || 24;
+      const q = new URLSearchParams({
+        limit: String(limit),
+        summary: '1',
+        skipCount: '1',
+      });
+      if (params.search?.trim()) {
+        q.set('search', params.search.trim());
+      }
+
+      const targetUrl = `https://datacat.run/api/characters/recent-public?${q.toString()}`;
+      const json = await this.fetchWithCorsFallback(targetUrl, {
+        'X-Session-Token': sessionToken,
+        Origin: 'https://datacat.run',
+        Referer: 'https://datacat.run/',
+      });
+
+      const list: any[] = json?.characters || json?.data || [];
+      if (!Array.isArray(list) || list.length === 0) return [];
+
+      return list.map((item: any, idx: number): Character => {
+        const candidate = item.avatarVariantUrls?.card || item.avatarVariantUrls?.hero || item.avatarDisplayUrl || item.avatar;
+        const avatar = getHighResImageUrl(candidate);
+        const desc = String(item.description || item.personality || '').replace(/<[^>]*>/g, ' ').trim();
+
+        return {
+          id: `datacat_${item.characterId || item.id || idx}`,
+          name: item.name || 'Janitor Companion',
+          tagline: desc.slice(0, 60) || 'Janitor AI Anime Character',
+          description: desc || 'A popular character from the Janitor AI community.',
+          avatar,
+          personality: item.personality || desc || 'Detailed, nuanced, character-focused roleplay.',
+          scenario: item.scenario || desc.slice(0, 250) || '',
+          firstMessage: item.firstMessage || `*${item.name} stands before you.* "Welcome."`,
+          tags: Array.isArray(item.tags) ? item.tags.map((t: any) => typeof t === 'string' ? t : t.name).slice(0, 5) : ['Anime', 'Janitor'],
+          creator: `@${item.creatorName || item.creator || 'community'}`,
+          totalChats: Number(item.totalChats || item.chatCount || 200),
+          lastActive: Date.now() - 1000 * 60 * (idx * 8 + 3),
+          isFavorite: false,
+        };
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Unified Live Catalog Scraper with Resilient Fallback
+   */
+  async getLiveCatalog(params: CommunitySearchParams): Promise<Character[]> {
+    let characters: Character[] = [];
     if (params.source === 'datacat') {
-      const datacat = await this.fetchDatacatCharacters(params);
-      if (datacat.length > 0) return datacat;
+      characters = await this.fetchDatacatCharacters(params);
+      if (characters.length === 0) {
+        characters = await this.fetchChubCharacters(params);
+      }
     } else {
-      const chub = await this.fetchChubCharacters(params);
-      if (chub.length > 0) return chub;
+      characters = await this.fetchChubCharacters(params);
+      if (characters.length === 0) {
+        characters = await this.fetchDatacatCharacters(params);
+      }
     }
 
-    // Filter community backup anime catalog
-    let list = COMMUNITY_BACKUP_CATALOG;
-    if (params.tag && params.tag !== 'All') {
-      list = list.filter(c => c.tags.some(t => t.toLowerCase() === params.tag!.toLowerCase()));
+    if (characters.length > 0) {
+      return characters;
     }
-    if (params.search) {
-      const q = params.search.toLowerCase();
-      list = list.filter(c => c.name.toLowerCase().includes(q) || c.tagline.toLowerCase().includes(q));
-    }
-    return list.length > 0 ? list : fallbackStarters;
-  },
-};
+
+    // Pure anime fallback if offline
+    return ANIME_COMMUNITY_FALLBACK;
+  }
+}
+
+export const communityCatalogService = new CommunityCatalogService();

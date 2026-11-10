@@ -8,6 +8,7 @@ import { Character, ChatMessage, Persona, ProviderConfig, AppSettings } from '..
 
 const KEYS = {
   CHARACTERS: '@nekochat:characters',
+  USER_CHARACTERS: '@nekochat:user_characters',
   MESSAGES: '@nekochat:messages',
   PERSONAS: '@nekochat:personas',
   PROVIDER_CONFIG: '@nekochat:provider_config',
@@ -36,11 +37,25 @@ const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
 };
 
 export const storageService = {
-  // --- Characters ---
+  // --- Active Chat History Characters ---
   async getCharacters(): Promise<Character[]> {
     try {
       const data = await AsyncStorage.getItem(KEYS.CHARACTERS);
-      return data ? JSON.parse(data) : [];
+      if (!data) return [];
+      const list: Character[] = JSON.parse(data);
+      // Auto-purge any legacy mock characters from previous runs
+      const cleaned = list.filter(c => 
+        !c.id.startsWith('kaito-') && 
+        !c.id.startsWith('synthia-') && 
+        !c.id.startsWith('ren-') && 
+        !c.id.startsWith('lunaria-') && 
+        !c.id.startsWith('haru-') && 
+        !c.avatar.includes('images.unsplash.com')
+      );
+      if (cleaned.length !== list.length) {
+        await this.saveCharacters(cleaned);
+      }
+      return cleaned;
     } catch {
       return [];
     }
@@ -68,6 +83,37 @@ export const storageService = {
     char.isFavorite = !char.isFavorite;
     await this.saveCharacters(list);
     return !!char.isFavorite;
+  },
+
+  // --- User Created Cards (Studio) ---
+  async getUserCharacters(): Promise<Character[]> {
+    try {
+      const data = await AsyncStorage.getItem(KEYS.USER_CHARACTERS);
+      return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  },
+
+  async saveUserCharacters(characters: Character[]): Promise<void> {
+    await AsyncStorage.setItem(KEYS.USER_CHARACTERS, JSON.stringify(characters));
+  },
+
+  async upsertUserCharacter(character: Character): Promise<void> {
+    const list = await this.getUserCharacters();
+    const index = list.findIndex(c => c.id === character.id);
+    if (index >= 0) {
+      list[index] = { ...list[index], ...character };
+    } else {
+      list.unshift(character);
+    }
+    await this.saveUserCharacters(list);
+  },
+
+  async deleteUserCharacter(characterId: string): Promise<void> {
+    const list = await this.getUserCharacters();
+    const filtered = list.filter(c => c.id !== characterId);
+    await this.saveUserCharacters(filtered);
   },
 
   // --- Messages ---
@@ -104,9 +150,11 @@ export const storageService = {
       const data = await AsyncStorage.getItem(KEYS.PERSONAS);
       if (!data) {
         const defaultPersona: Persona = {
-          id: 'default-user',
+          id: 'per_default',
           name: 'Ren',
-          description: 'A relaxed college student with a curious mind.',
+          pronouns: 'he/him',
+          description: 'A relaxed student with an observant mind and quiet curiosity.',
+          avatar: 'https://avatars.charhub.io/avatars/hiro_mc/irresistible-riley-e91d140ac49d/avatar.webp',
           isDefault: true,
         };
         await AsyncStorage.setItem(KEYS.PERSONAS, JSON.stringify([defaultPersona]));
@@ -120,6 +168,36 @@ export const storageService = {
 
   async savePersonas(personas: Persona[]): Promise<void> {
     await AsyncStorage.setItem(KEYS.PERSONAS, JSON.stringify(personas));
+  },
+
+  async upsertPersona(persona: Persona): Promise<void> {
+    const list = await this.getPersonas();
+    const index = list.findIndex(p => p.id === persona.id);
+    if (index >= 0) {
+      list[index] = { ...list[index], ...persona };
+    } else {
+      list.unshift(persona);
+    }
+    await this.savePersonas(list);
+  },
+
+  async deletePersona(personaId: string): Promise<void> {
+    const list = await this.getPersonas();
+    if (list.length <= 1) return; // Keep at least one persona
+    const filtered = list.filter(p => p.id !== personaId);
+    if (!filtered.some(p => p.isDefault)) {
+      filtered[0].isDefault = true;
+    }
+    await this.savePersonas(filtered);
+  },
+
+  async setDefaultPersona(personaId: string): Promise<void> {
+    const list = await this.getPersonas();
+    const updated = list.map(p => ({
+      ...p,
+      isDefault: p.id === personaId,
+    }));
+    await this.savePersonas(updated);
   },
 
   // --- Settings & Provider ---
@@ -161,7 +239,6 @@ export const storageService = {
       const raw = await AsyncStorage.getItem(`${KEYS.COMMENT_CACHE}${characterId}`);
       if (!raw) return null;
       const parsed = JSON.parse(raw);
-      // Valid for 24 hours
       if (Date.now() - parsed.timestamp > 24 * 60 * 60 * 1000) {
         return null;
       }
@@ -178,4 +255,3 @@ export const storageService = {
     );
   },
 };
-

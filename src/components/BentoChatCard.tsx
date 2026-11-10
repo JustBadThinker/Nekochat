@@ -1,16 +1,14 @@
 /**
  * Bento Grid Chat Card with Progressive Scrim
- * Ref: Gambar 2 & Gambar 4/5 — 2-column grid cards for My Chat history.
+ * Clean 2-column cards for My Chats with pure monochrome white iconography.
  */
 
 import React from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
 import { MessageSquare, Heart } from 'lucide-react-native';
 import { Character } from '../types';
-import { colors } from '../theme/colors';
 
 const { width: windowWidth } = Dimensions.get('window');
-// Clamp container width to 480px on desktop web so 2-column grid never stretches huge
 const effectiveWidth = Math.min(windowWidth, 480);
 const CARD_WIDTH = (effectiveWidth - 48) / 2;
 
@@ -46,7 +44,7 @@ export const BentoChatCard: React.FC<BentoChatCardProps> = ({
       {/* Top Floating Badge Row */}
       <View style={styles.topRow}>
         <View style={styles.chatBadge}>
-          <MessageSquare size={11} color={colors.lime} style={{ marginRight: 4 }} />
+          <MessageSquare size={11} color="#FFFFFF" style={{ marginRight: 4 }} />
           <Text style={styles.chatBadgeText}>{character.totalChats || 0}</Text>
         </View>
 
@@ -57,9 +55,9 @@ export const BentoChatCard: React.FC<BentoChatCardProps> = ({
             activeOpacity={0.7}
           >
             <Heart
-              size={14}
-              color={character.isFavorite ? colors.coral : 'rgba(255,255,255,0.7)'}
-              fill={character.isFavorite ? colors.coral : 'transparent'}
+              size={13}
+              color={character.isFavorite ? '#FF6B6B' : 'rgba(255,255,255,0.7)'}
+              fill={character.isFavorite ? '#FF6B6B' : 'transparent'}
             />
           </TouchableOpacity>
         )}
@@ -75,7 +73,7 @@ export const BentoChatCard: React.FC<BentoChatCardProps> = ({
         </Text>
         <View style={styles.metaRow}>
           <Text style={styles.tagBadge} numberOfLines={1}>
-            {character.tags[0] || 'Roleplay'}
+            #{character.tags[0] || 'Anime'}
           </Text>
           <Text style={styles.timeText}>
             {formatTimeAgo(character.lastActive)}
@@ -90,50 +88,53 @@ const styles = StyleSheet.create({
   cardContainer: {
     width: CARD_WIDTH,
     height: CARD_WIDTH * 1.35,
-    borderRadius: 20,
-    backgroundColor: colors.bgSurface,
+    borderRadius: 18,
+    backgroundColor: '#12151e',
     overflow: 'hidden',
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: colors.borderSubtle,
+    borderColor: '#1b1e28',
     position: 'relative',
   },
   cardImage: {
     width: '100%',
     height: '100%',
-    position: 'absolute',
+    resizeMode: 'cover',
   },
   topRow: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    right: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 10,
-    zIndex: 2,
+    zIndex: 10,
   },
   chatBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(0, 0, 0, 0.65)',
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 4,
     borderRadius: 12,
-    borderWidth: 0.5,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   chatBadgeText: {
-    color: colors.textPrimary,
+    color: '#FFFFFF',
     fontSize: 10,
     fontWeight: '700',
   },
   favButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    width: 26,
-    height: 26,
-    borderRadius: 13,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 0.5,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   scrimContainer: {
     position: 'absolute',
@@ -141,20 +142,21 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     padding: 12,
-    backgroundColor: 'rgba(7, 9, 13, 0.88)',
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(12, 14, 20, 0.92)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
   },
   charName: {
-    color: colors.textPrimary,
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
     marginBottom: 2,
   },
   charTagline: {
-    color: colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.5)',
     fontSize: 11,
-    marginBottom: 6,
+    fontWeight: '500',
+    marginBottom: 8,
   },
   metaRow: {
     flexDirection: 'row',
@@ -162,17 +164,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tagBadge: {
-    color: colors.lime,
+    color: 'rgba(255, 255, 255, 0.75)',
     fontSize: 10,
     fontWeight: '600',
-    backgroundColor: 'rgba(204, 255, 0, 0.1)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
   },
   timeText: {
-    color: colors.textMuted,
+    color: 'rgba(255, 255, 255, 0.4)',
     fontSize: 10,
   },
 });
-

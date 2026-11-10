@@ -1,6 +1,6 @@
 /**
  * NekoChat — Free & Open-Source AI Roleplay Client
- * Bento-OLED High-Contrast Design System with Floating Capsule Dock.
+ * Bento-OLED High-Contrast Design System with Minimalist Floating Navigation Dock.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -16,7 +16,7 @@ import { ChatsScreen } from './src/screens/ChatsScreen';
 import { DiscoverScreen } from './src/screens/DiscoverScreen';
 import { ChatRoomScreen } from './src/screens/ChatRoomScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
-import { VaultScreen } from './src/screens/VaultScreen';
+import { UserStudioScreen } from './src/screens/UserStudioScreen';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabScreen>('chats');
@@ -36,14 +36,21 @@ export default function App() {
 
   const initApp = async () => {
     try {
+      // 1. Load active chat characters (clean initial state, purged of any mock data)
       const chars = await characterService.ensureStarters();
       setCharacters(chars);
-      setTrendingCharacters(characterService.getTrending24h(chars));
 
+      // 2. Load trending 24h characters (fetched live or genuine anime)
+      const trending = await characterService.getTrending24h(chars);
+      setTrendingCharacters(trending);
+
+      // 3. Load personas
       const persList = await storageService.getPersonas();
       setPersonas(persList);
-      setActivePersona(persList[0]);
+      const defaultPers = persList.find(p => p.isDefault) || persList[0];
+      setActivePersona(defaultPers);
 
+      // 4. Load configs
       const provCfg = await storageService.getProviderConfig();
       setConfig(provCfg);
 
@@ -58,7 +65,14 @@ export default function App() {
     await storageService.toggleFavorite(character.id);
     const updated = await storageService.getCharacters();
     setCharacters(updated);
-    setTrendingCharacters(characterService.getTrending24h(updated));
+  };
+
+  const handleStartChat = async (character: Character) => {
+    // Ensure character is saved into active characters list
+    await storageService.upsertCharacter(character);
+    const updated = await storageService.getCharacters();
+    setCharacters(updated);
+    setActiveChatCharacter(character);
   };
 
   if (showSplash) {
@@ -69,7 +83,7 @@ export default function App() {
     return (
       <View style={styles.loadingContainer}>
         <StatusBar style="light" />
-        <ActivityIndicator size="large" color={colors.lime} />
+        <ActivityIndicator size="large" color="#FFFFFF" />
       </View>
     );
   }
@@ -86,7 +100,12 @@ export default function App() {
             personas={personas}
             onSelectPersona={setActivePersona}
             config={config}
-            onBack={() => setActiveChatCharacter(null)}
+            onBack={async () => {
+              setActiveChatCharacter(null);
+              // Refresh active chat characters on return
+              const updated = await storageService.getCharacters();
+              setCharacters(updated);
+            }}
           />
         </View>
       </View>
@@ -104,25 +123,26 @@ export default function App() {
             <ChatsScreen
               characters={characters}
               trendingCharacters={trendingCharacters}
-              onSelectCharacter={setActiveChatCharacter}
+              onSelectCharacter={handleStartChat}
               onToggleFavorite={handleToggleFavorite}
               onNavigateDiscover={() => setActiveTab('discover')}
+              onNavigateStudio={() => setActiveTab('studio')}
             />
           )}
 
           {activeTab === 'discover' && (
             <DiscoverScreen
               characters={characters}
-              onStartChat={setActiveChatCharacter}
+              onStartChat={handleStartChat}
               onToggleFavorite={handleToggleFavorite}
             />
           )}
 
-          {activeTab === 'vault' && (
-            <VaultScreen
-              characters={characters}
-              personas={personas}
-              settings={settings}
+          {activeTab === 'studio' && (
+            <UserStudioScreen
+              onStartChat={handleStartChat}
+              activePersona={activePersona}
+              onUpdateActivePersona={setActivePersona}
             />
           )}
 
@@ -136,7 +156,7 @@ export default function App() {
           )}
         </View>
 
-        {/* Floating Capsule Dock (Ref: Gambar 1) */}
+        {/* Minimalist Floating Capsule Dock (Warden AI Monochrome Style) */}
         <CapsuleDock activeTab={activeTab} onTabChange={setActiveTab} />
       </View>
     </View>
@@ -154,13 +174,13 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     maxWidth: 480, // Clamps perfectly to mobile smartphone frame on Edge/Firefox
-    backgroundColor: colors.bgDark,
+    backgroundColor: '#0c0e14',
     position: 'relative',
     overflow: 'hidden',
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: colors.bgDark,
+    backgroundColor: '#0c0e14',
     justifyContent: 'center',
     alignItems: 'center',
   },

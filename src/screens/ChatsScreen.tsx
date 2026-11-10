@@ -1,6 +1,7 @@
 /**
  * Chats Screen (My Chats)
  * Displays Top 5 Trending 24h Story Tray & 2-Column Bento Grid of conversations.
+ * Includes pristine empty state matching Warden AI (zero fake mock data).
  */
 
 import React, { useState } from 'react';
@@ -13,7 +14,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { Plus, Sparkles } from 'lucide-react-native';
+import { MessageSquare, Compass, Plus, Sparkles } from 'lucide-react-native';
 import { Character } from '../types';
 import { colors } from '../theme/colors';
 import { StoryTray } from '../components/StoryTray';
@@ -26,6 +27,7 @@ interface ChatsScreenProps {
   onSelectCharacter: (character: Character) => void;
   onToggleFavorite: (character: Character) => void;
   onNavigateDiscover: () => void;
+  onNavigateStudio?: () => void;
 }
 
 export const ChatsScreen: React.FC<ChatsScreenProps> = ({
@@ -34,6 +36,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
   onSelectCharacter,
   onToggleFavorite,
   onNavigateDiscover,
+  onNavigateStudio,
 }) => {
   const [storyModalVisible, setStoryModalVisible] = useState(false);
   const [selectedStoryIndex, setSelectedStoryIndex] = useState(0);
@@ -59,7 +62,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
           onPress={onNavigateDiscover}
           activeOpacity={0.8}
         >
-          <Sparkles size={16} color={colors.lime} style={{ marginRight: 6 }} />
+          <Compass size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
           <Text style={styles.discoverBtnText}>Explore</Text>
         </TouchableOpacity>
       </View>
@@ -69,22 +72,57 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
         data={characters}
         keyExtractor={item => item.id}
         numColumns={2}
-        columnWrapperStyle={styles.columnWrapper}
+        columnWrapperStyle={characters.length > 0 ? styles.columnWrapper : undefined}
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <>
-            {/* Top 5 Trending 24h Story Tray (Ref: Gambar 6) */}
-            <StoryTray
-              trendingCharacters={trendingCharacters}
-              onOpenStory={handleOpenStory}
-            />
+            {/* Top 5 Trending 24h Story Tray */}
+            {trendingCharacters.length > 0 && (
+              <StoryTray
+                trendingCharacters={trendingCharacters}
+                onOpenStory={handleOpenStory}
+              />
+            )}
 
             {/* My Chats Grid Section Header */}
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>My Chats</Text>
-              <Text style={styles.sectionCount}>{characters.length} active</Text>
+              <Text style={styles.sectionCount}>
+                {characters.length === 0 ? 'Empty' : `${characters.length} active`}
+              </Text>
             </View>
           </>
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <View style={styles.emptyIconCircle}>
+              <MessageSquare size={26} color="#FFFFFF" />
+            </View>
+            <Text style={styles.emptyTitle}>No Active Chats Yet</Text>
+            <Text style={styles.emptySubtitle}>
+              Discover anime companions from the community catalog or build your own custom character in the Studio.
+            </Text>
+
+            <View style={styles.emptyActionsRow}>
+              <TouchableOpacity
+                style={styles.emptyPrimaryBtn}
+                onPress={onNavigateDiscover}
+              >
+                <Compass size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.emptyPrimaryBtnText}>Explore Catalog</Text>
+              </TouchableOpacity>
+
+              {onNavigateStudio && (
+                <TouchableOpacity
+                  style={styles.emptySecondaryBtn}
+                  onPress={onNavigateStudio}
+                >
+                  <Plus size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Text style={styles.emptySecondaryBtnText}>Create Card</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
         }
         renderItem={({ item }) => (
           <BentoChatCard
@@ -111,63 +149,135 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.bgDark,
+    backgroundColor: '#0c0e14',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
   },
   appTitle: {
-    color: colors.textPrimary,
+    color: '#FFFFFF',
     fontSize: 22,
     fontWeight: '800',
     letterSpacing: -0.5,
   },
   appSubtitle: {
-    color: colors.textMuted,
-    fontSize: 12,
-    fontWeight: '500',
+    color: 'rgba(255, 255, 255, 0.45)',
+    fontSize: 11,
+    marginTop: 2,
   },
   discoverBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(204, 255, 0, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(204, 255, 0, 0.3)',
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   discoverBtnText: {
-    color: colors.lime,
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
   },
   listContent: {
-    paddingBottom: 100, // Safe padding above floating CapsuleDock
+    paddingBottom: 90,
+  },
+  columnWrapper: {
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
+    marginTop: 8,
     marginBottom: 14,
   },
   sectionTitle: {
-    color: colors.textPrimary,
+    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '700',
   },
   sectionCount: {
-    color: colors.textMuted,
+    color: 'rgba(255, 255, 255, 0.4)',
     fontSize: 12,
+    fontWeight: '600',
   },
-  columnWrapper: {
-    justifyContent: 'space-between',
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 48,
+    marginHorizontal: 16,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderStyle: 'dashed',
+    marginTop: 20,
+  },
+  emptyIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  emptyTitle: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  emptySubtitle: {
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: 20,
+    maxWidth: 320,
+  },
+  emptyActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  emptyPrimaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
     paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.22)',
+  },
+  emptyPrimaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  emptySecondaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  emptySecondaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

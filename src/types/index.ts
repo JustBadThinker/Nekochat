@@ -1,6 +1,6 @@
 /**
  * NekoChat Core Types & Interfaces
- * Free & Open-Source AI Roleplay Client
+ * Free & Open-Source AI Roleplay Client (React Pure Engine)
  */
 
 export interface CharacterComment {
@@ -28,6 +28,8 @@ export interface Character {
   lastActive?: number;
   isFavorite?: boolean;
   comments?: CharacterComment[];
+  isUserCreated?: boolean;
+  contentRating?: 'SFW' | 'NSFW';
 }
 
 export interface ChatMessage {
@@ -44,6 +46,7 @@ export interface ChatMessage {
 export interface Persona {
   id: string;
   name: string;
+  pronouns?: string;
   description: string;
   avatar?: string;
   isDefault?: boolean;
@@ -79,4 +82,3 @@ export interface AppSettings {
   language: string;
   activePersonaId?: string;
 }
-

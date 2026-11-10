@@ -155,7 +155,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
                 }}
                 activeOpacity={0.8}
               >
-                <MessageCircle size={17} color="#000" fill="#000" style={{ marginRight: 8 }} />
+                <MessageCircle size={16} color="#FFFFFF" fill="#FFFFFF" style={{ marginRight: 8 }} />
                 <Text style={styles.chatCTAText}>Start Chat</Text>
               </TouchableOpacity>
             </View>
@@ -304,14 +304,16 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 44,
     borderRadius: 22,
-    backgroundColor: colors.lime,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
   },
   chatCTAText: {
-    color: '#000',
+    color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '800',
+    fontWeight: '700',
   },
 });

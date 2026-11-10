@@ -1,14 +1,14 @@
 /**
- * Floating Capsule Dock Bottom Navigation
- * Ref: Gambar 1 — Ergonomic, floating pill capsule with gradient active tab.
+ * Minimalist Floating Navigation Dock
+ * Styled strictly after Warden AI:
+ * Pure monochrome white icons (#FFFFFF), clean labels, zero background gradient bubbles.
  */
 
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
-import { MessageSquare, Compass, FolderClosed, Settings } from 'lucide-react-native';
-import { colors } from '../theme/colors';
+import { MessageSquare, Compass, User, Settings } from 'lucide-react-native';
 
-export type TabScreen = 'chats' | 'discover' | 'vault' | 'settings';
+export type TabScreen = 'chats' | 'discover' | 'studio' | 'settings';
 
 interface CapsuleDockProps {
   activeTab: TabScreen;
@@ -19,56 +19,80 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({ activeTab, onTabChange
   return (
     <View style={styles.dockContainer}>
       <View style={styles.dockCapsule}>
-        {/* Chats Tab */}
+        {/* 1. Chats Tab */}
         <TouchableOpacity
           style={[styles.dockItem, activeTab === 'chats' && styles.dockItemActive]}
           onPress={() => onTabChange('chats')}
           activeOpacity={0.8}
         >
           <MessageSquare
-            size={20}
-            color={activeTab === 'chats' ? colors.dockActiveText : colors.textSecondary}
+            size={19}
+            color="#FFFFFF"
+            style={{ opacity: activeTab === 'chats' ? 1 : 0.45 }}
           />
-          {activeTab === 'chats' && <Text style={styles.dockLabelActive}>Chats</Text>}
+          {activeTab === 'chats' ? (
+            <Text style={styles.dockLabelActive}>Chats</Text>
+          ) : (
+            <Text style={styles.dockLabelInactive}>Chats</Text>
+          )}
+          {activeTab === 'chats' && <View style={styles.activeDot} />}
         </TouchableOpacity>
 
-        {/* Discover Tab */}
+        {/* 2. Discover Tab */}
         <TouchableOpacity
           style={[styles.dockItem, activeTab === 'discover' && styles.dockItemActive]}
           onPress={() => onTabChange('discover')}
           activeOpacity={0.8}
         >
           <Compass
-            size={20}
-            color={activeTab === 'discover' ? colors.dockActiveText : colors.textSecondary}
+            size={19}
+            color="#FFFFFF"
+            style={{ opacity: activeTab === 'discover' ? 1 : 0.45 }}
           />
-          {activeTab === 'discover' && <Text style={styles.dockLabelActive}>Discover</Text>}
+          {activeTab === 'discover' ? (
+            <Text style={styles.dockLabelActive}>Discover</Text>
+          ) : (
+            <Text style={styles.dockLabelInactive}>Discover</Text>
+          )}
+          {activeTab === 'discover' && <View style={styles.activeDot} />}
         </TouchableOpacity>
 
-        {/* Vault Tab */}
+        {/* 3. Studio (User Cards & Personas) Tab */}
         <TouchableOpacity
-          style={[styles.dockItem, activeTab === 'vault' && styles.dockItemActive]}
-          onPress={() => onTabChange('vault')}
+          style={[styles.dockItem, activeTab === 'studio' && styles.dockItemActive]}
+          onPress={() => onTabChange('studio')}
           activeOpacity={0.8}
         >
-          <FolderClosed
-            size={20}
-            color={activeTab === 'vault' ? colors.dockActiveText : colors.textSecondary}
+          <User
+            size={19}
+            color="#FFFFFF"
+            style={{ opacity: activeTab === 'studio' ? 1 : 0.45 }}
           />
-          {activeTab === 'vault' && <Text style={styles.dockLabelActive}>Vault</Text>}
+          {activeTab === 'studio' ? (
+            <Text style={styles.dockLabelActive}>Studio</Text>
+          ) : (
+            <Text style={styles.dockLabelInactive}>Studio</Text>
+          )}
+          {activeTab === 'studio' && <View style={styles.activeDot} />}
         </TouchableOpacity>
 
-        {/* Settings Tab */}
+        {/* 4. Settings Tab */}
         <TouchableOpacity
           style={[styles.dockItem, activeTab === 'settings' && styles.dockItemActive]}
           onPress={() => onTabChange('settings')}
           activeOpacity={0.8}
         >
           <Settings
-            size={20}
-            color={activeTab === 'settings' ? colors.dockActiveText : colors.textSecondary}
+            size={19}
+            color="#FFFFFF"
+            style={{ opacity: activeTab === 'settings' ? 1 : 0.45 }}
           />
-          {activeTab === 'settings' && <Text style={styles.dockLabelActive}>Settings</Text>}
+          {activeTab === 'settings' ? (
+            <Text style={styles.dockLabelActive}>Settings</Text>
+          ) : (
+            <Text style={styles.dockLabelInactive}>Settings</Text>
+          )}
+          {activeTab === 'settings' && <View style={styles.activeDot} />}
         </TouchableOpacity>
       </View>
     </View>
@@ -87,12 +111,12 @@ const styles = StyleSheet.create({
   dockCapsule: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.dockBg,
+    backgroundColor: '#0c0e14',
     borderRadius: 32,
     paddingHorizontal: 8,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(255, 255, 255, 0.12)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.6,
@@ -100,22 +124,37 @@ const styles = StyleSheet.create({
     elevation: 12,
   },
   dockItem: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 24,
+    paddingVertical: 6,
+    borderRadius: 20,
     marginHorizontal: 2,
+    minWidth: 64,
   },
   dockItemActive: {
-    backgroundColor: colors.lime,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   dockLabelActive: {
-    color: colors.dockActiveText,
-    fontSize: 13,
+    color: '#FFFFFF',
+    fontSize: 10,
     fontWeight: '700',
-    marginLeft: 6,
+    marginTop: 2,
+  },
+  dockLabelInactive: {
+    color: 'rgba(255, 255, 255, 0.45)',
+    fontSize: 10,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  activeDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: '#FFFFFF',
+    marginTop: 2,
   },
 });
-

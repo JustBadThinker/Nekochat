@@ -164,7 +164,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
         <View style={styles.rightActionDock}>
           {/* Pass Button (✕) */}
           <TouchableOpacity style={styles.actionBtnPass} onPress={handlePass} activeOpacity={0.8}>
-            <X size={22} color={colors.coral} />
+            <X size={20} color="#FF6B6B" />
           </TouchableOpacity>
 
           {/* Star / Bookmark Button (⭐) */}
@@ -174,15 +174,15 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
             activeOpacity={0.8}
           >
             <Star
-              size={22}
-              color={currentCharacter.isFavorite ? colors.lemon : 'rgba(255,255,255,0.85)'}
-              fill={currentCharacter.isFavorite ? colors.lemon : 'transparent'}
+              size={20}
+              color={currentCharacter.isFavorite ? '#FFD700' : '#FFFFFF'}
+              fill={currentCharacter.isFavorite ? '#FFD700' : 'transparent'}
             />
           </TouchableOpacity>
 
           {/* Chat / Match CTA (💬) */}
           <TouchableOpacity style={styles.actionBtnChat} onPress={handleChat} activeOpacity={0.8}>
-            <MessageCircle size={24} color="#000" fill="#000" />
+            <MessageCircle size={22} color="#FFFFFF" fill="#FFFFFF" />
           </TouchableOpacity>
         </View>
 
@@ -320,17 +320,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   actionBtnChat: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: colors.lime,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: colors.lime,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    elevation: 4,
   },
   scrimGradientTop: {
     position: 'absolute',
