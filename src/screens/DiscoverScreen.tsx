@@ -1,7 +1,6 @@
 /**
- * Discover Screen
- * Toggle between Catalog Grid and Tinder Match Mode.
- * Includes Collapsible Scenario Dropdown and Scraped Community Reviews.
+ * Discover Screen (Warden AI Style Card Layout)
+ * Features high-res anime banners, stats row, creator handles, and instant chat transition.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -17,7 +16,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import { Search, Flame, LayoutGrid, ChevronDown, ChevronUp, MessageSquare, Star, Globe2, Shield } from 'lucide-react-native';
+import { Search, Flame, LayoutGrid, MessageSquare, Star, Heart, Play, Sparkles } from 'lucide-react-native';
 import { Character } from '../types';
 import { colors } from '../theme/colors';
 import { TinderDeck } from '../components/TinderDeck';
@@ -37,14 +36,12 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   const [mode, setMode] = useState<'grid' | 'match'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTag, setSelectedTag] = useState('All');
-  const [expandedScenarioId, setExpandedScenarioId] = useState<string | null>(null);
   const [liveCharacters, setLiveCharacters] = useState<Character[]>(starterCharacters);
   const [isLoading, setIsLoading] = useState(false);
   const [catalogSource, setCatalogSource] = useState<'chub' | 'datacat'>('chub');
 
   const tags = ['All', 'Romance', 'Anime', 'Fantasy', 'Cyberpunk', 'Slice of Life', 'Comfort', 'Action'];
 
-  // Fetch live characters on search or tag change
   useEffect(() => {
     fetchCatalog();
   }, [selectedTag, catalogSource]);
@@ -74,10 +71,6 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
     fetchCatalog(searchQuery);
   };
 
-  const toggleScenario = (id: string) => {
-    setExpandedScenarioId(prev => (prev === id ? null : id));
-  };
-
   const isGrid = mode === 'grid';
 
   if (mode === 'match') {
@@ -93,7 +86,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Top Segmented Control (Ref: Blueprint Section 3.B) */}
+      {/* Top Segmented Control */}
       <View style={styles.segmentContainer}>
         <View style={styles.segmentPill}>
           <TouchableOpacity
@@ -102,7 +95,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           >
             <LayoutGrid size={15} color={isGrid ? '#000' : colors.textSecondary} style={{ marginRight: 6 }} />
             <Text style={[styles.segmentBtnText, isGrid && styles.segmentBtnTextActive]}>
-              Catalog Grid
+              Catalog Cards
             </Text>
           </TouchableOpacity>
 
@@ -118,11 +111,11 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         </View>
       </View>
 
-      {/* Live Catalog Source Toggle & Indicator */}
+      {/* Live Catalog Source Toggle */}
       <View style={styles.sourceSelectorRow}>
         <View style={styles.liveIndicator}>
           <View style={styles.liveDot} />
-          <Text style={styles.liveText}>Live API Connected</Text>
+          <Text style={styles.liveText}>Live Community Hub</Text>
         </View>
 
         <View style={styles.sourceButtons}>
@@ -140,7 +133,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             onPress={() => setCatalogSource('datacat')}
           >
             <Text style={[styles.sourceBtnText, catalogSource === 'datacat' && styles.sourceBtnTextActive]}>
-              Janitor / Datacat
+              Datacat (Janitor)
             </Text>
           </TouchableOpacity>
         </View>
@@ -151,7 +144,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         <Search size={18} color={colors.textMuted} style={{ marginRight: 10 }} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search anime companions, tags, or tropes..."
+          placeholder="Search anime companions, tags, tropes..."
           placeholderTextColor={colors.textMuted}
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -178,88 +171,70 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         </ScrollView>
       </View>
 
-      {/* Character Catalog List */}
+      {/* Character Catalog (Warden AI Card Layout) */}
       <FlatList
         data={liveCharacters}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => {
-          const isScenarioExpanded = expandedScenarioId === item.id;
-          return (
-            <View style={styles.catalogCard}>
-              <View style={styles.cardHeader}>
-                <Image source={{ uri: item.avatar }} style={styles.avatar} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.charName}>{item.name}</Text>
-                  <Text style={styles.charTagline}>{item.tagline}</Text>
-                  <View style={styles.tagsRow}>
-                    {item.tags.map((t, idx) => (
-                      <Text key={idx} style={styles.cardTagBadge}>#{t}</Text>
-                    ))}
-                  </View>
+        renderItem={({ item }) => (
+          <View style={styles.wardenCard}>
+            {/* Aspect Ratio 16/10 Artwork Banner */}
+            <View style={styles.bannerWrapper}>
+              <Image source={{ uri: item.avatar }} style={styles.bannerImage} />
+              
+              {/* Top Floating Badges */}
+              <View style={styles.bannerTopRow}>
+                <View style={styles.tokenBadge}>
+                  <Text style={styles.tokenBadgeText}>#{item.tags[0] || 'Anime'}</Text>
                 </View>
                 <TouchableOpacity
-                  style={styles.favIcon}
+                  style={styles.favBadge}
                   onPress={() => onToggleFavorite(item)}
                 >
                   <Star
-                    size={18}
-                    color={item.isFavorite ? colors.lemon : colors.textMuted}
+                    size={16}
+                    color={item.isFavorite ? colors.lemon : '#FFFFFF'}
                     fill={item.isFavorite ? colors.lemon : 'transparent'}
                   />
                 </TouchableOpacity>
               </View>
 
-              {/* Character Hook Bio */}
-              <Text style={styles.charBio}>{item.description}</Text>
-
-              {/* Collapsible Scenario Dropdown */}
-              <TouchableOpacity
-                style={styles.accordionHeader}
-                onPress={() => toggleScenario(item.id)}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.accordionTitle}>Scenario & Initial Context</Text>
-                {isScenarioExpanded ? (
-                  <ChevronUp size={16} color={colors.lime} />
-                ) : (
-                  <ChevronDown size={16} color={colors.textSecondary} />
-                )}
-              </TouchableOpacity>
-
-              {isScenarioExpanded && (
-                <View style={styles.accordionContent}>
-                  <Text style={styles.scenarioText}>{item.scenario}</Text>
-                </View>
-              )}
-
-              {/* Scraped Community Reviews Section */}
-              {item.comments && item.comments.length > 0 && (
-                <View style={styles.reviewsBox}>
-                  <View style={styles.reviewHeaderRow}>
-                    <MessageSquare size={12} color={colors.lime} style={{ marginRight: 6 }} />
-                    <Text style={styles.reviewHeaderTitle}>Community Reviews</Text>
-                  </View>
-                  {item.comments.slice(0, 2).map(comment => (
-                    <View key={comment.id} style={styles.commentItem}>
-                      <Text style={styles.commentAuthor}>@{comment.author}:</Text>
-                      <Text style={styles.commentText}>"{comment.content}"</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              {/* Start Chat CTA */}
-              <TouchableOpacity
-                style={styles.startChatBtn}
-                onPress={() => onStartChat(item)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.startChatBtnText}>Start Conversation</Text>
-              </TouchableOpacity>
+              {/* Progressive Blur Scrim at Bottom of Banner */}
+              <View style={styles.bannerBottomScrim}>
+                <Text style={styles.creatorName}>by @{item.creator}</Text>
+              </View>
             </View>
-          );
-        }}
+
+            {/* Card Content Body */}
+            <View style={styles.cardBody}>
+              <Text style={styles.charTitle}>{item.name}</Text>
+              <Text style={styles.charTagline}>{item.tagline}</Text>
+              <Text style={styles.charBio} numberOfLines={2}>
+                {item.description}
+              </Text>
+
+              {/* Stats Bar (Chats count & Action Button) */}
+              <View style={styles.cardFooter}>
+                <View style={styles.statsRow}>
+                  <View style={styles.statItem}>
+                    <MessageSquare size={13} color={colors.lime} style={{ marginRight: 4 }} />
+                    <Text style={styles.statText}>{item.totalChats || 240}</Text>
+                  </View>
+                </View>
+
+                {/* Quick Start Chat Button */}
+                <TouchableOpacity
+                  style={styles.chatActionBtn}
+                  onPress={() => onStartChat(item)}
+                  activeOpacity={0.8}
+                >
+                  <Play size={14} color="#000" fill="#000" style={{ marginRight: 6 }} />
+                  <Text style={styles.chatActionBtnText}>Chat Now</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
       />
     </SafeAreaView>
   );
@@ -390,52 +365,87 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 16,
-    paddingBottom: 100,
+    paddingBottom: 110,
   },
-  catalogCard: {
+  wardenCard: {
     backgroundColor: colors.bgSurface,
     borderRadius: 20,
-    padding: 16,
+    overflow: 'hidden',
     marginBottom: 16,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
   },
-  cardHeader: {
+  bannerWrapper: {
+    width: '100%',
+    height: 190,
+    position: 'relative',
+    backgroundColor: '#0c0e14',
+  },
+  bannerImage: {
+    width: '100%',
+    height: '100%',
+  },
+  bannerTopRow: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    right: 10,
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    zIndex: 2,
   },
-  avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+  tokenBadge: {
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
-  charName: {
+  tokenBadgeText: {
+    color: colors.lime,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  favBadge: {
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  bannerBottomScrim: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(14, 15, 18, 0.85)',
+  },
+  creatorName: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  cardBody: {
+    padding: 14,
+  },
+  charTitle: {
     color: colors.textPrimary,
     fontSize: 16,
     fontWeight: '700',
+    marginBottom: 2,
   },
   charTagline: {
     color: colors.lime,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
-    marginTop: 1,
-  },
-  tagsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-    marginTop: 4,
-  },
-  cardTagBadge: {
-    color: colors.textMuted,
-    fontSize: 10,
-  },
-  favIcon: {
-    padding: 6,
+    marginBottom: 6,
   },
   charBio: {
     color: colors.textSecondary,
@@ -443,73 +453,39 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginBottom: 12,
   },
-  accordionHeader: {
+  cardFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-    marginBottom: 8,
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    paddingTop: 10,
   },
-  accordionTitle: {
-    color: colors.textPrimary,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  accordionContent: {
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 10,
-  },
-  scenarioText: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    lineHeight: 16,
-    fontStyle: 'italic',
-  },
-  reviewsBox: {
-    backgroundColor: 'rgba(204, 255, 0, 0.04)',
-    padding: 10,
-    borderRadius: 12,
-    marginBottom: 12,
-    borderWidth: 0.5,
-    borderColor: 'rgba(204, 255, 0, 0.2)',
-  },
-  reviewHeaderRow: {
+  statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 6,
+    gap: 12,
   },
-  reviewHeaderTitle: {
-    color: colors.lime,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  commentItem: {
-    marginBottom: 4,
-  },
-  commentAuthor: {
-    color: colors.textPrimary,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  commentText: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontStyle: 'italic',
-  },
-  startChatBtn: {
-    backgroundColor: colors.lime,
-    paddingVertical: 12,
-    borderRadius: 16,
+  statItem: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  startChatBtnText: {
+  statText: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  chatActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.lime,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 16,
+  },
+  chatActionBtnText: {
     color: '#000',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
   },
 });

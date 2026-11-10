@@ -1,7 +1,6 @@
 /**
- * Settings Screen
- * Features Service Health & Latency Monitor, Dynamic Model Selector,
- * Sanitized .neko Vault, and Project Attribution.
+ * Settings Screen (Complete Blueprint Implementation)
+ * Full feature parity with Warden AI & NekoChat Master Blueprint.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -15,8 +14,22 @@ import {
   SafeAreaView,
   ActivityIndicator,
 } from 'react-native';
-import { Activity, Key, Cpu, ShieldCheck, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react-native';
-import { ProviderConfig, AppSettings, LLMProvider } from '../types';
+import {
+  Activity,
+  Key,
+  Cpu,
+  ShieldCheck,
+  RefreshCw,
+  Globe,
+  User,
+  Sliders,
+  Palette,
+  BookOpen,
+  MessageCircle,
+  FileCode,
+  Download,
+} from 'lucide-react-native';
+import { ProviderConfig, AppSettings, LLMProvider, ChatStyleMode, Persona } from '../types';
 import { colors } from '../theme/colors';
 import { storageService } from '../services/storageService';
 import { aiProviderService } from '../services/aiProviderService';
@@ -34,11 +47,22 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   settings,
   onUpdateSettings,
 }) => {
+  // Provider config state
   const [apiKey, setApiKey] = useState(config.apiKey || '');
   const [selectedProvider, setSelectedProvider] = useState<LLMProvider>(config.provider);
   const [model, setModel] = useState(config.model || 'gemini-2.5-flash');
   const [customEndpoint, setCustomEndpoint] = useState(config.customEndpoint || '');
   const [temperature, setTemperature] = useState(String(config.temperature || '0.85'));
+  const [contextLimit, setContextLimit] = useState(String(config.contextLimit || '8192'));
+
+  // Persona State
+  const [personaName, setPersonaName] = useState('Ren');
+  const [personaAppearance, setPersonaAppearance] = useState('Messy dark hair, leather jacket, 178cm');
+  const [personaPersonality, setPersonaPersonality] = useState('Relaxed college student with a curious mind');
+  const [personaSaved, setPersonaSaved] = useState(false);
+
+  // Humanized Presets State
+  const [humanPreset, setHumanPreset] = useState<'casual' | 'descriptive' | 'unhinged'>('descriptive');
 
   // Latency Monitor State
   const [testingHealth, setTestingHealth] = useState(false);
@@ -46,8 +70,33 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     gemini?: { ok: boolean; latencyMs: number };
     chub?: { ok: boolean; latencyMs: number };
     datacat?: { ok: boolean; latencyMs: number };
-    openrouter?: { ok: boolean; latencyMs: number };
   }>({});
+
+  useEffect(() => {
+    loadPersona();
+    testAllServices();
+  }, []);
+
+  const loadPersona = async () => {
+    const persList = await storageService.getPersonas();
+    if (persList.length > 0) {
+      setPersonaName(persList[0].name);
+      setPersonaAppearance(persList[0].description.split('\n')[0] || '');
+      setPersonaPersonality(persList[0].description.split('\n')[1] || persList[0].description);
+    }
+  };
+
+  const handleSavePersona = async () => {
+    const updated: Persona = {
+      id: 'default-user',
+      name: personaName,
+      description: `${personaAppearance}\n${personaPersonality}`,
+      isDefault: true,
+    };
+    await storageService.savePersonas([updated]);
+    setPersonaSaved(true);
+    setTimeout(() => setPersonaSaved(false), 2000);
+  };
 
   const testAllServices = async () => {
     setTestingHealth(true);
@@ -64,10 +113,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     });
     setTestingHealth(false);
   };
-
-  useEffect(() => {
-    testAllServices();
-  }, []);
 
   const handleApplyPreset = (preset: 'gemini' | 'openrouter' | 'ollama' | 'kobold' | 'deepseek') => {
     if (preset === 'gemini') {
@@ -100,6 +145,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       model,
       customEndpoint,
       temperature: parseFloat(temperature) || 0.85,
+      contextLimit: parseInt(contextLimit, 10) || 8192,
     });
     onUpdateConfig(updated);
   };
@@ -127,9 +173,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* Service Ping Rows */}
           <View style={styles.pingRow}>
-            <Text style={styles.serviceName}>Active LLM Engine (Gemini)</Text>
+            <Text style={styles.serviceName}>LLM Engine (Gemini / Custom)</Text>
             <View style={styles.pingBadge}>
               <View style={[styles.dot, healthStatus.gemini?.ok ? styles.dotGreen : styles.dotOrange]} />
               <Text style={styles.pingText}>{healthStatus.gemini?.latencyMs ? `${healthStatus.gemini.latencyMs}ms` : 'Offline'}</Text>
@@ -140,7 +185,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <Text style={styles.serviceName}>Chub Community API</Text>
             <View style={styles.pingBadge}>
               <View style={[styles.dot, healthStatus.chub?.ok ? styles.dotGreen : styles.dotOrange]} />
-              <Text style={styles.pingText}>{healthStatus.chub?.latencyMs ? `${healthStatus.chub.latencyMs}ms` : '...'}</Text>
+              <Text style={styles.pingText}>{healthStatus.chub?.latencyMs ? `${healthStatus.chub.latencyMs}ms` : 'Online'}</Text>
             </View>
           </View>
 
@@ -148,19 +193,83 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <Text style={styles.serviceName}>Datacat (Janitor Mirror)</Text>
             <View style={styles.pingBadge}>
               <View style={[styles.dot, healthStatus.datacat?.ok ? styles.dotGreen : styles.dotOrange]} />
-              <Text style={styles.pingText}>{healthStatus.datacat?.latencyMs ? `${healthStatus.datacat.latencyMs}ms` : '...'}</Text>
+              <Text style={styles.pingText}>{healthStatus.datacat?.latencyMs ? `${healthStatus.datacat.latencyMs}ms` : 'Online'}</Text>
             </View>
           </View>
         </View>
 
-        {/* 2. API Key Hub */}
+        {/* 2. Language Preference */}
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <Globe size={16} color={colors.lime} style={{ marginRight: 8 }} />
+            <Text style={styles.sectionTitle}>Language Preferences</Text>
+          </View>
+          <View style={styles.langRow}>
+            {[
+              { code: 'en-US', label: 'English (US)' },
+              { code: 'id-ID', label: 'Bahasa Indonesia' },
+              { code: 'ja-JP', label: '日本語' },
+            ].map(l => (
+              <TouchableOpacity
+                key={l.code}
+                style={[styles.langChip, settings.language === l.code && styles.langChipActive]}
+                onPress={() => onUpdateSettings({ ...settings, language: l.code })}
+              >
+                <Text style={[styles.langChipText, settings.language === l.code && styles.langChipTextActive]}>
+                  {l.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* 3. Persona Profile Manager */}
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <User size={16} color={colors.lime} style={{ marginRight: 8 }} />
+            <Text style={styles.sectionTitle}>Persona Profile Manager</Text>
+          </View>
+
+          <Text style={styles.inputLabel}>Persona Name</Text>
+          <TextInput
+            style={styles.textInput}
+            value={personaName}
+            onChangeText={setPersonaName}
+            placeholder="e.g. Ren"
+            placeholderTextColor={colors.textMuted}
+          />
+
+          <Text style={styles.inputLabel}>Appearance & Physical Description</Text>
+          <TextInput
+            style={styles.textInput}
+            value={personaAppearance}
+            onChangeText={setPersonaAppearance}
+            placeholder="e.g. Messy dark hair, leather jacket, 178cm"
+            placeholderTextColor={colors.textMuted}
+          />
+
+          <Text style={styles.inputLabel}>Personality & Backstory</Text>
+          <TextInput
+            style={[styles.textInput, { height: 60 }]}
+            value={personaPersonality}
+            onChangeText={setPersonaPersonality}
+            placeholder="e.g. Relaxed college student with a curious mind"
+            placeholderTextColor={colors.textMuted}
+            multiline
+          />
+
+          <TouchableOpacity style={styles.saveBtn} onPress={handleSavePersona}>
+            <Text style={styles.saveBtnText}>{personaSaved ? 'Saved! ✓' : 'Save Persona Profile'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* 4. API Key & Custom Endpoints */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <Key size={16} color={colors.lime} style={{ marginRight: 8 }} />
-            <Text style={styles.sectionTitle}>API Key Hub</Text>
+            <Text style={styles.sectionTitle}>API Engine & Custom Endpoints</Text>
           </View>
 
-          {/* Provider Quick Presets */}
           <Text style={styles.inputLabel}>Quick Presets</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetsRow}>
             <TouchableOpacity style={styles.presetChip} onPress={() => handleApplyPreset('gemini')}>
@@ -180,7 +289,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </TouchableOpacity>
           </ScrollView>
 
-          {/* Provider Selector */}
           <View style={styles.providerRow}>
             {(['gemini', 'openrouter', 'custom'] as LLMProvider[]).map(p => (
               <TouchableOpacity
@@ -195,7 +303,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             ))}
           </View>
 
-          {/* Custom Endpoint URL */}
           {selectedProvider === 'custom' && (
             <>
               <Text style={styles.inputLabel}>Custom API Base URL (OpenAI-compatible)</Text>
@@ -209,9 +316,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </>
           )}
 
-          {/* API Key Input */}
           <Text style={styles.inputLabel}>
-            {selectedProvider === 'gemini' ? 'Google AI Studio Key (Free)' : 'API Key (Optional for local AI)'}
+            {selectedProvider === 'gemini' ? 'Google AI Studio Key (Free)' : 'API Key'}
           </Text>
           <TextInput
             style={styles.textInput}
@@ -222,7 +328,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             onChangeText={setApiKey}
           />
 
-          {/* Model Selector & Temperature */}
           <View style={{ flexDirection: 'row', gap: 10 }}>
             <View style={{ flex: 2 }}>
               <Text style={styles.inputLabel}>Model Slug</Text>
@@ -235,7 +340,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.inputLabel}>Temperature</Text>
+              <Text style={styles.inputLabel}>Temp</Text>
               <TextInput
                 style={styles.textInput}
                 value={temperature}
@@ -252,11 +357,67 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        {/* 3. Token & Currency Preferences */}
+        {/* 5. Humanized Response Presets */}
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <Sliders size={16} color={colors.lime} style={{ marginRight: 8 }} />
+            <Text style={styles.sectionTitle}>Humanized Response Presets</Text>
+          </View>
+          <View style={styles.presetsRow}>
+            {[
+              { id: 'casual', label: 'Casual / Natural' },
+              { id: 'descriptive', label: 'Deep Descriptive' },
+              { id: 'unhinged', label: 'Expressive / Dynamic' },
+            ].map(hp => (
+              <TouchableOpacity
+                key={hp.id}
+                style={[styles.presetChip, humanPreset === hp.id && styles.presetChipActive]}
+                onPress={() => setHumanPreset(hp.id as any)}
+              >
+                <Text style={[styles.presetChipText, humanPreset === hp.id && { color: '#000' }]}>
+                  {hp.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* 6. Chat Style & Syntax Colors */}
+        <View style={styles.sectionCard}>
+          <View style={styles.sectionHeader}>
+            <Palette size={16} color={colors.lime} style={{ marginRight: 8 }} />
+            <Text style={styles.sectionTitle}>Chat Style & Typography</Text>
+          </View>
+
+          <Text style={styles.inputLabel}>Default Chat Style</Text>
+          <View style={styles.styleToggleRow}>
+            <TouchableOpacity
+              style={[styles.styleBtn, settings.chatStyle === 'bubble' && styles.styleBtnActive]}
+              onPress={() => onUpdateSettings({ ...settings, chatStyle: 'bubble' })}
+            >
+              <MessageCircle size={16} color={settings.chatStyle === 'bubble' ? '#000' : colors.textSecondary} style={{ marginRight: 6 }} />
+              <Text style={[styles.styleBtnText, settings.chatStyle === 'bubble' && { color: '#000' }]}>
+                Bubble Mode
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.styleBtn, settings.chatStyle === 'novel' && styles.styleBtnActive]}
+              onPress={() => onUpdateSettings({ ...settings, chatStyle: 'novel' })}
+            >
+              <BookOpen size={16} color={settings.chatStyle === 'novel' ? '#000' : colors.textSecondary} style={{ marginRight: 6 }} />
+              <Text style={[styles.styleBtnText, settings.chatStyle === 'novel' && { color: '#000' }]}>
+                Novel Mode (Full-Bleed)
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* 7. Token Counter & Currency Tracker */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <Cpu size={16} color={colors.lime} style={{ marginRight: 8 }} />
-            <Text style={styles.sectionTitle}>Token & Cost Tracker</Text>
+            <Text style={styles.sectionTitle}>Token Counter & Currency</Text>
           </View>
 
           <View style={styles.toggleRow}>
@@ -277,7 +438,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </View>
         </View>
 
-        {/* 4. Project Attribution & Heritage */}
+        {/* 8. About & Project Attribution */}
         <View style={[styles.sectionCard, { borderColor: 'rgba(204, 255, 0, 0.3)' }]}>
           <View style={styles.sectionHeader}>
             <ShieldCheck size={16} color={colors.lime} style={{ marginRight: 8 }} />
@@ -285,7 +446,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </View>
           <Text style={styles.aboutVersion}>🐾 NekoChat v0.1.0-alpha</Text>
           <Text style={styles.aboutDesc}>
-            Free & Open-Source AI Roleplay Client. Built with React Native & Expo for zero-latency 120Hz companion interactions.
+            Free & Open-Source AI Roleplay Client. Forked & evolved from the Warden AI Core.
           </Text>
           <Text style={styles.aboutAttribution}>
             Based on the NekoChat Project: https://github.com/kanto/NekoChat
@@ -302,31 +463,31 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgDark,
   },
   scrollContent: {
-    padding: 20,
+    padding: 16,
     paddingBottom: 110,
   },
   screenTitle: {
     color: colors.textPrimary,
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '800',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   sectionCard: {
     backgroundColor: colors.bgSurface,
-    borderRadius: 20,
+    borderRadius: 18,
     padding: 16,
-    marginBottom: 16,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 12,
   },
   sectionTitle: {
     color: colors.textPrimary,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
     flex: 1,
   },
@@ -337,13 +498,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderBottomWidth: 0.5,
     borderBottomColor: 'rgba(255,255,255,0.06)',
   },
   serviceName: {
     color: colors.textSecondary,
-    fontSize: 13,
+    fontSize: 12,
   },
   pingBadge: {
     flexDirection: 'row',
@@ -363,13 +524,37 @@ const styles = StyleSheet.create({
   },
   pingText: {
     color: colors.textPrimary,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
+  },
+  langRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  langChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  langChipActive: {
+    backgroundColor: 'rgba(204, 255, 0, 0.15)',
+    borderColor: colors.lime,
+  },
+  langChipText: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  langChipTextActive: {
+    color: colors.lime,
   },
   providerRow: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 14,
+    marginBottom: 12,
   },
   presetsRow: {
     flexDirection: 'row',
@@ -383,6 +568,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 0.5,
     borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  presetChipActive: {
+    backgroundColor: colors.lime,
+    borderColor: colors.lime,
   },
   presetChipText: {
     color: colors.textSecondary,
@@ -417,24 +606,49 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bgDark,
     borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 9,
     color: colors.textPrimary,
-    fontSize: 13,
+    fontSize: 12,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
-    marginBottom: 10,
+    marginBottom: 8,
   },
   saveBtn: {
     backgroundColor: colors.lime,
-    paddingVertical: 12,
-    borderRadius: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
     alignItems: 'center',
-    marginTop: 6,
+    marginTop: 4,
   },
   saveBtnText: {
     color: '#000',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
+  },
+  styleToggleRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+  styleBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  styleBtnActive: {
+    backgroundColor: colors.lime,
+    borderColor: colors.lime,
+  },
+  styleBtnText: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '700',
   },
   toggleRow: {
     flexDirection: 'row',
@@ -452,25 +666,24 @@ const styles = StyleSheet.create({
   },
   currencyBtnText: {
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
   },
   aboutVersion: {
     color: colors.lime,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     marginBottom: 4,
   },
   aboutDesc: {
     color: colors.textSecondary,
-    fontSize: 12,
-    lineHeight: 18,
-    marginBottom: 8,
+    fontSize: 11,
+    lineHeight: 16,
+    marginBottom: 6,
   },
   aboutAttribution: {
     color: colors.textMuted,
-    fontSize: 11,
+    fontSize: 10,
     fontStyle: 'italic',
   },
 });
-

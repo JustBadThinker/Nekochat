@@ -64,23 +64,24 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
     }
   };
 
-  // Full 120Hz PanGesture Drag Responder
+  // Full 120Hz PanGesture Drag Responder (Supports both Touch & Desktop Mouse Drag)
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
       onPanResponderMove: (_, gesture) => {
-        position.setValue({ x: gesture.dx, y: gesture.dy * 0.4 });
+        position.setValue({ x: gesture.dx, y: gesture.dy * 0.3 });
       },
       onPanResponderRelease: (_, gesture) => {
-        if (gesture.dx > 120) {
+        if (gesture.dx > 80) {
           handleChat();
-        } else if (gesture.dx < -120) {
+        } else if (gesture.dx < -80) {
           handlePass();
         } else {
           Animated.spring(position, {
             toValue: { x: 0, y: 0 },
-            friction: 5,
-            tension: 40,
+            friction: 6,
+            tension: 50,
             useNativeDriver: false,
           }).start();
         }
@@ -185,7 +186,8 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
           </TouchableOpacity>
         </View>
 
-        {/* Bottom Metadata & Interest Tags */}
+        {/* Progressive Blur Scrim & Bottom Metadata */}
+        <View style={styles.scrimGradientTop} />
         <View style={styles.bottomOverlay}>
           <Text style={styles.charName}>{currentCharacter.name}</Text>
           <Text style={styles.charTagline}>{currentCharacter.tagline}</Text>
@@ -330,16 +332,22 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 8,
   },
+  scrimGradientTop: {
+    position: 'absolute',
+    bottom: 130,
+    left: 0,
+    right: 0,
+    height: 70,
+    backgroundColor: 'rgba(5, 7, 10, 0.5)',
+  },
   bottomOverlay: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     padding: 20,
-    paddingRight: 80, // Prevent text overlapping the right action dock
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
-    borderTopWidth: 0.5,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    paddingRight: 80,
+    backgroundColor: 'rgba(5, 7, 10, 0.95)',
   },
   charName: {
     color: colors.textPrimary,
