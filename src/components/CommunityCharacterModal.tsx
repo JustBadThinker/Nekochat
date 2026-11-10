@@ -162,7 +162,7 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
                 }}
                 activeOpacity={0.8}
               >
-                <Play size={12} color="#FFFFFF" fill="#FFFFFF" style={{ marginRight: 4 }} />
+                <Play size={12} color="#000000" fill="#000000" style={{ marginRight: 4 }} />
                 <Text style={styles.heroChatBtnText}>Chat</Text>
               </TouchableOpacity>
 
@@ -445,7 +445,7 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
               </TouchableOpacity>
             </View>
 
-            {/* Glowing Wide Purple Button: Start Roleplay Now */}
+            {/* Glowing Wide Acid Lime Button: Start Roleplay Now */}
             <TouchableOpacity
               style={styles.footerStartBtn}
               onPress={() => {
@@ -454,7 +454,7 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
               }}
               activeOpacity={0.85}
             >
-              <Play size={14} color="#FFFFFF" fill="#FFFFFF" style={{ marginRight: 6 }} />
+              <Play size={14} color="#000000" fill="#000000" style={{ marginRight: 6 }} />
               <Text style={styles.footerStartBtnText}>Start Roleplay Now</Text>
             </TouchableOpacity>
           </View>
@@ -572,19 +572,19 @@ const styles = StyleSheet.create({
   heroChatBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#9333ea',
+    backgroundColor: '#d4ff00',
     paddingHorizontal: 12,
     paddingVertical: 5.5,
     borderRadius: 20,
-    shadowColor: '#9333ea',
+    shadowColor: '#d4ff00',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.5,
     shadowRadius: 4,
   },
   heroChatBtnText: {
     fontSize: 11.5,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: '#000000',
   },
   heroCircleBtn: {
     width: 29,
@@ -683,7 +683,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   tabBtnActive: {
-    backgroundColor: '#9333ea',
+    backgroundColor: '#d4ff00',
   },
   tabBtnText: {
     fontSize: 11,
@@ -691,7 +691,7 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
   },
   tabBtnTextActive: {
-    color: '#FFFFFF',
+    color: '#000000',
     fontWeight: '800',
   },
   datacatLink: {
@@ -885,17 +885,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#9333ea',
+    backgroundColor: '#d4ff00',
     paddingVertical: 9.5,
     borderRadius: 10,
-    shadowColor: '#9333ea',
+    shadowColor: '#d4ff00',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.45,
+    shadowOpacity: 0.5,
     shadowRadius: 5,
   },
   footerStartBtnText: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: '#000000',
   },
 });

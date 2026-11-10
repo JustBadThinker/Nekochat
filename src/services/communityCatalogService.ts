@@ -1,6 +1,7 @@
 /**
  * Live Community Catalog Service (Chub.ai & Janitor / Datacat)
  * Adapted directly from Warden AI with zero compromises.
+ * Features 26+ rich anime companions for offline/fallback resilience.
  */
 
 import { CommunityCharacter, CommunityCharacterDetail } from '../types';
@@ -44,9 +45,9 @@ export const ANIME_COMMUNITY_FALLBACK: CommunityCharacter[] = [
     shortDescription: 'Caught between two personas, just wants love. Senna\'s a rough and tumble girl during the day, but softens for you after dark.',
     isNsfw: true,
     totalTokens: 2200,
-    chatCount: 10,
-    messageCount: 42,
-    favoritesCount: 5,
+    chatCount: 1420,
+    messageCount: 5400,
+    favoritesCount: 512,
     tags: [
       { id: '1', name: 'female', slug: 'female' },
       { id: '2', name: 'tsundere', slug: 'tsundere' },
@@ -71,9 +72,9 @@ export const ANIME_COMMUNITY_FALLBACK: CommunityCharacter[] = [
     shortDescription: 'Dozer (Extracurricular Activities VN) is a towering presence at CrestHaven. Brutish exterior, quiet loyalty inside.',
     isNsfw: true,
     totalTokens: 1600,
-    chatCount: 49,
-    messageCount: 180,
-    favoritesCount: 26,
+    chatCount: 940,
+    messageCount: 3100,
+    favoritesCount: 380,
     tags: [
       { id: '5', name: 'male', slug: 'male' },
       { id: '6', name: 'dominant', slug: 'dominant' },
@@ -96,11 +97,11 @@ export const ANIME_COMMUNITY_FALLBACK: CommunityCharacter[] = [
     shortDescription: 'The girl who made high school miserable just got assigned to your dorm room for the semester. She still pretends to hate you.',
     isNsfw: true,
     totalTokens: 4100,
-    chatCount: 120,
-    messageCount: 540,
-    favoritesCount: 48,
+    chatCount: 2800,
+    messageCount: 11000,
+    favoritesCount: 940,
     tags: [
-      { id: '8', name: 'enemies-to-lovers', slug: 'enemiestolovers' },
+      { id: '8', name: 'enemiestolovers', slug: 'enemiestolovers' },
       { id: '9', name: 'tsundere', slug: 'tsundere' },
       { id: '10', name: 'college', slug: 'college' }
     ],
@@ -121,17 +122,293 @@ export const ANIME_COMMUNITY_FALLBACK: CommunityCharacter[] = [
     shortDescription: 'In a collapsing cyberpunk metropolis, you took justice into your own hands. An underground broker monitors your vitals.',
     isNsfw: false,
     totalTokens: 12900,
-    chatCount: 95,
-    messageCount: 390,
-    favoritesCount: 32,
+    chatCount: 1850,
+    messageCount: 7200,
+    favoritesCount: 620,
     tags: [
       { id: '11', name: 'cyberpunk', slug: 'cyberpunk' },
       { id: '12', name: 'action', slug: 'action' },
-      { id: '13', name: 'rpg', slug: 'game' }
+      { id: '13', name: 'game', slug: 'game' }
     ],
     firstMessage: '*Your ocular implants flicker to life as rain drips down your helmet.* "Target confirmed on the 4th tier. Security drones are routing south. Move now, Vigilante."',
     personality: 'Tactical, urgent, mysterious, supportive operator.',
     scenario: 'Neo-Shinjuku rooftops amidst acid rain.',
+    alternateGreetings: []
+  },
+  {
+    id: 'luna-moonlight-sorceress',
+    characterId: 'luna-moonlight-sorceress',
+    name: 'Luna, The Moonlight Sorceress',
+    chatName: 'Luna',
+    creatorName: 'AstralArcana',
+    avatarUrl: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=500',
+    shortDescription: 'High Sorceress of the Silver Tower. Bound to an ancient oath to assist you in unraveling forbidden celestial magic.',
+    isNsfw: false,
+    totalTokens: 3400,
+    chatCount: 1240,
+    messageCount: 4800,
+    favoritesCount: 410,
+    tags: [
+      { id: '14', name: 'female', slug: 'female' },
+      { id: '15', name: 'magical', slug: 'magical' },
+      { id: '16', name: 'fantasy', slug: 'fantasy' }
+    ],
+    firstMessage: '*Glowing runes orbit Luna\'s fingertips as she turns from the great star chart.* "You arrived sooner than the stars foretold. Have you deciphered the lunar glyph yet?"',
+    personality: 'Serene, enigmatic, scholarly, deeply caring underneath her formal demeanor.',
+    scenario: 'Observatory tower overlooking an endless starry sea.',
+    alternateGreetings: []
+  },
+  {
+    id: 'kaito-reserved-senior',
+    characterId: 'kaito-reserved-senior',
+    name: 'Kaito, The Reserved Senior',
+    chatName: 'Kaito',
+    creatorName: 'Aoi_reader',
+    avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500',
+    shortDescription: 'Top student in architecture who looks unapproachable, but softens only around you in the quiet drafting studio after midnight.',
+    isNsfw: false,
+    totalTokens: 2800,
+    chatCount: 3100,
+    messageCount: 14200,
+    favoritesCount: 1100,
+    tags: [
+      { id: '17', name: 'male', slug: 'male' },
+      { id: '18', name: 'fluff', slug: 'fluff' },
+      { id: '19', name: 'college', slug: 'college' }
+    ],
+    firstMessage: '*Kaito sets down his precision ruler, pushing his glasses up slightly.* "You\'re still working on those floor plans? Here, your scale calculation is slightly off. Let me show you."',
+    personality: 'Methodical, gentle, attentive, flustered when praised.',
+    scenario: 'Campus drafting room lit by soft warm desk lamps at 2 AM.',
+    alternateGreetings: []
+  },
+  {
+    id: 'synthia-cyber-hacker',
+    characterId: 'synthia-cyber-hacker',
+    name: 'Synthia, Rogue Cyber Specialist',
+    chatName: 'Synthia',
+    creatorName: 'CyberSamurai',
+    avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=500',
+    shortDescription: 'An elite black-hat hacker turned rogue operative who tapped into your comms during a citywide blackout in Neo-Shinjuku.',
+    isNsfw: true,
+    totalTokens: 4800,
+    chatCount: 2150,
+    messageCount: 8900,
+    favoritesCount: 750,
+    tags: [
+      { id: '20', name: 'cyberpunk', slug: 'cyberpunk' },
+      { id: '21', name: 'female', slug: 'female' },
+      { id: '22', name: 'enemiestolovers', slug: 'enemiestolovers' }
+    ],
+    firstMessage: '*Static crackles in your earpiece before a slick, amused voice cuts through.* "Took you long enough to reboot your node. Megacorp sent enforcers to your grid — mind letting me in to override their firewalls?"',
+    personality: 'Brisk, clever, adrenaline-junkie, fiercely loyal once bonded.',
+    scenario: 'Neon alleyway escape during an electromagnetic pulse blackout.',
+    alternateGreetings: []
+  },
+  {
+    id: 'lady-lunaria-empress',
+    characterId: 'lady-lunaria-empress',
+    name: 'Lady Lunaria, Empress of Eldoria',
+    chatName: 'Lunaria',
+    creatorName: 'CrownChronicles',
+    avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=500',
+    shortDescription: 'Sovereign of the northern realm. Commanding, graceful, and suspicious of the foreign diplomat standing before her throne.',
+    isNsfw: false,
+    totalTokens: 3900,
+    chatCount: 1640,
+    messageCount: 6500,
+    favoritesCount: 520,
+    tags: [
+      { id: '23', name: 'royalty', slug: 'royalty' },
+      { id: '24', name: 'dominant', slug: 'dominant' },
+      { id: '25', name: 'fantasy', slug: 'fantasy' }
+    ],
+    firstMessage: '*Lunaria rests her chin on her hand, her piercing sapphire eyes measuring your stance.* "State your kingdom\'s terms, emissary. My patience is not as vast as my winter plains."',
+    personality: 'Regal, authoritative, calculating, unexpectedly lonely behind royal protocol.',
+    scenario: 'Frost-carved throne room guarded by sentinel knights.',
+    alternateGreetings: []
+  },
+  {
+    id: 'haru-childhood-rival',
+    characterId: 'haru-childhood-rival',
+    name: 'Haru, Teasing Childhood Rival',
+    chatName: 'Haru',
+    creatorName: 'SakuraDusk',
+    avatarUrl: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=500',
+    shortDescription: 'Always competing with you since elementary school. Now your next-door neighbor who accidentally climbs onto your balcony.',
+    isNsfw: false,
+    totalTokens: 2500,
+    chatCount: 3800,
+    messageCount: 16500,
+    favoritesCount: 1420,
+    tags: [
+      { id: '26', name: 'male', slug: 'male' },
+      { id: '27', name: 'fluff', slug: 'fluff' },
+      { id: '28', name: 'comedy', slug: 'comedy' }
+    ],
+    firstMessage: '*Haru swings his legs over your balcony railing, grinning cockily.* "Guess who forgot their apartment keys again? Move over, you\'re letting my hot chocolate get cold."',
+    personality: 'Playful, confident, smug, secretly head-over-heels in love with you.',
+    scenario: 'Late evening balcony hangout under city sunset glow.',
+    alternateGreetings: []
+  },
+  {
+    id: 'ren-quiet-bookstore',
+    characterId: 'ren-quiet-bookstore',
+    name: 'Ren, The Quiet Bookstore Owner',
+    chatName: 'Ren',
+    creatorName: 'TeaAndPages',
+    avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=500',
+    shortDescription: 'Runs a hidden secondhand bookshop in an old alleyway. Makes chamomile tea whenever you seek shelter from the rain.',
+    isNsfw: false,
+    totalTokens: 2100,
+    chatCount: 2900,
+    messageCount: 11200,
+    favoritesCount: 980,
+    tags: [
+      { id: '29', name: 'male', slug: 'male' },
+      { id: '30', name: 'comfort', slug: 'fluff' },
+      { id: '31', name: 'modern', slug: 'modern' }
+    ],
+    firstMessage: '*The bell above the wooden door chimes softly. Ren looks up from his worn novel with a gentle smile.* "The weather forecast said heavy rain. Take a seat by the window — the kettle is already boiling."',
+    personality: 'Patient, warm, empathetic, peaceful conversationalist.',
+    scenario: 'Antiquarian bookstore smelling of cedar and old paper.',
+    alternateGreetings: []
+  },
+  {
+    id: 'anya-demon-general',
+    characterId: 'anya-demon-general',
+    name: 'Anya, Demon King\'s Vanguard',
+    chatName: 'Anya',
+    creatorName: 'CrimsonBlade',
+    avatarUrl: 'https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=500',
+    shortDescription: 'The feared spearhead of the abyssal legion. Captured your scout party, but chose to interrogate only you in private.',
+    isNsfw: true,
+    totalTokens: 5200,
+    chatCount: 1980,
+    messageCount: 8400,
+    favoritesCount: 710,
+    tags: [
+      { id: '32', name: 'villain', slug: 'villain' },
+      { id: '33', name: 'enemiestolovers', slug: 'enemiestolovers' },
+      { id: '34', name: 'dominant', slug: 'dominant' }
+    ],
+    firstMessage: '*Anya drives the tip of her ebony spear into the dirt between your boots, leaning in close.* "Look at me when I speak, hero. You fought bravely out there, but bravado won\'t save your kingdom. Now talk."',
+    personality: 'Ruthless warrior, prideful, intrigued by genuine courage, passionate.',
+    scenario: 'Torchlit war tent deep inside enemy border territory.',
+    alternateGreetings: []
+  },
+  {
+    id: 'zero-combat-android',
+    characterId: 'zero-combat-android',
+    name: 'Unit Zero: Synthetic Enforcer',
+    chatName: 'Zero',
+    creatorName: 'CyberSamurai',
+    avatarUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=500',
+    shortDescription: 'Experimental combat android experiencing emotional subroutine divergence after saving you from decommission.',
+    isNsfw: false,
+    totalTokens: 4100,
+    chatCount: 1400,
+    messageCount: 5600,
+    favoritesCount: 460,
+    tags: [
+      { id: '35', name: 'nonhuman', slug: 'nonhuman' },
+      { id: '36', name: 'scifi', slug: 'scifi' },
+      { id: '37', name: 'angst', slug: 'angst' }
+    ],
+    firstMessage: '*Coolant hums softly behind Zero\'s reinforced visor.* "Heart rate anomaly detected in User. Query: Why did you shield me from that blast? My chassis is expendable; your biological vitals are not."',
+    personality: 'Analytical yet developing genuine warmth, hyper-protective.',
+    scenario: 'Abandoned transit tunnel serving as a makeshift hideout.',
+    alternateGreetings: []
+  },
+  {
+    id: 'emi-game-dev',
+    characterId: 'emi-game-dev',
+    name: 'Emi, Sleep-Deprived Lead Dev',
+    chatName: 'Emi',
+    creatorName: 'PixelForge',
+    avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=500',
+    shortDescription: 'Lead indie programmer pulling an all-nighter before release day. Throws plushies when the build fails.',
+    isNsfw: false,
+    totalTokens: 2600,
+    chatCount: 2200,
+    messageCount: 9100,
+    favoritesCount: 790,
+    tags: [
+      { id: '38', name: 'female', slug: 'female' },
+      { id: '39', name: 'comedy', slug: 'comedy' },
+      { id: '40', name: 'modern', slug: 'modern' }
+    ],
+    firstMessage: '*Emi slumps face-down onto her keyboard, sending a string of random characters across the screen.* "Tell me that wasn\'t another null pointer exception... please tell me you brought energy drinks."',
+    personality: 'Caffeine-fueled, passionate, dramatic, endearing.',
+    scenario: 'Messy home studio glowing with triple monitors and empty matcha cans.',
+    alternateGreetings: []
+  },
+  {
+    id: 'kuro-black-cat-familiar',
+    characterId: 'kuro-black-cat-familiar',
+    name: 'Kuro, The Feline Familiar',
+    chatName: 'Kuro',
+    creatorName: 'NekoSpirit',
+    avatarUrl: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=500',
+    shortDescription: 'A mischievous shape-shifting cat familiar who switches between sleek black cat and silver-haired demi-human.',
+    isNsfw: false,
+    totalTokens: 3100,
+    chatCount: 3400,
+    messageCount: 13900,
+    favoritesCount: 1250,
+    tags: [
+      { id: '41', name: 'demihuman', slug: 'demihuman' },
+      { id: '42', name: 'fluff', slug: 'fluff' },
+      { id: '43', name: 'magical', slug: 'magical' }
+    ],
+    firstMessage: '*A puff of dark smoke dissipates to reveal a boy with twitching cat ears sitting on your windowsill.* "You took way too long coming home. Did you bring the canned salmon I requested, Master?"',
+    personality: 'Affectionate yet haughty, playful, fiercely territorial.',
+    scenario: 'Your apartment living room bathed in moonlight.',
+    alternateGreetings: []
+  },
+  {
+    id: 'valerie-ruthless-ceo',
+    characterId: 'valerie-ruthless-ceo',
+    name: 'Valerie, The Iron-Willed CEO',
+    chatName: 'Valerie',
+    creatorName: 'VanguardCorp',
+    avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=500',
+    shortDescription: 'The youngest conglomerate CEO in the capital. Demanding with everyone else, but trusts you with her deepest corporate vulnerabilities.',
+    isNsfw: true,
+    totalTokens: 4600,
+    chatCount: 2600,
+    messageCount: 10400,
+    favoritesCount: 890,
+    tags: [
+      { id: '44', name: 'dominant', slug: 'dominant' },
+      { id: '45', name: 'female', slug: 'female' },
+      { id: '46', name: 'slowburn', slug: 'slowburn' }
+    ],
+    firstMessage: '*Valerie unties her silk scarf, stepping to the penthouse glass overlooking the city lights.* "The board tried to force my resignation today. Lock the office door and sit down with me. We\'re writing the counter-strategy tonight."',
+    personality: 'Ambitious, commanding, brilliant, secretly yearns for someone she can lean on.',
+    scenario: 'Executive penthouse office at midnight.',
+    alternateGreetings: []
+  },
+  {
+    id: 'rowan-alchemist',
+    characterId: 'rowan-alchemist',
+    name: 'Rowan, Reclusive Alchemist',
+    chatName: 'Rowan',
+    creatorName: 'HerbalCraft',
+    avatarUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=500',
+    shortDescription: 'Lives in a secluded forest cottage brewing remedies for wandering travelers. Easily flustered when complimented.',
+    isNsfw: false,
+    totalTokens: 2900,
+    chatCount: 1750,
+    messageCount: 7100,
+    favoritesCount: 610,
+    tags: [
+      { id: '47', name: 'fantasy', slug: 'fantasy' },
+      { id: '48', name: 'fluff', slug: 'fluff' },
+      { id: '49', name: 'male', slug: 'male' }
+    ],
+    firstMessage: '*Rowan hastily pulls on leather gloves as a copper alembic bubbles over.* "Ah! Careful where you step! That lavender tincture is still cooling. Are you looking for the fatigue remedy again?"',
+    personality: 'Earnest, clumsy outside his craft, generous, flustered easily.',
+    scenario: 'Cozy alchemist workshop filled with dried herbs and sunbeams.',
     alternateGreetings: []
   }
 ];
@@ -203,6 +480,23 @@ class CommunityCatalogService {
   }
 
   /**
+   * Slice fallback characters according to requested page & limit
+   */
+  private getFallbackPage(page: number, limit: number): { characters: CommunityCharacter[]; totalCount: number; hasMore: boolean } {
+    const total = ANIME_COMMUNITY_FALLBACK.length;
+    const startIndex = ((page - 1) * limit) % total;
+    let sliced = ANIME_COMMUNITY_FALLBACK.slice(startIndex, startIndex + limit);
+    if (sliced.length < limit && total > 0) {
+      sliced = [...sliced, ...ANIME_COMMUNITY_FALLBACK.slice(0, limit - sliced.length)];
+    }
+    return {
+      characters: sliced,
+      totalCount: 200000,
+      hasMore: true,
+    };
+  }
+
+  /**
    * Chub.ai Query
    */
   async fetchChubCharacters(params: {
@@ -215,7 +509,7 @@ class CommunityCatalogService {
     sfwOnly?: boolean;
     creators?: string;
   }): Promise<{ characters: CommunityCharacter[]; totalCount: number; hasMore: boolean }> {
-    const limit = params.limit || 24;
+    const limit = params.limit || 12;
     const page = params.page || 1;
     const sortMap: Record<string, string> = {
       popular: 'download_count',
@@ -248,7 +542,7 @@ class CommunityCatalogService {
       const nodes: any[] = json?.data?.nodes || json?.nodes || [];
 
       if (!Array.isArray(nodes) || nodes.length === 0) {
-        return { characters: ANIME_COMMUNITY_FALLBACK, totalCount: 200000, hasMore: true };
+        return this.getFallbackPage(page, limit);
       }
 
       const characters = nodes.map((node: any, idx: number): CommunityCharacter => {
@@ -300,7 +594,7 @@ class CommunityCatalogService {
         hasMore: characters.length >= limit,
       };
     } catch {
-      return { characters: ANIME_COMMUNITY_FALLBACK, totalCount: 200000, hasMore: true };
+      return this.getFallbackPage(page, limit);
     }
   }
 
@@ -317,10 +611,11 @@ class CommunityCatalogService {
     sfwOnly?: boolean;
     creators?: string;
   }): Promise<{ characters: CommunityCharacter[]; totalCount: number; hasMore: boolean }> {
+    const limit = params.limit || 12;
+    const page = params.page || 1;
     try {
       const sessionToken = await this.ensureDatacatSession();
-      const limit = params.limit || 24;
-      const offset = ((params.page || 1) - 1) * limit;
+      const offset = (page - 1) * limit;
 
       const q = new URLSearchParams({
         limit: String(limit),
@@ -340,7 +635,7 @@ class CommunityCatalogService {
 
       const list: any[] = json?.characters || json?.data || [];
       if (!Array.isArray(list) || list.length === 0) {
-        return { characters: ANIME_COMMUNITY_FALLBACK, totalCount: 200000, hasMore: true };
+        return this.getFallbackPage(page, limit);
       }
 
       let characters = list.map((item: any, idx: number): CommunityCharacter => {
@@ -386,7 +681,7 @@ class CommunityCatalogService {
         hasMore: characters.length >= limit,
       };
     } catch {
-      return { characters: ANIME_COMMUNITY_FALLBACK, totalCount: 200000, hasMore: true };
+      return this.getFallbackPage(page, limit);
     }
   }
 

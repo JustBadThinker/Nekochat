@@ -25,10 +25,10 @@ export const StoryTray: React.FC<StoryTrayProps> = ({
     <View style={styles.container}>
       <View style={styles.headerRow}>
         <View style={styles.headerTitleContainer}>
-          <Flame size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
+          <Flame size={15} color="#d4ff00" style={{ marginRight: 6 }} />
           <Text style={styles.headerTitle}>Trending 24h</Text>
         </View>
-        <Text style={styles.headerBadge}>Stories</Text>
+        <Text style={styles.headerBadge}>Top 5</Text>
       </View>
 
       <ScrollView

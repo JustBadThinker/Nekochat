@@ -357,8 +357,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   pillSelected: {
-    backgroundColor: '#9333ea',
-    borderColor: '#c084fc',
+    backgroundColor: '#d4ff00',
+    borderColor: '#d4ff00',
   },
   pillText: {
     fontSize: 11,
@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
   },
   pillTextSelected: {
-    color: '#FFFFFF',
+    color: '#000000',
     fontWeight: '700',
   },
   footer: {
@@ -401,15 +401,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 11,
     borderRadius: 10,
-    backgroundColor: '#9333ea',
-    shadowColor: '#9333ea',
+    backgroundColor: '#d4ff00',
+    shadowColor: '#d4ff00',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.4,
     shadowRadius: 5,
   },
   applyBtnText: {
     fontSize: 12.5,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontWeight: '800',
+    color: '#000000',
   },
 });
+

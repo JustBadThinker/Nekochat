@@ -11,15 +11,12 @@ import {
   Image,
   TouchableOpacity,
   StyleSheet,
-  Dimensions,
+  useWindowDimensions,
   Modal,
   TouchableWithoutFeedback,
 } from 'react-native';
 import { X, Heart, MessageCircle } from 'lucide-react-native';
 import { Character } from '../types';
-
-const { width: windowWidth } = Dimensions.get('window');
-const effectiveWidth = Math.min(windowWidth, 480);
 
 interface StoryViewerModalProps {
   visible: boolean;
@@ -152,7 +149,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
                 }}
                 activeOpacity={0.8}
               >
-                <MessageCircle size={16} color="#FFFFFF" fill="#FFFFFF" style={{ marginRight: 8 }} />
+                <MessageCircle size={16} color="#000000" fill="#000000" style={{ marginRight: 8 }} />
                 <Text style={styles.chatCTAText}>Start Chat</Text>
               </TouchableOpacity>
             </View>
@@ -173,7 +170,7 @@ const styles = StyleSheet.create({
   storyContainer: {
     flex: 1,
     width: '100%',
-    maxWidth: effectiveWidth,
+    maxWidth: 480,
     height: '100%',
     backgroundColor: '#050608',
     position: 'relative',
@@ -306,16 +303,18 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.25)',
+    backgroundColor: '#d4ff00',
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    shadowColor: '#d4ff00',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 5,
   },
   chatCTAText: {
-    color: '#FFFFFF',
+    color: '#000000',
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
   },
 });

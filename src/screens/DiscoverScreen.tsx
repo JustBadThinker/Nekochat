@@ -1,7 +1,12 @@
 /**
  * DiscoverScreen.tsx
- * Strictly ported from Warden AI (c:\Users\kanto\Documents\Work\Apps\Wardenai\src\views\DiscoverView.tsx)
- * Matches Gambar 2 (Discover Screen) and Gambar 3 (Community Character Modal) with 100% fidelity.
+ * Bento-OLED Redesign for NekoChat (Pure React Native)
+ * Features:
+ * 1. Top Switcher: [ 🗂️ Catalog Grid ] | [ 🔥 Match Mode ]
+ * 2. 18 Canonical Community Tags with Filter Drawer & Expand
+ * 3. 2-Column Bento Grid with NekoChat Acid Lime (#d4ff00) Identity
+ * 4. True Infinite Scroll Engine (auto-loads more cards on reach bottom)
+ * 5. Community Character Modal & Tinder-Style Match Deck
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -22,8 +27,6 @@ import {
   SlidersHorizontal,
   X,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Sparkles,
   Download,
   Heart,
@@ -35,12 +38,16 @@ import {
   EyeOff,
   Users,
   CheckCircle2,
-  AlertCircle,
+  Flame,
+  LayoutGrid,
+  Menu,
+  Bell,
 } from 'lucide-react-native';
 import { Character, CommunityCharacter, CommunityCharacterDetail } from '../types';
 import { CommunityCharacterCard } from '../components/CommunityCharacterCard';
 import { CommunityCharacterModal } from '../components/CommunityCharacterModal';
 import { TagFilterDrawerModal } from '../components/TagFilterDrawerModal';
+import { TinderDeck } from '../components/TinderDeck';
 import {
   communityCatalogService,
   POPULAR_COMMUNITY_CATEGORIES,
@@ -55,6 +62,7 @@ interface DiscoverScreenProps {
   onImportCard?: (character: any) => void;
 }
 
+type TopMode = 'catalog' | 'match';
 type DiscoverTab = 'community' | 'library';
 type EntityMode = 'characters' | 'creators';
 type ScopeMode = 'all' | 'following' | 'favorites';
@@ -67,17 +75,20 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   onToggleFavorite,
   onImportCard,
 }) => {
-  // Main view tab: Explore All vs My Library
+  // Top Primary Switcher: Catalog Grid vs Match Mode
+  const [topMode, setTopMode] = useState<TopMode>('catalog');
+
+  // Sub-tabs in Catalog Grid
   const [activeTab, setActiveTab] = useState<DiscoverTab>('community');
   const [catalogSource, setCatalogSource] = useState<CatalogSource>('janitor');
 
-  // Community State
+  // Community Catalog State
   const [communityCharacters, setCommunityCharacters] = useState<CommunityCharacter[]>(ANIME_COMMUNITY_FALLBACK);
   const [communityTotalCount, setCommunityTotalCount] = useState<number>(214520);
   const [communityLoading, setCommunityLoading] = useState<boolean>(false);
-  const [communityError, setCommunityError] = useState<string | null>(null);
+  const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
 
-  // Segmented Controls State (Matches Gambar 2)
+  // Segmented Controls State
   const [entityMode, setEntityMode] = useState<EntityMode>('characters');
   const [sfwOnly, setSfwOnly] = useState<boolean>(false);
   const [scopeMode, setScopeMode] = useState<ScopeMode>('all');
@@ -90,12 +101,12 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   const [communitySearch, setCommunitySearch] = useState<string>('');
   const [selectedCategoryValues, setSelectedCategoryValues] = useState<string[]>(['all']);
 
-  // Drawer & Modals
+  // Modals & Drawers
   const [isTagDrawerOpen, setIsTagDrawerOpen] = useState<boolean>(false);
   const [selectedCommunityChar, setSelectedCommunityChar] = useState<CommunityCharacter | null>(null);
   const [sortDropdownOpen, setSortDropdownOpen] = useState<boolean>(false);
 
-  // Followed Creators & Favorites
+  // Social State
   const [followedCreators, setFollowedCreators] = useState<string[]>([]);
   const [favoriteCharacters, setFavoriteCharacters] = useState<CommunityCharacter[]>([]);
 
@@ -120,10 +131,16 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
     } catch {}
   };
 
-  // Fetch Characters
-  const fetchCommunityCharacters = async (page = 1, forceRefresh = false) => {
+  // Initial Fetch on filter changes
+  useEffect(() => {
+    if (activeTab === 'community') {
+      setCurrentPage(1);
+      fetchCharactersInitial(1);
+    }
+  }, [communitySearch, selectedCategoryValues, communitySort, catalogSource, sfwOnly, activeTab]);
+
+  const fetchCharactersInitial = async (page = 1) => {
     setCommunityLoading(true);
-    setCommunityError(null);
     try {
       if (catalogSource === 'janitor') {
         const activeCat = POPULAR_COMMUNITY_CATEGORIES.find(c => selectedCategoryValues.includes(c.value) && c.tagId);
@@ -131,7 +148,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           search: communitySearch,
           tagIds: activeCat ? activeCat.tagId : undefined,
           page,
-          limit: 24,
+          limit: 12,
           sort: communitySort,
           sfwOnly,
         });
@@ -143,29 +160,67 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           search: communitySearch,
           tag: activeTag,
           page,
-          limit: 24,
+          limit: 12,
           sort: communitySort,
           sfwOnly,
         });
         setCommunityCharacters(res.characters.length > 0 ? res.characters : ANIME_COMMUNITY_FALLBACK);
         setCommunityTotalCount(res.totalCount);
       }
-    } catch (err: any) {
+    } catch {
       setCommunityCharacters(ANIME_COMMUNITY_FALLBACK);
-      setCommunityTotalCount(214520);
     } finally {
       setCommunityLoading(false);
     }
   };
 
-  useEffect(() => {
-    if (activeTab === 'community') {
-      fetchCommunityCharacters(currentPage);
+  // True Infinite Scroll Handler (Triggered on End Reached)
+  const handleLoadMore = async () => {
+    if (communityLoading || isLoadingMore || scopeMode === 'favorites') return;
+    setIsLoadingMore(true);
+    const nextPage = currentPage + 1;
+    try {
+      let newChars: CommunityCharacter[] = [];
+      if (catalogSource === 'janitor') {
+        const activeCat = POPULAR_COMMUNITY_CATEGORIES.find(c => selectedCategoryValues.includes(c.value) && c.tagId);
+        const res = await communityCatalogService.fetchDatacatCharacters({
+          search: communitySearch,
+          tagIds: activeCat ? activeCat.tagId : undefined,
+          page: nextPage,
+          limit: 12,
+          sort: communitySort,
+          sfwOnly,
+        });
+        newChars = res.characters;
+      } else {
+        const activeTag = selectedCategoryValues.includes('all') ? undefined : selectedCategoryValues[0];
+        const res = await communityCatalogService.fetchChubCharacters({
+          search: communitySearch,
+          tag: activeTag,
+          page: nextPage,
+          limit: 12,
+          sort: communitySort,
+          sfwOnly,
+        });
+        newChars = res.characters;
+      }
+
+      if (newChars.length > 0) {
+        setCommunityCharacters(prev => {
+          const existingIds = new Set(prev.map(c => c.id));
+          const uniqueNew = newChars.filter(c => !existingIds.has(c.id));
+          return uniqueNew.length > 0 ? [...prev, ...uniqueNew] : [...prev, ...newChars];
+        });
+        setCurrentPage(nextPage);
+      }
+    } catch {
+      // Graceful fallback loop if network drops
+    } finally {
+      setIsLoadingMore(false);
     }
-  }, [communitySearch, selectedCategoryValues, communitySort, catalogSource, sfwOnly, currentPage, activeTab]);
+  };
 
   const handleToggleCategory = (val: string) => {
-    setCurrentPage(1);
     if (val === 'all') {
       setSelectedCategoryValues(['all']);
       return;
@@ -176,13 +231,12 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         const next = withoutAll.filter(c => c !== val);
         return next.length === 0 ? ['all'] : next;
       } else {
-        return [val]; // Single active tag for sharp filtering
+        return [val];
       }
     });
   };
 
   const handleSearchSubmit = () => {
-    setCurrentPage(1);
     setCommunitySearch(communitySearchInput.trim());
   };
 
@@ -240,10 +294,9 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
     return Array.from(map.values());
   }, [communityCharacters, followedCreators]);
 
-  // Filter based on scope
   const displayedCharacters = useMemo(() => {
     if (scopeMode === 'favorites') {
-      return favoriteCharacters.length > 0 ? favoriteCharacters : communityCharacters.slice(0, 2);
+      return favoriteCharacters.length > 0 ? favoriteCharacters : communityCharacters.slice(0, 4);
     }
     if (scopeMode === 'following') {
       if (followedCreators.length === 0) return [];
@@ -255,31 +308,108 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
     return communityCharacters;
   }, [communityCharacters, scopeMode, favoriteCharacters, followedCreators]);
 
-  const totalPages = Math.max(1, Math.min(295, Math.ceil(communityTotalCount / 24)));
+  // If in Match Mode, render the Tinder-style Deck
+  if (topMode === 'match') {
+    return (
+      <TinderDeck
+        characters={communityCharacters as any}
+        onBack={() => setTopMode('catalog')}
+        onMatchChat={onStartChat}
+        onToggleFavorite={onToggleFavorite as any}
+      />
+    );
+  }
 
   return (
     <View style={styles.container}>
       {/* ── Toast Notification ── */}
       {toastMessage && (
         <View style={styles.toastBox}>
-          <Sparkles size={14} color="#d8b4fe" style={{ marginRight: 6 }} />
+          <Sparkles size={14} color="#d4ff00" style={{ marginRight: 6 }} />
           <Text style={styles.toastText}>{toastMessage}</Text>
         </View>
       )}
 
       {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* 1. TOP SUB-HEADER TOOLBAR (Matches Gambar 2)                       */}
+      {/* 0. BRAND HEADER (Matches Warden AI Image 5 Header Hierarchy)       */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      <View style={styles.topBrandHeader}>
+        <View style={styles.brandLeft}>
+          <TouchableOpacity style={styles.brandIconBtn} activeOpacity={0.7}>
+            <Menu size={18} color="#FFFFFF" />
+          </TouchableOpacity>
+          <View style={styles.brandTitleWrap}>
+            <Text style={styles.brandTitleText}>NekoChat</Text>
+            <View style={styles.brandDotLime} />
+          </View>
+        </View>
+
+        <View style={styles.brandRight}>
+          <TouchableOpacity
+            style={styles.brandIconBtn}
+            activeOpacity={0.7}
+            onPress={() => {
+              // Focus search
+            }}
+          >
+            <Search size={16} color="#9ca3af" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.brandIconBtn} activeOpacity={0.7}>
+            <Bell size={16} color="#9ca3af" />
+            <View style={styles.bellUnreadDot} />
+          </TouchableOpacity>
+
+          <View style={styles.profileAvatarCircle}>
+            <Text style={styles.profileAvatarLetter}>N</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {/* 1. TOP PRIMARY SWITCHER: [ 🗂️ Catalog Grid ] | [ 🔥 Match Mode ]  */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      <View style={styles.topPrimaryBar}>
+        <View style={styles.topPrimaryPill}>
+          <TouchableOpacity
+            style={[styles.topPrimaryBtn, topMode === 'catalog' && styles.topPrimaryBtnActive]}
+            onPress={() => setTopMode('catalog')}
+            activeOpacity={0.8}
+          >
+            <LayoutGrid size={13} color={topMode === 'catalog' ? '#000000' : '#FFFFFF'} style={{ marginRight: 5 }} />
+            <Text style={[styles.topPrimaryBtnText, topMode === 'catalog' && styles.topPrimaryBtnTextActive]}>
+              Catalog Grid
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.topPrimaryBtn, topMode === 'match' && styles.topPrimaryBtnActive]}
+            onPress={() => setTopMode('match')}
+            activeOpacity={0.8}
+          >
+            <Flame size={13} color={topMode === 'match' ? '#000000' : '#d4ff00'} style={{ marginRight: 5 }} />
+            <Text style={[styles.topPrimaryBtnText, topMode === 'match' && styles.topPrimaryBtnTextActive]}>
+              Match Mode
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {/* 2. SUB-HEADER TOOLBAR: Explore All vs My Library & Sources         */}
       {/* ══════════════════════════════════════════════════════════════════ */}
       <View style={styles.subHeader}>
-        {/* Left: View Switcher (Explore All vs My Library) */}
+        {/* Left: Explore vs Library */}
         <View style={styles.viewSwitcher}>
           <TouchableOpacity
             style={[styles.viewTabBtn, activeTab === 'community' && styles.viewTabBtnActive]}
             onPress={() => setActiveTab('community')}
             activeOpacity={0.8}
           >
-            <Compass size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
-            <Text style={styles.viewTabBtnText}>Explore All</Text>
+            <Compass size={13} color={activeTab === 'community' ? '#000000' : '#FFFFFF'} style={{ marginRight: 5 }} />
+            <Text style={[styles.viewTabBtnText, activeTab === 'community' && styles.viewTabBtnTextActive]}>
+              Explore All
+            </Text>
             <View style={styles.greenPulseDot} />
           </TouchableOpacity>
 
@@ -288,8 +418,8 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             onPress={() => setActiveTab('library')}
             activeOpacity={0.8}
           >
-            <Bookmark size={13} color="#9ca3af" style={{ marginRight: 5 }} />
-            <Text style={[styles.viewTabBtnText, activeTab !== 'library' && { color: '#9ca3af' }]}>
+            <Bookmark size={13} color={activeTab === 'library' ? '#000000' : '#9ca3af'} style={{ marginRight: 5 }} />
+            <Text style={[styles.viewTabBtnText, activeTab === 'library' ? styles.viewTabBtnTextActive : { color: '#9ca3af' }]}>
               My Library
             </Text>
             <View style={styles.libraryCountPill}>
@@ -298,11 +428,10 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        {/* Right: Actions */}
+        {/* Right: JanitorAI | Chub.ai toggle & Actions */}
         <View style={styles.subHeaderRight}>
           {activeTab === 'community' && (
             <>
-              {/* JanitorAI | Chub.ai Pill Switch */}
               <View style={styles.sourcePillSwitch}>
                 <TouchableOpacity
                   style={[styles.sourcePillBtn, catalogSource === 'janitor' && styles.sourcePillBtnActive]}
@@ -341,24 +470,13 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                 </TouchableOpacity>
               </View>
 
-              {/* Import PNG Card Button */}
               <TouchableOpacity
                 style={styles.iconBtn}
-                onPress={() => showToast('Importing custom character...')}
-                activeOpacity={0.7}
-                title="Upload PNG Card"
-              >
-                <Download size={14} color="#d8b4fe" />
-              </TouchableOpacity>
-
-              {/* Refresh Feed Button */}
-              <TouchableOpacity
-                style={styles.iconBtn}
-                onPress={() => fetchCommunityCharacters(currentPage, true)}
+                onPress={() => fetchCharactersInitial(1)}
                 activeOpacity={0.7}
                 title="Refresh Catalog Feed"
               >
-                <RefreshCw size={14} color="#9ca3af" />
+                <RefreshCw size={13} color="#9ca3af" />
               </TouchableOpacity>
             </>
           )}
@@ -366,14 +484,14 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       </View>
 
       {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* 2. SEARCH BAR WITH ENTER BADGE (Matches Gambar 2)                  */}
+      {/* 3. SEARCH BAR WITH KEYBOARD BADGE                                  */}
       {/* ══════════════════════════════════════════════════════════════════ */}
       <View style={styles.searchContainer}>
         <View style={styles.searchBarWrapper}>
           <Search size={15} color="#9ca3af" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search characters, tags, or @creator (e.g. #slowburn, #romance, @...)"
+            placeholder="Search anime companions, tags, tropes (@creator)..."
             placeholderTextColor="#6b7280"
             value={communitySearchInput}
             onChangeText={setCommunitySearchInput}
@@ -400,20 +518,18 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       </View>
 
       {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* 3. TAG STRIP WITH 18 POPULAR TAGS & EXPAND [⌵] (Matches Gambar 2)  */}
+      {/* 4. 18 CANONICAL TAG STRIP + DRAWER [🎛️] & EXPAND [⌵]               */}
       {/* ══════════════════════════════════════════════════════════════════ */}
       <View style={styles.tagStripContainer}>
-        {/* SlidersHorizontal [🎛️] Drawer Toggle */}
         <TouchableOpacity
           style={styles.tagDrawerBtn}
           onPress={() => setIsTagDrawerOpen(true)}
           activeOpacity={0.7}
-          title="Open Full Category Filter Drawer"
+          title="Filter Drawer"
         >
-          <SlidersHorizontal size={14} color="#c084fc" />
+          <SlidersHorizontal size={14} color="#d4ff00" />
         </TouchableOpacity>
 
-        {/* Horizontal or Wrapped Tags */}
         <ScrollView
           horizontal={!tagsExpanded}
           showsHorizontalScrollIndicator={false}
@@ -421,18 +537,11 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         >
           {POPULAR_COMMUNITY_CATEGORIES.map((chip, idx) => {
             const isSelected = selectedCategoryValues.includes(chip.value);
-            // Border tint variants matching Warden AI
-            const borderColors = ['#3b3454', '#2b4c59', '#52344e', '#364f3e'];
-            const textColors = ['#e9d5ff', '#a5f3fc', '#fbcfe8', '#a7f3d0'];
-            const tintBorder = borderColors[idx % borderColors.length];
-            const tintText = textColors[idx % textColors.length];
-
             return (
               <TouchableOpacity
                 key={chip.value}
                 style={[
                   styles.communityTagChip,
-                  { borderColor: tintBorder },
                   isSelected && styles.communityTagChipActive,
                 ]}
                 onPress={() => handleToggleCategory(chip.value)}
@@ -441,7 +550,6 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                 <Text
                   style={[
                     styles.communityTagText,
-                    { color: tintText },
                     isSelected && styles.communityTagTextActive,
                   ]}
                 >
@@ -452,7 +560,6 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           })}
         </ScrollView>
 
-        {/* Expand / Collapse Chevron [⌵] */}
         <TouchableOpacity
           style={styles.expandChevronBtn}
           onPress={() => setTagsExpanded(prev => !prev)}
@@ -467,10 +574,9 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       </View>
 
       {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* 4. SEGMENTED FILTER PILLS (Matches Gambar 2)                       */}
+      {/* 5. SEGMENTED FILTER PILLS (Characters | Creators & All | Limited) */}
       {/* ══════════════════════════════════════════════════════════════════ */}
       <View style={styles.filterPillsRow}>
-        {/* Group 1: Characters | Creators */}
         <View style={styles.pillGroup}>
           <TouchableOpacity
             style={[styles.pillSegment, entityMode === 'characters' && styles.pillSegmentActive]}
@@ -503,17 +609,13 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        {/* Group 2: All | Limited Only (SFW) */}
         <View style={styles.pillGroup}>
           <TouchableOpacity
             style={[styles.pillSegment, !sfwOnly && styles.pillSegmentActive]}
-            onPress={() => {
-              setSfwOnly(false);
-              setCurrentPage(1);
-            }}
+            onPress={() => setSfwOnly(false)}
             activeOpacity={0.8}
           >
-            <Eye size={12} color={!sfwOnly ? '#FFFFFF' : '#9ca3af'} style={{ marginRight: 4 }} />
+            <Eye size={12} color={!sfwOnly ? '#000000' : '#9ca3af'} style={{ marginRight: 4 }} />
             <Text style={[styles.pillSegmentText, !sfwOnly && styles.pillSegmentTextActive]}>
               All
             </Text>
@@ -521,13 +623,10 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
 
           <TouchableOpacity
             style={[styles.pillSegment, sfwOnly && styles.pillSegmentActive]}
-            onPress={() => {
-              setSfwOnly(true);
-              setCurrentPage(1);
-            }}
+            onPress={() => setSfwOnly(true)}
             activeOpacity={0.8}
           >
-            <EyeOff size={12} color={sfwOnly ? '#FFFFFF' : '#9ca3af'} style={{ marginRight: 4 }} />
+            <EyeOff size={12} color={sfwOnly ? '#000000' : '#9ca3af'} style={{ marginRight: 4 }} />
             <Text style={[styles.pillSegmentText, sfwOnly && styles.pillSegmentTextActive]}>
               Limited Only
             </Text>
@@ -535,18 +634,15 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         </View>
       </View>
 
-      {/* Scope Selector: All | Following (3) | Favorites */}
+      {/* Scope: All | Following | Favorites */}
       <View style={styles.scopeRow}>
         <View style={styles.pillGroupFull}>
           <TouchableOpacity
             style={[styles.pillSegment, scopeMode === 'all' && styles.pillSegmentActive]}
-            onPress={() => {
-              setScopeMode('all');
-              setCurrentPage(1);
-            }}
+            onPress={() => setScopeMode('all')}
             activeOpacity={0.8}
           >
-            <Globe size={12} color={scopeMode === 'all' ? '#FFFFFF' : '#9ca3af'} style={{ marginRight: 4 }} />
+            <Globe size={12} color={scopeMode === 'all' ? '#000000' : '#9ca3af'} style={{ marginRight: 4 }} />
             <Text style={[styles.pillSegmentText, scopeMode === 'all' && styles.pillSegmentTextActive]}>
               All
             </Text>
@@ -554,13 +650,10 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
 
           <TouchableOpacity
             style={[styles.pillSegment, scopeMode === 'following' && styles.pillSegmentActive]}
-            onPress={() => {
-              setScopeMode('following');
-              setCurrentPage(1);
-            }}
+            onPress={() => setScopeMode('following')}
             activeOpacity={0.8}
           >
-            <Users size={12} color={scopeMode === 'following' ? '#FFFFFF' : '#9ca3af'} style={{ marginRight: 4 }} />
+            <Users size={12} color={scopeMode === 'following' ? '#000000' : '#9ca3af'} style={{ marginRight: 4 }} />
             <Text style={[styles.pillSegmentText, scopeMode === 'following' && styles.pillSegmentTextActive]}>
               Following {followedCreators.length > 0 ? `(${followedCreators.length})` : ''}
             </Text>
@@ -568,13 +661,10 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
 
           <TouchableOpacity
             style={[styles.pillSegment, scopeMode === 'favorites' && styles.pillSegmentActive]}
-            onPress={() => {
-              setScopeMode('favorites');
-              setCurrentPage(1);
-            }}
+            onPress={() => setScopeMode('favorites')}
             activeOpacity={0.8}
           >
-            <Heart size={12} color={scopeMode === 'favorites' ? '#FFFFFF' : '#9ca3af'} style={{ marginRight: 4 }} />
+            <Heart size={12} color={scopeMode === 'favorites' ? '#000000' : '#9ca3af'} style={{ marginRight: 4 }} />
             <Text style={[styles.pillSegmentText, scopeMode === 'favorites' && styles.pillSegmentTextActive]}>
               Favorites
             </Text>
@@ -582,82 +672,26 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         </View>
       </View>
 
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* 5. SORT DROPDOWN, COUNTER & PAGINATION (Matches Gambar 2)           */}
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      <View style={styles.sortPaginationRow}>
-        {/* Sort Pill Dropdown */}
+      {/* Count & Sort Row */}
+      <View style={styles.sortCountRow}>
         <TouchableOpacity
           style={styles.sortDropdownBtn}
           onPress={() => setSortDropdownOpen(prev => !prev)}
           activeOpacity={0.8}
         >
           <Text style={styles.sortDropdownText}>
-            {communitySort === 'latest' ? 'Latest' : communitySort === 'trending' ? 'Trending' : 'Popular'}
+            {communitySort === 'latest' ? '✨ Latest' : communitySort === 'trending' ? '🔥 Trending' : '❤️ Popular'}
           </Text>
-          <ChevronDown size={13} color="#9ca3af" style={{ marginLeft: 4 }} />
+          <ChevronDown size={12} color="#9ca3af" style={{ marginLeft: 4 }} />
         </TouchableOpacity>
 
-        {/* Count Badge */}
         <View style={styles.countBadge}>
           <Text style={styles.countBadgeText}>
-            {scopeMode === 'all' && !communitySearch && selectedCategoryValues.includes('all')
-              ? '200,000+ characters'
-              : `${communityTotalCount.toLocaleString()} characters`}
+            {displayedCharacters.length} companions loaded • Infinite Scroll
           </Text>
-        </View>
-
-        {/* Numbered Pagination: < 1 2 3 4 5 ... 295 > */}
-        <View style={styles.paginationGroup}>
-          <TouchableOpacity
-            style={[styles.pageBtn, currentPage <= 1 && styles.pageBtnDisabled]}
-            disabled={currentPage <= 1 || communityLoading}
-            onPress={() => setCurrentPage(p => Math.max(1, p - 1))}
-            activeOpacity={0.7}
-          >
-            <ChevronLeft size={13} color="#9ca3af" />
-          </TouchableOpacity>
-
-          {[1, 2, 3, 4, 5].map(pageNum => (
-            <TouchableOpacity
-              key={pageNum}
-              style={[styles.pageNumberBtn, pageNum === currentPage && styles.pageNumberBtnActive]}
-              onPress={() => setCurrentPage(pageNum)}
-              activeOpacity={0.8}
-            >
-              <Text
-                style={[
-                  styles.pageNumberText,
-                  pageNum === currentPage && styles.pageNumberTextActive,
-                ]}
-              >
-                {pageNum}
-              </Text>
-            </TouchableOpacity>
-          ))}
-
-          <Text style={styles.pageEllipsis}>...</Text>
-
-          <TouchableOpacity
-            style={styles.pageNumberBtn}
-            onPress={() => setCurrentPage(totalPages)}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.pageNumberText}>{totalPages}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.pageBtn, currentPage >= totalPages && styles.pageBtnDisabled]}
-            disabled={currentPage >= totalPages || communityLoading}
-            onPress={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-            activeOpacity={0.7}
-          >
-            <ChevronRight size={13} color="#9ca3af" />
-          </TouchableOpacity>
         </View>
       </View>
 
-      {/* Sort Dropdown Menu */}
       {sortDropdownOpen && (
         <View style={styles.sortDropdownMenu}>
           {(['latest', 'trending', 'popular'] as CatalogSort[]).map(s => (
@@ -667,7 +701,6 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
               onPress={() => {
                 setCommunitySort(s);
                 setSortDropdownOpen(false);
-                setCurrentPage(1);
               }}
               activeOpacity={0.8}
             >
@@ -684,34 +717,15 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         </View>
       )}
 
-      {/* Active Filter Clear Notice */}
-      {communitySearch ? (
-        <View style={styles.activeFilterNotice}>
-          <Text style={styles.activeFilterText}>
-            Filtering by: <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>"{communitySearch}"</Text>
-          </Text>
-          <TouchableOpacity
-            onPress={() => {
-              setCommunitySearch('');
-              setCommunitySearchInput('');
-              setCurrentPage(1);
-            }}
-          >
-            <Text style={styles.clearFilterText}>Clear</Text>
-          </TouchableOpacity>
-        </View>
-      ) : null}
-
       {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* 6. MAIN CONTENT: 2-COLUMN BENTO GRID OR CREATORS VIEW (Gambar 2)   */}
+      {/* 6. MAIN CONTENT: 2-COLUMN BENTO GRID WITH TRUE INFINITE SCROLL     */}
       {/* ══════════════════════════════════════════════════════════════════ */}
       {communityLoading ? (
         <View style={styles.loaderBox}>
-          <ActivityIndicator size="large" color="#9333ea" />
-          <Text style={styles.loaderText}>Loading community catalog...</Text>
+          <ActivityIndicator size="large" color="#d4ff00" />
+          <Text style={styles.loaderText}>Loading NekoChat companions...</Text>
         </View>
       ) : entityMode === 'creators' ? (
-        /* CREATORS VIEW */
         <ScrollView contentContainerStyle={styles.creatorsList}>
           {creatorProfiles.map(creator => {
             const isFollowing = followedCreators.some(
@@ -724,7 +738,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                   <View style={styles.creatorInfoCol}>
                     <View style={styles.creatorNameRow}>
                       <Text style={styles.creatorCardName}>@{creator.creatorName}</Text>
-                      <CheckCircle2 size={13} color="#a855f7" style={{ marginLeft: 3 }} />
+                      <CheckCircle2 size={13} color="#d4ff00" style={{ marginLeft: 3 }} />
                     </View>
                     <Text style={styles.creatorBotCount}>{creator.botCount}+ public companions</Text>
                   </View>
@@ -734,7 +748,12 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                     onPress={() => handleToggleFollowCreator(creator.creatorName, creator.avatarUrl)}
                     activeOpacity={0.8}
                   >
-                    <Text style={styles.creatorFollowBtnText}>
+                    <Text
+                      style={[
+                        styles.creatorFollowBtnText,
+                        isFollowing && styles.creatorFollowBtnTextActive,
+                      ]}
+                    >
                       {isFollowing ? 'Following' : '+ Follow'}
                     </Text>
                   </TouchableOpacity>
@@ -753,7 +772,6 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                     setScopeMode('all');
                     setCommunitySearchInput(creator.creatorName);
                     setCommunitySearch(creator.creatorName);
-                    setCurrentPage(1);
                   }}
                   activeOpacity={0.8}
                 >
@@ -766,13 +784,14 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           })}
         </ScrollView>
       ) : (
-        /* CHARACTERS VIEW: STRICTLY 2-COLUMN BENTO GRID */
         <FlatList
           data={displayedCharacters}
           keyExtractor={item => item.id}
           numColumns={2}
           columnWrapperStyle={styles.twoColumnWrapper}
           contentContainerStyle={styles.cardsContainer}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.5}
           renderItem={({ item }) => (
             <CommunityCharacterCard
               character={item}
@@ -793,7 +812,6 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
               onCreatorClick={cName => {
                 setCommunitySearchInput(cName);
                 setCommunitySearch(cName);
-                setCurrentPage(1);
               }}
               onTagClick={(tagId, tagName) => {
                 const matchedCat = POPULAR_COMMUNITY_CATEGORIES.find(c => c.tagId === tagId);
@@ -802,11 +820,18 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                 } else {
                   setCommunitySearchInput(tagName);
                   setCommunitySearch(tagName);
-                  setCurrentPage(1);
                 }
               }}
             />
           )}
+          ListFooterComponent={
+            isLoadingMore ? (
+              <View style={styles.footerLoader}>
+                <ActivityIndicator size="small" color="#d4ff00" />
+                <Text style={styles.footerLoaderText}>Streaming more characters...</Text>
+              </View>
+            ) : null
+          }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Sparkles size={28} color="#9ca3af" style={{ marginBottom: 10 }} />
@@ -830,7 +855,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       )}
 
       {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* 7. COMMUNITY CHARACTER MODAL (Matches Gambar 3)                    */}
+      {/* 7. COMMUNITY CHARACTER DETAIL MODAL                                */}
       {/* ══════════════════════════════════════════════════════════════════ */}
       <CommunityCharacterModal
         character={selectedCommunityChar}
@@ -849,7 +874,6 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           setSelectedCommunityChar(null);
           setCommunitySearchInput(tagName);
           setCommunitySearch(tagName);
-          setCurrentPage(1);
         }}
       />
 
@@ -862,7 +886,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         selectedTagSlugs={selectedCategoryValues}
         onToggleTag={slug => handleToggleCategory(slug)}
         onClearTags={() => setSelectedCategoryValues(['all'])}
-        onApply={() => fetchCommunityCharacters(1)}
+        onApply={() => fetchCharactersInitial(1)}
         matchingCount={communityTotalCount}
       />
     </View>
@@ -872,7 +896,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a0b0e',
+    backgroundColor: '#000000',
   },
   toastBox: {
     position: 'absolute',
@@ -883,13 +907,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(30, 16, 50, 0.96)',
+    backgroundColor: 'rgba(20, 24, 15, 0.96)',
     borderWidth: 1,
-    borderColor: 'rgba(168, 85, 247, 0.5)',
+    borderColor: '#d4ff00',
     borderRadius: 14,
     paddingVertical: 9,
     paddingHorizontal: 14,
-    shadowColor: '#9333ea',
+    shadowColor: '#d4ff00',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.5,
     shadowRadius: 10,
@@ -897,63 +921,174 @@ const styles = StyleSheet.create({
   toastText: {
     fontSize: 11.5,
     fontWeight: '700',
-    color: '#e9d5ff',
+    color: '#d4ff00',
+  },
+  topBrandHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingTop: Platform.OS === 'ios' ? 44 : 10,
+    paddingBottom: 8,
+    backgroundColor: '#000000',
+    borderBottomWidth: 1,
+    borderBottomColor: '#121622',
+  },
+  brandLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  brandIconBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#0f121d',
+    borderWidth: 1,
+    borderColor: '#1e2436',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  brandTitleWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  brandTitleText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.3,
+  },
+  brandDotLime: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#d4ff00',
+    marginLeft: 5,
+  },
+  brandRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  bellUnreadDot: {
+    position: 'absolute',
+    top: 6,
+    right: 7,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#d4ff00',
+  },
+  profileAvatarCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#1b1a2e',
+    borderWidth: 1.5,
+    borderColor: '#d4ff00',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileAvatarLetter: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#d4ff00',
+  },
+  topPrimaryBar: {
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#161a26',
+    backgroundColor: '#000000',
+  },
+  topPrimaryPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f121d',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#1e2436',
+    padding: 3,
+  },
+  topPrimaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 6.5,
+    borderRadius: 18,
+  },
+  topPrimaryBtnActive: {
+    backgroundColor: '#d4ff00',
+    shadowColor: '#d4ff00',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+  },
+  topPrimaryBtnText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#9ca3af',
+  },
+  topPrimaryBtnTextActive: {
+    color: '#000000',
+    fontWeight: '800',
   },
   subHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderBottomWidth: 1,
-    borderBottomColor: '#1b1e28',
-    backgroundColor: '#0c0e14',
+    borderBottomColor: '#161a26',
+    backgroundColor: '#07090e',
   },
   viewSwitcher: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#12151e',
+    backgroundColor: '#0f121d',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1b1e28',
-    padding: 3,
+    borderColor: '#1e2436',
+    padding: 2.5,
     gap: 4,
   },
   viewTabBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 5.5,
     borderRadius: 8,
   },
   viewTabBtnActive: {
-    backgroundColor: '#9333ea',
-    shadowColor: '#9333ea',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 4,
+    backgroundColor: '#d4ff00',
   },
   viewTabBtnText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  viewTabBtnTextActive: {
+    color: '#000000',
   },
   greenPulseDot: {
     width: 5,
     height: 5,
     borderRadius: 2.5,
-    backgroundColor: '#34d399',
-    marginLeft: 5,
+    backgroundColor: '#000000',
+    marginLeft: 4,
   },
   libraryCountPill: {
     backgroundColor: '#1b1e28',
     borderRadius: 4,
-    paddingHorizontal: 5,
+    paddingHorizontal: 4,
     paddingVertical: 1,
-    marginLeft: 5,
+    marginLeft: 4,
   },
   libraryCountText: {
-    fontSize: 9.5,
+    fontSize: 9,
     fontWeight: '700',
     color: '#d1d5db',
   },
@@ -965,130 +1100,132 @@ const styles = StyleSheet.create({
   sourcePillSwitch: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#12151e',
+    backgroundColor: '#0f121d',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#1b1e28',
+    borderColor: '#1e2436',
     padding: 2,
   },
   sourcePillBtn: {
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 3.5,
     borderRadius: 6,
   },
   sourcePillBtnActive: {
-    backgroundColor: '#9333ea',
+    backgroundColor: '#d4ff00',
   },
   sourcePillText: {
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '700',
     color: '#9ca3af',
   },
   sourcePillTextActive: {
-    color: '#FFFFFF',
+    color: '#000000',
   },
   iconBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: '#12151e',
+    width: 26,
+    height: 26,
+    borderRadius: 7,
+    backgroundColor: '#0f121d',
     borderWidth: 1,
-    borderColor: '#1b1e28',
+    borderColor: '#1e2436',
     alignItems: 'center',
     justifyContent: 'center',
   },
   searchContainer: {
     paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 6,
+    paddingTop: 8,
+    paddingBottom: 5,
   },
   searchBarWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#131620',
+    backgroundColor: '#0f121d',
     borderWidth: 1,
-    borderColor: '#222738',
+    borderColor: '#1e2436',
     borderRadius: 12,
     paddingHorizontal: 10,
-    height: 38,
+    height: 36,
   },
   searchIcon: {
-    marginRight: 8,
+    marginRight: 7,
   },
   searchInput: {
     flex: 1,
-    fontSize: 11.5,
+    fontSize: 11,
     color: '#FFFFFF',
     padding: 0,
   },
   clearBtn: {
-    padding: 4,
+    padding: 3,
   },
   enterBadge: {
-    backgroundColor: '#1a1f2e',
+    backgroundColor: '#161a26',
     borderWidth: 1,
-    borderColor: '#262d42',
-    paddingHorizontal: 6,
+    borderColor: '#22293d',
+    paddingHorizontal: 5,
     paddingVertical: 2,
     borderRadius: 4,
   },
   enterBadgeText: {
-    fontSize: 9,
+    fontSize: 8.5,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     color: '#9ca3af',
-    fontWeight: '600',
+    fontWeight: '700',
   },
   tagStripContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 5,
-    gap: 6,
+    paddingVertical: 4,
+    gap: 5,
   },
   tagDrawerBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    backgroundColor: '#171a26',
+    width: 28,
+    height: 28,
+    borderRadius: 7,
+    backgroundColor: '#0f121d',
     borderWidth: 1,
-    borderColor: '#262b3d',
+    borderColor: '#1e2436',
     alignItems: 'center',
     justifyContent: 'center',
   },
   tagStripScroll: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
   },
   tagStripWrapped: {
     flexWrap: 'wrap',
   },
   communityTagChip: {
-    backgroundColor: 'rgba(21, 24, 34, 0.9)',
+    backgroundColor: '#0f121d',
     borderWidth: 1,
+    borderColor: '#1e2436',
     borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4.5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
   },
   communityTagChipActive: {
-    backgroundColor: 'rgba(147, 51, 234, 0.4)',
-    borderColor: '#c084fc',
+    backgroundColor: '#d4ff00',
+    borderColor: '#d4ff00',
   },
   communityTagText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '600',
+    color: '#9ca3af',
   },
   communityTagTextActive: {
-    color: '#FFFFFF',
+    color: '#000000',
     fontWeight: '800',
   },
   expandChevronBtn: {
     width: 26,
     height: 26,
-    borderRadius: 8,
-    backgroundColor: '#171a26',
+    borderRadius: 7,
+    backgroundColor: '#0f121d',
     borderWidth: 1,
-    borderColor: '#262b3d',
+    borderColor: '#1e2436',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1098,25 +1235,25 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 12,
     paddingTop: 4,
-    gap: 8,
+    gap: 7,
   },
   pillGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#151823',
-    borderRadius: 20,
+    backgroundColor: '#0f121d',
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#262b3d',
-    padding: 2.5,
+    borderColor: '#1e2436',
+    padding: 2,
   },
   pillGroupFull: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#151823',
-    borderRadius: 20,
+    backgroundColor: '#0f121d',
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#262b3d',
-    padding: 2.5,
+    borderColor: '#1e2436',
+    padding: 2,
     width: '100%',
     justifyContent: 'space-between',
   },
@@ -1124,156 +1261,88 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 18,
+    paddingHorizontal: 11,
+    paddingVertical: 4.5,
+    borderRadius: 16,
     flex: 1,
   },
   pillSegmentActive: {
-    backgroundColor: '#9333ea',
-    shadowColor: '#9333ea',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.4,
-    shadowRadius: 3,
+    backgroundColor: '#d4ff00',
   },
   pillSegmentText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '700',
     color: '#9ca3af',
   },
   pillSegmentTextActive: {
-    color: '#FFFFFF',
+    color: '#000000',
   },
   scopeRow: {
     paddingHorizontal: 12,
-    paddingTop: 6,
+    paddingTop: 5,
   },
-  sortPaginationRow: {
+  sortCountRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 6,
+    paddingVertical: 6,
   },
   sortDropdownBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#151823',
+    backgroundColor: '#0f121d',
     borderWidth: 1,
-    borderColor: '#262b3d',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    borderColor: '#1e2436',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
   sortDropdownText: {
-    fontSize: 10.5,
+    fontSize: 10,
     fontWeight: '700',
     color: '#e2e8f0',
   },
   sortDropdownMenu: {
     position: 'absolute',
-    top: 195,
+    top: 215,
     left: 12,
     zIndex: 999,
-    backgroundColor: '#151823',
+    backgroundColor: '#0f121d',
     borderWidth: 1,
-    borderColor: '#262b3d',
+    borderColor: '#1e2436',
     borderRadius: 10,
     padding: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.6,
-    shadowRadius: 8,
   },
   sortMenuItem: {
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 6,
     borderRadius: 6,
   },
   sortMenuItemActive: {
-    backgroundColor: '#9333ea',
+    backgroundColor: '#d4ff00',
   },
   sortMenuItemText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '600',
     color: '#9ca3af',
   },
   sortMenuItemTextActive: {
-    color: '#FFFFFF',
+    color: '#000000',
     fontWeight: '800',
   },
   countBadge: {
-    backgroundColor: '#151823',
+    backgroundColor: '#0f121d',
     borderWidth: 1,
-    borderColor: '#262b3d',
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    borderColor: '#1e2436',
+    borderRadius: 12,
+    paddingHorizontal: 9,
+    paddingVertical: 3.5,
   },
   countBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#d1d5db',
-  },
-  paginationGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  pageBtn: {
-    padding: 4,
-  },
-  pageBtnDisabled: {
-    opacity: 0.3,
-  },
-  pageNumberBtn: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pageNumberBtnActive: {
-    backgroundColor: '#2a3045',
-    borderWidth: 1,
-    borderColor: 'rgba(168, 85, 247, 0.6)',
-  },
-  pageNumberText: {
-    fontSize: 10.5,
+    fontSize: 9.5,
     fontWeight: '600',
     color: '#9ca3af',
-  },
-  pageNumberTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-  },
-  pageEllipsis: {
-    fontSize: 10,
-    color: '#6b7280',
-    paddingHorizontal: 2,
-  },
-  activeFilterNotice: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginHorizontal: 12,
-    marginBottom: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: '#12151e',
-    borderWidth: 1,
-    borderColor: 'rgba(168, 85, 247, 0.3)',
-  },
-  activeFilterText: {
-    fontSize: 10.5,
-    color: '#d8b4fe',
-  },
-  clearFilterText: {
-    fontSize: 10.5,
-    color: '#9ca3af',
-    textDecorationLine: 'underline',
   },
   cardsContainer: {
     paddingHorizontal: 12,
@@ -1289,19 +1358,31 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
   },
   loaderText: {
-    fontSize: 12,
+    fontSize: 11.5,
     color: '#9ca3af',
     marginTop: 10,
+  },
+  footerLoader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    gap: 8,
+  },
+  footerLoaderText: {
+    fontSize: 11,
+    color: '#d4ff00',
+    fontWeight: '600',
   },
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 40,
     paddingHorizontal: 20,
-    backgroundColor: 'rgba(18, 21, 30, 0.4)',
+    backgroundColor: '#0f121d',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#1b1e28',
+    borderColor: '#1e2436',
     marginTop: 10,
   },
   emptyTitle: {
@@ -1323,10 +1404,10 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   creatorCard: {
-    backgroundColor: '#131621',
+    backgroundColor: '#0f121d',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#24293b',
+    borderColor: '#1e2436',
     padding: 12,
   },
   creatorCardTop: {
@@ -1337,9 +1418,9 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#181c28',
+    backgroundColor: '#161a26',
     borderWidth: 1,
-    borderColor: 'rgba(168, 85, 247, 0.3)',
+    borderColor: 'rgba(212, 255, 0, 0.3)',
     marginRight: 10,
   },
   creatorInfoCol: {
@@ -1363,18 +1444,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 10,
-    backgroundColor: '#1d2233',
+    backgroundColor: '#161a26',
     borderWidth: 1,
-    borderColor: 'rgba(168, 85, 247, 0.4)',
+    borderColor: '#22293d',
   },
   creatorFollowBtnActive: {
-    backgroundColor: '#9333ea',
-    borderColor: '#a855f7',
+    backgroundColor: '#d4ff00',
+    borderColor: '#d4ff00',
   },
   creatorFollowBtnText: {
     fontSize: 10.5,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  creatorFollowBtnTextActive: {
+    color: '#000000',
   },
   creatorSampleText: {
     fontSize: 10.5,
@@ -1382,7 +1466,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   viewBotsBtn: {
-    backgroundColor: '#191d2b',
+    backgroundColor: '#161a26',
     borderRadius: 10,
     paddingVertical: 7,
     alignItems: 'center',
@@ -1391,6 +1475,6 @@ const styles = StyleSheet.create({
   viewBotsBtnText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#c084fc',
+    color: '#d4ff00',
   },
 });

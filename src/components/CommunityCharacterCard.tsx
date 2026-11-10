@@ -140,7 +140,7 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
           {character.name}
         </Text>
 
-        {/* Chat Name / Subtitle (Purple Accent) */}
+        {/* Chat Name / Subtitle (Lime Accent) */}
         {character.chatName ? (
           <Text style={styles.chatSubtitle} numberOfLines={1}>
             {character.chatName}
@@ -161,7 +161,7 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
             <Text style={styles.creatorHandle} numberOfLines={1}>
               @{cleanHandle(character.creatorName || 'community')}
             </Text>
-            <CheckCircle2 size={11} color="#a855f7" style={{ marginLeft: 2 }} />
+            <CheckCircle2 size={11} color="#d4ff00" style={{ marginLeft: 2 }} />
           </TouchableOpacity>
 
           {onToggleFollowCreator && (
@@ -245,7 +245,7 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
               <Download size={12} color="#c084fc" />
             </TouchableOpacity>
 
-            {/* Glowing Purple Circular Play Button */}
+            {/* Glowing Lime Circular Play Button */}
             <TouchableOpacity
               style={styles.playBtn}
               onPress={e => {
@@ -254,7 +254,7 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
               }}
               activeOpacity={0.8}
             >
-              <Play size={10} color="#FFFFFF" fill="#FFFFFF" style={{ marginLeft: 1 }} />
+              <Play size={10} color="#000000" fill="#000000" style={{ marginLeft: 1 }} />
             </TouchableOpacity>
           </View>
         </View>
@@ -267,10 +267,10 @@ const styles = StyleSheet.create({
   cardContainer: {
     flex: 1,
     maxWidth: '48.5%',
-    backgroundColor: '#12151e',
+    backgroundColor: '#0f121d',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#1b1e28',
+    borderColor: '#1c2232',
     overflow: 'hidden',
     marginBottom: 12,
     ...Platform.select({
@@ -402,8 +402,8 @@ const styles = StyleSheet.create({
   },
   chatSubtitle: {
     fontSize: 10.5,
-    fontWeight: '600',
-    color: '#c084fc',
+    fontWeight: '700',
+    color: '#d4ff00',
     marginTop: 1.5,
   },
   creatorRow: {
@@ -531,13 +531,14 @@ const styles = StyleSheet.create({
     width: 25,
     height: 25,
     borderRadius: 12.5,
-    backgroundColor: '#9333ea',
+    backgroundColor: '#d4ff00',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#9333ea',
+    shadowColor: '#d4ff00',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
+    shadowOpacity: 0.6,
     shadowRadius: 5,
     elevation: 3,
   },
 });
+

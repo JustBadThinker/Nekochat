@@ -153,10 +153,10 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   charTagline: {
-    color: 'rgba(255, 255, 255, 0.5)',
-    fontSize: 11,
-    fontWeight: '500',
-    marginBottom: 8,
+    color: '#d4ff00',
+    fontSize: 10.5,
+    fontWeight: '600',
+    marginBottom: 6,
   },
   metaRow: {
     flexDirection: 'row',
