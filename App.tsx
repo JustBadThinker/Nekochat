@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { Character, Persona, ProviderConfig, AppSettings } from './src/types';
 import { colors } from './src/theme/colors';
@@ -31,6 +31,53 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
+    // Inject smooth high-refresh web animations and interactive physics
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const styleId = 'nekochat-global-animations';
+      if (!document.getElementById(styleId)) {
+        const style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = `
+          @keyframes cardEnter {
+            from {
+              opacity: 0;
+              transform: translateY(10px) scale(0.98);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0) scale(1);
+            }
+          }
+          @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
+          @keyframes pulseDot {
+            0%, 100% { transform: scale(1); opacity: 0.8; }
+            50% { transform: scale(1.25); opacity: 1; }
+          }
+          body, #root {
+            background-color: #050608 !important;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+          }
+          input, textarea {
+            user-select: text !important;
+            -webkit-user-select: text !important;
+          }
+          /* Interactive tap physics & card spring transitions */
+          [role="button"], button {
+            cursor: pointer !important;
+            transition: transform 0.16s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.16s ease !important;
+          }
+          [role="button"]:active, button:active {
+            transform: scale(0.97) !important;
+          }
+        `;
+        document.head.appendChild(style);
+      }
+    }
     initApp();
   }, []);
 
@@ -123,6 +170,7 @@ export default function App() {
             <ChatsScreen
               characters={characters}
               trendingCharacters={trendingCharacters}
+              userPersona={activePersona}
               onSelectCharacter={handleStartChat}
               onToggleFavorite={handleToggleFavorite}
               onNavigateDiscover={() => setActiveTab('discover')}

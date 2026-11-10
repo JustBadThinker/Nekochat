@@ -1,9 +1,10 @@
 /**
  * Tinder-Style Match Deck
- * Ref: Gambar 3 — Fullscreen card with right-handed thumb action dock.
+ * Features interactive 120Hz gesture swipe physics, right-handed thumb dock,
+ * and Filter Modal pop-up with tag filters.
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -13,30 +14,54 @@ import {
   Dimensions,
   Animated,
   PanResponder,
+  Modal,
+  ScrollView,
+  Platform,
 } from 'react-native';
-import { ArrowLeft, X, Star, MessageCircle, Filter, RotateCcw } from 'lucide-react-native';
+import {
+  ArrowLeft,
+  X,
+  Star,
+  MessageCircle,
+  SlidersHorizontal,
+  RotateCcw,
+  Sparkles,
+  Check,
+} from 'lucide-react-native';
 import { Character } from '../types';
-import { colors } from '../theme/colors';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
+const SWIPE_THRESHOLD = 80;
 
 interface TinderDeckProps {
   characters: Character[];
   onBack: () => void;
   onMatchChat: (character: Character) => void;
   onToggleFavorite: (character: Character) => void;
+  onApplyFilters?: (tag: string) => void;
 }
 
 export const TinderDeck: React.FC<TinderDeckProps> = ({
-  characters,
+  characters: initialCharacters,
   onBack,
   onMatchChat,
   onToggleFavorite,
+  onApplyFilters,
 }) => {
+  const [deck, setDeck] = useState<Character[]>(initialCharacters);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [selectedTag, setSelectedTag] = useState('All');
+
   const position = useRef(new Animated.ValueXY()).current;
 
-  const currentCharacter = characters[currentIndex];
+  useEffect(() => {
+    setDeck(initialCharacters);
+    setCurrentIndex(0);
+    position.setValue({ x: 0, y: 0 });
+  }, [initialCharacters]);
+
+  const currentCharacter = deck[currentIndex];
 
   const handleNext = () => {
     position.setValue({ x: 0, y: 0 });
@@ -45,7 +70,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
 
   const handlePass = () => {
     Animated.timing(position, {
-      toValue: { x: -width * 1.3, y: 0 },
+      toValue: { x: -width * 1.4, y: 10 },
       duration: 250,
       useNativeDriver: false,
     }).start(() => handleNext());
@@ -54,7 +79,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
   const handleChat = () => {
     if (currentCharacter) {
       Animated.timing(position, {
-        toValue: { x: width * 1.3, y: 0 },
+        toValue: { x: width * 1.4, y: 10 },
         duration: 250,
         useNativeDriver: false,
       }).start(() => {
@@ -64,24 +89,26 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
     }
   };
 
-  // Full 120Hz PanGesture Drag Responder (Supports both Touch & Desktop Mouse Drag)
+  // Robust PanResponder with desktop & touch drag support
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gesture) => {
+        return Math.abs(gesture.dx) > 5 || Math.abs(gesture.dy) > 5;
+      },
       onPanResponderMove: (_, gesture) => {
-        position.setValue({ x: gesture.dx, y: gesture.dy * 0.3 });
+        position.setValue({ x: gesture.dx, y: gesture.dy * 0.4 });
       },
       onPanResponderRelease: (_, gesture) => {
-        if (gesture.dx > 80) {
+        if (gesture.dx > SWIPE_THRESHOLD) {
           handleChat();
-        } else if (gesture.dx < -80) {
+        } else if (gesture.dx < -SWIPE_THRESHOLD) {
           handlePass();
         } else {
           Animated.spring(position, {
             toValue: { x: 0, y: 0 },
-            friction: 6,
-            tension: 50,
+            friction: 5,
+            tension: 40,
             useNativeDriver: false,
           }).start();
         }
@@ -91,67 +118,105 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
 
   const rotate = position.x.interpolate({
     inputRange: [-width * 1.5, 0, width * 1.5],
-    outputRange: ['-14deg', '0deg', '14deg'],
+    outputRange: ['-16deg', '0deg', '16deg'],
   });
 
   const likeOpacity = position.x.interpolate({
-    inputRange: [20, 100],
+    inputRange: [20, SWIPE_THRESHOLD],
     outputRange: [0, 1],
     extrapolate: 'clamp',
   });
 
   const nopeOpacity = position.x.interpolate({
-    inputRange: [-100, -20],
+    inputRange: [-SWIPE_THRESHOLD, -20],
     outputRange: [1, 0],
     extrapolate: 'clamp',
   });
 
-  const handleReset = () => {
-    setCurrentIndex(0);
+  const filterTags = ['All', 'Romance', 'Anime', 'Fantasy', 'Tsundere', 'Cyberpunk', 'Slice of Life'];
+
+  const handleSelectFilter = (tag: string) => {
+    setSelectedTag(tag);
+    if (onApplyFilters) {
+      onApplyFilters(tag);
+    } else {
+      if (tag === 'All') {
+        setDeck(initialCharacters);
+      } else {
+        const filtered = initialCharacters.filter(c =>
+          c.tags.some(t => t.toLowerCase() === tag.toLowerCase())
+        );
+        setDeck(filtered.length > 0 ? filtered : initialCharacters);
+      }
+      setCurrentIndex(0);
+    }
+    setFilterModalVisible(false);
   };
 
-  if (currentIndex >= characters.length || !currentCharacter) {
+  const handleResetDeck = () => {
+    setCurrentIndex(0);
+    position.setValue({ x: 0, y: 0 });
+  };
+
+  if (!currentCharacter || currentIndex >= deck.length) {
     return (
-      <View style={styles.emptyContainer}>
-        <Text style={styles.emptyTitle}>Deck Finished! 🔥</Text>
-        <Text style={styles.emptySubtitle}>You've reviewed all available companions in this deck.</Text>
-        <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
-          <RotateCcw size={18} color="#000" style={{ marginRight: 8 }} />
-          <Text style={styles.resetButtonText}>Reshuffle Deck</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.filterButton} onPress={onBack}>
-          <Filter size={18} color={colors.lime} style={{ marginRight: 8 }} />
-          <Text style={styles.filterButtonText}>Adjust Filter & Return</Text>
-        </TouchableOpacity>
+      <View style={styles.container}>
+        <View style={styles.topHeader}>
+          <TouchableOpacity style={styles.backButton} onPress={onBack}>
+            <ArrowLeft size={18} color="#FFFFFF" />
+          </TouchableOpacity>
+          <Text style={styles.topTitle}>Match Mode</Text>
+          <View style={{ width: 36 }} />
+        </View>
+
+        <View style={styles.emptyContainer}>
+          <View style={styles.emptyIconCircle}>
+            <Sparkles size={28} color="#FFFFFF" />
+          </View>
+          <Text style={styles.emptyTitle}>You've Caught Up!</Text>
+          <Text style={styles.emptyDesc}>
+            You have reviewed all available anime companions for this filter.
+          </Text>
+          <TouchableOpacity style={styles.resetBtn} onPress={handleResetDeck}>
+            <RotateCcw size={16} color="#000000" style={{ marginRight: 6 }} />
+            <Text style={styles.resetBtnText}>Restart Deck</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      {/* Clean Top Header */}
+      {/* Top Header Bar */}
       <View style={styles.topHeader}>
-        <TouchableOpacity style={styles.backButton} onPress={onBack} activeOpacity={0.7}>
-          <ArrowLeft size={20} color={colors.textPrimary} />
+        <TouchableOpacity style={styles.backButton} onPress={onBack}>
+          <ArrowLeft size={18} color="#FFFFFF" />
         </TouchableOpacity>
+
         <Text style={styles.topTitle}>Match Mode</Text>
-        <View style={{ width: 40 }} />
+
+        {/* Filter Pop-up Trigger Button */}
+        <TouchableOpacity
+          style={styles.filterButton}
+          onPress={() => setFilterModalVisible(true)}
+        >
+          <SlidersHorizontal size={16} color="#FFFFFF" />
+        </TouchableOpacity>
       </View>
 
-      {/* Main Full-Bleed Card with 120Hz Gesture Physics */}
+      {/* Main Swipeable Card */}
       <Animated.View
         {...panResponder.panHandlers}
         style={[
           styles.cardWrapper,
           position.getLayout(),
-          {
-            transform: [{ rotate }],
-          },
+          { transform: [{ rotate }] },
         ]}
       >
         <Image source={{ uri: currentCharacter.avatar }} style={styles.cardCover} />
 
-        {/* Dynamic LIKE & NOPE Stamp Overlays on Swipe */}
+        {/* Dynamic LIKE & PASS Stamp Overlays */}
         <Animated.View style={[styles.stampLike, { opacity: likeOpacity }]}>
           <Text style={styles.stampLikeText}>MATCH 🔥</Text>
         </Animated.View>
@@ -160,14 +225,12 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
           <Text style={styles.stampNopeText}>PASS ✕</Text>
         </Animated.View>
 
-        {/* Right-Handed Vertical Action Dock (Ref: Gambar 3) */}
+        {/* Right-Handed Thumb Action Dock */}
         <View style={styles.rightActionDock}>
-          {/* Pass Button (✕) */}
           <TouchableOpacity style={styles.actionBtnPass} onPress={handlePass} activeOpacity={0.8}>
             <X size={20} color="#FF6B6B" />
           </TouchableOpacity>
 
-          {/* Star / Bookmark Button (⭐) */}
           <TouchableOpacity
             style={styles.actionBtnStar}
             onPress={() => onToggleFavorite(currentCharacter)}
@@ -180,14 +243,12 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
             />
           </TouchableOpacity>
 
-          {/* Chat / Match CTA (💬) */}
           <TouchableOpacity style={styles.actionBtnChat} onPress={handleChat} activeOpacity={0.8}>
             <MessageCircle size={22} color="#FFFFFF" fill="#FFFFFF" />
           </TouchableOpacity>
         </View>
 
-        {/* Progressive Blur Scrim & Bottom Metadata */}
-        <View style={styles.scrimGradientTop} />
+        {/* Bottom Scrim & Info */}
         <View style={styles.bottomOverlay}>
           <Text style={styles.charName}>{currentCharacter.name}</Text>
           <Text style={styles.charTagline}>{currentCharacter.tagline}</Text>
@@ -195,16 +256,48 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
             {currentCharacter.description}
           </Text>
 
-          {/* Interest Chips */}
           <View style={styles.chipsRow}>
             {currentCharacter.tags.slice(0, 3).map((tag, i) => (
               <View key={i} style={styles.tagChip}>
-                <Text style={styles.tagChipText}>{tag}</Text>
+                <Text style={styles.tagChipText}>#{tag}</Text>
               </View>
             ))}
           </View>
         </View>
       </Animated.View>
+
+      {/* Filter Pop-up Modal */}
+      <Modal visible={filterModalVisible} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.filterCard}>
+            <View style={styles.filterHeader}>
+              <Text style={styles.filterTitle}>Match Mode Filters</Text>
+              <TouchableOpacity onPress={() => setFilterModalVisible(false)}>
+                <X size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.filterSectionLabel}>Filter by Anime Tag / Genre</Text>
+            <View style={styles.filterTagsRow}>
+              {filterTags.map((t, idx) => {
+                const isSelected = selectedTag === t;
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    style={[styles.filterTagChip, isSelected && styles.filterTagChipActive]}
+                    onPress={() => handleSelectFilter(t)}
+                  >
+                    {isSelected && <Check size={12} color="#FFFFFF" style={{ marginRight: 4 }} />}
+                    <Text style={[styles.filterTagText, isSelected && styles.filterTagTextActive]}>
+                      {t}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -212,7 +305,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.bgDark,
+    backgroundColor: '#0c0e14',
   },
   topHeader: {
     flexDirection: 'row',
@@ -223,15 +316,27 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  filterButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
   },
   topTitle: {
-    color: colors.textPrimary,
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '700',
   },
@@ -239,17 +344,19 @@ const styles = StyleSheet.create({
     flex: 1,
     marginHorizontal: 16,
     marginBottom: 80,
-    borderRadius: 28,
+    borderRadius: 24,
     overflow: 'hidden',
     position: 'relative',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    backgroundColor: colors.bgSurface,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: '#12151e',
+    cursor: 'grab',
   },
   cardCover: {
     width: '100%',
     height: '100%',
     position: 'absolute',
+    resizeMode: 'cover',
   },
   stampLike: {
     position: 'absolute',
@@ -258,15 +365,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 12,
-    borderWidth: 2.5,
-    borderColor: colors.lime,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderWidth: 2,
+    borderColor: '#4ADE80',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
     transform: [{ rotate: '-15deg' }],
-    zIndex: 20,
+    zIndex: 30,
   },
   stampLikeText: {
-    color: colors.lime,
-    fontSize: 20,
+    color: '#4ADE80',
+    fontSize: 18,
     fontWeight: '900',
     letterSpacing: 1,
   },
@@ -277,45 +384,45 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 12,
-    borderWidth: 2.5,
-    borderColor: colors.coral,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderWidth: 2,
+    borderColor: '#FF6B6B',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
     transform: [{ rotate: '15deg' }],
-    zIndex: 20,
+    zIndex: 30,
   },
   stampNopeText: {
-    color: colors.coral,
-    fontSize: 20,
+    color: '#FF6B6B',
+    fontSize: 18,
     fontWeight: '900',
     letterSpacing: 1,
   },
   rightActionDock: {
     position: 'absolute',
-    right: 16,
-    bottom: 120,
-    zIndex: 10,
-    backgroundColor: 'rgba(10, 10, 15, 0.65)',
+    right: 14,
+    bottom: 40,
+    zIndex: 40,
+    backgroundColor: 'rgba(12, 14, 20, 0.85)',
     paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderRadius: 36,
+    paddingHorizontal: 6,
+    borderRadius: 30,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.15)',
     alignItems: 'center',
-    gap: 14,
+    gap: 12,
   },
   actionBtnPass: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: 'rgba(251, 113, 133, 0.18)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 107, 107, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   actionBtnStar: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: 'rgba(250, 204, 21, 0.18)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -323,47 +430,39 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    elevation: 4,
-  },
-  scrimGradientTop: {
-    position: 'absolute',
-    bottom: 130,
-    left: 0,
-    right: 0,
-    height: 70,
-    backgroundColor: 'rgba(5, 7, 10, 0.5)',
+    borderColor: 'rgba(255, 255, 255, 0.35)',
   },
   bottomOverlay: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    padding: 20,
-    paddingRight: 80,
-    backgroundColor: 'rgba(5, 7, 10, 0.95)',
+    padding: 18,
+    paddingRight: 76,
+    backgroundColor: 'rgba(12, 14, 20, 0.92)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
   },
   charName: {
-    color: colors.textPrimary,
-    fontSize: 22,
+    color: '#FFFFFF',
+    fontSize: 20,
     fontWeight: '800',
-    marginBottom: 2,
   },
   charTagline: {
-    color: colors.lime,
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 8,
+    color: 'rgba(255, 255, 255, 0.65)',
+    fontSize: 12,
+    marginTop: 2,
+    marginBottom: 6,
   },
   charBio: {
-    color: colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.75)',
     fontSize: 12,
-    lineHeight: 18,
-    marginBottom: 12,
+    lineHeight: 17,
+    marginBottom: 10,
   },
   chipsRow: {
     flexDirection: 'row',
@@ -371,65 +470,114 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   tagChip: {
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 16,
-    borderWidth: 0.5,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
   },
   tagChipText: {
-    color: colors.textPrimary,
-    fontSize: 11,
+    color: '#FFFFFF',
+    fontSize: 10,
     fontWeight: '600',
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 30,
-    backgroundColor: colors.bgDark,
+    padding: 24,
+  },
+  emptyIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
   },
   emptyTitle: {
-    color: colors.textPrimary,
-    fontSize: 22,
-    fontWeight: '800',
-    marginBottom: 8,
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 6,
   },
-  emptySubtitle: {
-    color: colors.textSecondary,
-    fontSize: 14,
+  emptyDesc: {
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontSize: 13,
     textAlign: 'center',
-    marginBottom: 24,
+    lineHeight: 18,
+    marginBottom: 20,
   },
-  resetButton: {
+  resetBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.lime,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 24,
-    marginBottom: 12,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 20,
   },
-  resetButtonText: {
-    color: '#000',
-    fontSize: 14,
+  resetBtnText: {
+    color: '#000000',
+    fontSize: 13,
     fontWeight: '700',
   },
-  filterButton: {
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  filterCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#12151e',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  filterHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  filterTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  filterSectionLabel: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 12,
+    marginBottom: 10,
+  },
+  filterTagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  filterTagChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(204, 255, 0, 0.12)',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: colors.lime,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  filterButtonText: {
-    color: colors.lime,
-    fontSize: 13,
-    fontWeight: '600',
+  filterTagChipActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: '#FFFFFF',
+  },
+  filterTagText: {
+    color: 'rgba(255, 255, 255, 0.65)',
+    fontSize: 12,
+  },
+  filterTagTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
 });
-

@@ -1,21 +1,26 @@
 /**
  * Top 5 Trending 24h Story Tray
- * Monochrome Warden AI styling with clean anime story avatars.
+ * Features User Persona "+ Story" creator trigger followed by top trending companions.
  */
 
 import React from 'react';
 import { View, Text, ScrollView, Image, TouchableOpacity, StyleSheet } from 'react-native';
-import { Flame } from 'lucide-react-native';
-import { Character } from '../types';
+import { Flame, Plus } from 'lucide-react-native';
+import { Character, Persona } from '../types';
 
 interface StoryTrayProps {
   trendingCharacters: Character[];
+  userPersona?: Persona | null;
   onOpenStory: (character: Character, index: number) => void;
+  onAddStory?: () => void;
 }
 
-export const StoryTray: React.FC<StoryTrayProps> = ({ trendingCharacters, onOpenStory }) => {
-  if (trendingCharacters.length === 0) return null;
-
+export const StoryTray: React.FC<StoryTrayProps> = ({
+  trendingCharacters,
+  userPersona,
+  onOpenStory,
+  onAddStory,
+}) => {
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
@@ -23,7 +28,7 @@ export const StoryTray: React.FC<StoryTrayProps> = ({ trendingCharacters, onOpen
           <Flame size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
           <Text style={styles.headerTitle}>Trending 24h</Text>
         </View>
-        <Text style={styles.headerBadge}>Top 5</Text>
+        <Text style={styles.headerBadge}>Stories</Text>
       </View>
 
       <ScrollView
@@ -31,6 +36,32 @@ export const StoryTray: React.FC<StoryTrayProps> = ({ trendingCharacters, onOpen
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
+        {/* 1. First Item: User Persona "+ Story / Profile" Circle */}
+        <TouchableOpacity
+          style={styles.storyItem}
+          onPress={onAddStory}
+          activeOpacity={0.8}
+        >
+          <View style={styles.userStoryRing}>
+            <Image
+              source={{
+                uri:
+                  userPersona?.avatar ||
+                  'https://avatars.charhub.io/avatars/hiro_mc/irresistible-riley-e91d140ac49d/avatar.webp',
+              }}
+              style={styles.avatarImage}
+            />
+            {/* Corner '+' Badge */}
+            <View style={styles.plusBadge}>
+              <Plus size={12} color="#000000" />
+            </View>
+          </View>
+          <Text style={styles.storyName} numberOfLines={1}>
+            Your Story
+          </Text>
+        </TouchableOpacity>
+
+        {/* 2. Trending Companions */}
         {trendingCharacters.map((char, index) => (
           <TouchableOpacity
             key={char.id}
@@ -38,7 +69,6 @@ export const StoryTray: React.FC<StoryTrayProps> = ({ trendingCharacters, onOpen
             onPress={() => onOpenStory(char, index)}
             activeOpacity={0.8}
           >
-            {/* Story Ring (Pure sleek outline) */}
             <View
               style={[
                 styles.avatarRing,
@@ -96,6 +126,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginHorizontal: 8,
     width: 68,
+  },
+  userStoryRing: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    padding: 2.5,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    borderStyle: 'dashed',
+    backgroundColor: '#0c0e14',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  plusBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#0c0e14',
   },
   avatarRing: {
     width: 62,

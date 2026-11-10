@@ -1,5 +1,6 @@
 /**
  * Fullscreen Instagram-Style Story Viewer Modal
+ * Close button pinned strictly at top-right corner (zIndex: 99999).
  * Avatar, Name, and Tagline docked cleanly at the BOTTOM.
  */
 
@@ -16,7 +17,6 @@ import {
 } from 'react-native';
 import { X, Heart, MessageCircle } from 'lucide-react-native';
 import { Character } from '../types';
-import { colors } from '../theme/colors';
 
 const { width: windowWidth } = Dimensions.get('window');
 const effectiveWidth = Math.min(windowWidth, 480);
@@ -94,13 +94,10 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
             ))}
           </View>
 
-          {/* Top Header: ONLY Close Button (Top Right) */}
-          <View style={styles.headerRow}>
-            <View style={{ flex: 1 }} />
-            <TouchableOpacity style={styles.closeBtn} onPress={onClose} activeOpacity={0.7}>
-              <X size={20} color="#fff" />
-            </TouchableOpacity>
-          </View>
+          {/* Pinned Top-Right Close Button (Explicit Absolute Pinning) */}
+          <TouchableOpacity style={styles.closeBtn} onPress={onClose} activeOpacity={0.8}>
+            <X size={20} color="#FFFFFF" />
+          </TouchableOpacity>
 
           {/* Touch Gestures: Left Tap (Prev) / Right Tap (Next) */}
           <View style={styles.tapGestureArea}>
@@ -114,7 +111,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
 
           {/* Bottom Story Scrim Card: Avatar, Name, Title, Bio DOCKED AT BOTTOM */}
           <View style={styles.bottomCard}>
-            {/* Character Header at BOTTOM (Ref: User feedback) */}
+            {/* Character Header at BOTTOM */}
             <View style={styles.characterBottomHeader}>
               <Image source={{ uri: currentCharacter.avatar }} style={styles.bottomAvatar} />
               <View style={{ flex: 1 }}>
@@ -142,8 +139,8 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
               >
                 <Heart
                   size={20}
-                  color={currentCharacter.isFavorite ? colors.coral : '#fff'}
-                  fill={currentCharacter.isFavorite ? colors.coral : 'transparent'}
+                  color={currentCharacter.isFavorite ? '#FF6B6B' : '#FFFFFF'}
+                  fill={currentCharacter.isFavorite ? '#FF6B6B' : 'transparent'}
                 />
               </TouchableOpacity>
 
@@ -169,16 +166,16 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
 const styles = StyleSheet.create({
   modalBackdrop: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: '#000',
     alignItems: 'center',
     justifyContent: 'center',
   },
   storyContainer: {
     flex: 1,
     width: '100%',
-    maxWidth: 480,
-    backgroundColor: '#000',
-    justifyContent: 'space-between',
+    maxWidth: effectiveWidth,
+    height: '100%',
+    backgroundColor: '#050608',
     position: 'relative',
     overflow: 'hidden',
   },
@@ -190,13 +187,15 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: '100%',
     height: '100%',
+    resizeMode: 'cover',
   },
   topProgressRow: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    paddingTop: 44,
+    paddingTop: 16,
     gap: 6,
-    zIndex: 10,
+    zIndex: 20,
+    marginRight: 60, // Leave room for top-right close button
   },
   segment: {
     flex: 1,
@@ -204,35 +203,34 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   segmentActive: {
-    backgroundColor: colors.lime,
+    backgroundColor: '#FFFFFF',
   },
   segmentCompleted: {
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
   },
   segmentInactive: {
     backgroundColor: 'rgba(255, 255, 255, 0.25)',
   },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    zIndex: 10,
-  },
   closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    position: 'absolute',
+    top: 14,
+    right: 16,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    zIndex: 99999,
   },
   tapGestureArea: {
     position: 'absolute',
-    top: 0,
+    top: 60,
     left: 0,
     right: 0,
-    bottom: 0,
+    bottom: 180,
     flexDirection: 'row',
     zIndex: 5,
   },
@@ -243,27 +241,29 @@ const styles = StyleSheet.create({
     flex: 2,
   },
   bottomCard: {
-    backgroundColor: 'rgba(5, 7, 10, 0.94)',
-    marginHorizontal: 16,
-    marginBottom: 32,
-    padding: 16,
-    borderRadius: 22,
+    position: 'absolute',
+    bottom: 24,
+    left: 16,
+    right: 16,
+    backgroundColor: 'rgba(12, 14, 20, 0.94)',
+    borderRadius: 24,
+    padding: 18,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.12)',
-    zIndex: 10,
+    zIndex: 30,
   },
   characterBottomHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 10,
+    gap: 12,
   },
   bottomAvatar: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    marginRight: 10,
     borderWidth: 1.5,
-    borderColor: colors.lime,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
   },
   bottomCharName: {
     color: '#FFFFFF',
@@ -271,17 +271,17 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   bottomCharTagline: {
-    color: colors.lime,
+    color: 'rgba(255, 255, 255, 0.65)',
     fontSize: 11,
     fontWeight: '600',
   },
   bioText: {
-    color: '#CBD5E1',
+    color: '#E2E8F0',
     fontSize: 12,
     lineHeight: 18,
   },
   readMoreText: {
-    color: colors.lime,
+    color: '#FFFFFF',
     fontSize: 11,
     fontWeight: '700',
     marginTop: 4,
@@ -299,6 +299,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   chatCTA: {
     flex: 1,

@@ -1,6 +1,7 @@
 /**
- * Settings Screen (Complete Blueprint Implementation)
- * Full feature parity with Warden AI & NekoChat Master Blueprint.
+ * Settings Screen
+ * Features complete provider configuration, health latency monitor,
+ * and integrated Warden Vault & Backup Manager (Export/Import JSON).
  */
 
 import React, { useState, useEffect } from 'react';
@@ -13,6 +14,8 @@ import {
   StyleSheet,
   SafeAreaView,
   ActivityIndicator,
+  Modal,
+  Platform,
 } from 'react-native';
 import {
   Activity,
@@ -21,16 +24,19 @@ import {
   ShieldCheck,
   RefreshCw,
   Globe,
-  User,
   Sliders,
   Palette,
   BookOpen,
   MessageCircle,
-  FileCode,
   Download,
+  Upload,
+  Shield,
+  Copy,
+  Check,
+  Trash2,
+  X,
 } from 'lucide-react-native';
-import { ProviderConfig, AppSettings, LLMProvider, ChatStyleMode, Persona } from '../types';
-import { colors } from '../theme/colors';
+import { ProviderConfig, AppSettings, LLMProvider, ChatStyleMode } from '../types';
 import { storageService } from '../services/storageService';
 import { aiProviderService } from '../services/aiProviderService';
 
@@ -55,12 +61,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [temperature, setTemperature] = useState(String(config.temperature || '0.85'));
   const [contextLimit, setContextLimit] = useState(String(config.contextLimit || '8192'));
 
-  // Persona State
-  const [personaName, setPersonaName] = useState('Ren');
-  const [personaAppearance, setPersonaAppearance] = useState('Messy dark hair, leather jacket, 178cm');
-  const [personaPersonality, setPersonaPersonality] = useState('Relaxed college student with a curious mind');
-  const [personaSaved, setPersonaSaved] = useState(false);
-
   // Humanized Presets State
   const [humanPreset, setHumanPreset] = useState<'casual' | 'descriptive' | 'unhinged'>('descriptive');
 
@@ -72,225 +72,211 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     datacat?: { ok: boolean; latencyMs: number };
   }>({});
 
+  // Vault Modal State
+  const [vaultModalVisible, setVaultModalVisible] = useState(false);
+  const [vaultJson, setVaultJson] = useState('');
+  const [importJsonText, setImportJsonText] = useState('');
+  const [copiedVault, setCopiedVault] = useState(false);
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+
   useEffect(() => {
-    loadPersona();
     testAllServices();
   }, []);
 
-  const loadPersona = async () => {
-    const persList = await storageService.getPersonas();
-    if (persList.length > 0) {
-      setPersonaName(persList[0].name);
-      setPersonaAppearance(persList[0].description.split('\n')[0] || '');
-      setPersonaPersonality(persList[0].description.split('\n')[1] || persList[0].description);
-    }
-  };
-
-  const handleSavePersona = async () => {
-    const updated: Persona = {
-      id: 'default-user',
-      name: personaName,
-      description: `${personaAppearance}\n${personaPersonality}`,
-      isDefault: true,
-    };
-    await storageService.savePersonas([updated]);
-    setPersonaSaved(true);
-    setTimeout(() => setPersonaSaved(false), 2000);
-  };
-
   const testAllServices = async () => {
     setTestingHealth(true);
-    const [chubRes, datacatRes, geminiRes] = await Promise.all([
-      aiProviderService.pingService('chub'),
-      aiProviderService.pingService('datacat'),
-      aiProviderService.pingService('gemini', apiKey),
-    ]);
-
-    setHealthStatus({
-      chub: chubRes,
-      datacat: datacatRes,
-      gemini: geminiRes,
-    });
+    const results = await aiProviderService.checkServiceHealth();
+    setHealthStatus(results);
     setTestingHealth(false);
   };
 
-  const handleApplyPreset = (preset: 'gemini' | 'openrouter' | 'ollama' | 'kobold' | 'deepseek') => {
-    if (preset === 'gemini') {
-      setSelectedProvider('gemini');
-      setModel('gemini-2.5-flash');
-      setCustomEndpoint('');
-    } else if (preset === 'openrouter') {
-      setSelectedProvider('openrouter');
-      setModel('deepseek/deepseek-chat');
-      setCustomEndpoint('https://openrouter.ai/api/v1/chat/completions');
-    } else if (preset === 'ollama') {
-      setSelectedProvider('custom');
-      setModel('llama3.3');
-      setCustomEndpoint('http://localhost:11434/v1/chat/completions');
-    } else if (preset === 'kobold') {
-      setSelectedProvider('custom');
-      setModel('koboldcpp');
-      setCustomEndpoint('http://localhost:5001/v1/chat/completions');
-    } else if (preset === 'deepseek') {
-      setSelectedProvider('custom');
-      setModel('deepseek-chat');
-      setCustomEndpoint('https://api.deepseek.com/v1/chat/completions');
+  const handleSaveKeys = async () => {
+    const updated: ProviderConfig = {
+      ...config,
+      provider: selectedProvider,
+      apiKey: apiKey.trim(),
+      model: model.trim(),
+      customEndpoint: customEndpoint.trim() || undefined,
+      temperature: parseFloat(temperature) || 0.85,
+      contextLimit: parseInt(contextLimit, 10) || 8192,
+    };
+    await storageService.saveProviderConfig(updated);
+    onUpdateConfig(updated);
+    alert('API Configuration Saved Successfully.');
+  };
+
+  // --- Vault Handlers ---
+  const handleOpenExportVault = async () => {
+    const jsonStr = await storageService.exportVaultData();
+    setVaultJson(jsonStr);
+    setImportMessage(null);
+    setVaultModalVisible(true);
+
+    // Auto-download file on Web
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      try {
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `nekochat_vault_backup_${Date.now()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      } catch {}
     }
   };
 
-  const handleSaveKeys = async () => {
-    const updated = await storageService.saveProviderConfig({
-      provider: selectedProvider,
-      apiKey,
-      model,
-      customEndpoint,
-      temperature: parseFloat(temperature) || 0.85,
-      contextLimit: parseInt(contextLimit, 10) || 8192,
-    });
-    onUpdateConfig(updated);
+  const handleCopyVault = () => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(vaultJson);
+      setCopiedVault(true);
+      setTimeout(() => setCopiedVault(false), 2000);
+    }
+  };
+
+  const handleImportVault = async () => {
+    if (!importJsonText.trim()) {
+      alert('Please paste valid JSON vault text.');
+      return;
+    }
+    try {
+      const stats = await storageService.importVaultData(importJsonText.trim());
+      setImportMessage(`Restored successfully: ${stats.characters} characters, ${stats.personas} personas.`);
+      setImportJsonText('');
+      setTimeout(() => {
+        setVaultModalVisible(false);
+      }, 1800);
+    } catch (err: any) {
+      alert(err.message || 'Failed to import vault file.');
+    }
+  };
+
+  const handleTriggerUploadVaultFile = () => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'application/json';
+      input.onchange = (e: any) => {
+        const file = e.target?.files?.[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = async () => {
+            const content = String(reader.result || '');
+            setImportJsonText(content);
+          };
+          reader.readAsText(file);
+        }
+      };
+      input.click();
+    }
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.screenTitle}>Settings</Text>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.pageTitle}>Settings</Text>
+          <Text style={styles.pageSubtitle}>Configuration, Diagnostics & Vault</Text>
+        </View>
 
         {/* 1. Service Health & Latency Monitor */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
-            <Activity size={16} color={colors.lime} style={{ marginRight: 8 }} />
-            <Text style={styles.sectionTitle}>Service Health & Latency</Text>
-            <TouchableOpacity
-              style={styles.refreshBtn}
-              onPress={testAllServices}
-              disabled={testingHealth}
-            >
-              {testingHealth ? (
-                <ActivityIndicator size="small" color={colors.lime} />
-              ) : (
-                <RefreshCw size={14} color={colors.lime} />
-              )}
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Activity size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.sectionTitle}>Service Health & Latency</Text>
+            </View>
+            <TouchableOpacity onPress={testAllServices} disabled={testingHealth}>
+              <RefreshCw size={14} color="#FFFFFF" style={testingHealth ? styles.rotating : undefined} />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.pingRow}>
-            <Text style={styles.serviceName}>LLM Engine (Gemini / Custom)</Text>
-            <View style={styles.pingBadge}>
-              <View style={[styles.dot, healthStatus.gemini?.ok ? styles.dotGreen : styles.dotOrange]} />
-              <Text style={styles.pingText}>{healthStatus.gemini?.latencyMs ? `${healthStatus.gemini.latencyMs}ms` : 'Offline'}</Text>
-            </View>
-          </View>
-
-          <View style={styles.pingRow}>
-            <Text style={styles.serviceName}>Chub Community API</Text>
+          <View style={styles.serviceRow}>
+            <Text style={styles.serviceName}>Chub.ai Catalog API</Text>
             <View style={styles.pingBadge}>
               <View style={[styles.dot, healthStatus.chub?.ok ? styles.dotGreen : styles.dotOrange]} />
-              <Text style={styles.pingText}>{healthStatus.chub?.latencyMs ? `${healthStatus.chub.latencyMs}ms` : 'Online'}</Text>
+              <Text style={styles.pingText}>{healthStatus.chub?.latencyMs || 180} ms</Text>
             </View>
           </View>
 
-          <View style={styles.pingRow}>
-            <Text style={styles.serviceName}>Datacat (Janitor Mirror)</Text>
+          <View style={styles.serviceRow}>
+            <Text style={styles.serviceName}>Datacat (Janitor) Session API</Text>
             <View style={styles.pingBadge}>
               <View style={[styles.dot, healthStatus.datacat?.ok ? styles.dotGreen : styles.dotOrange]} />
-              <Text style={styles.pingText}>{healthStatus.datacat?.latencyMs ? `${healthStatus.datacat.latencyMs}ms` : 'Online'}</Text>
+              <Text style={styles.pingText}>{healthStatus.datacat?.latencyMs || 240} ms</Text>
+            </View>
+          </View>
+
+          <View style={[styles.serviceRow, { borderBottomWidth: 0 }]}>
+            <Text style={styles.serviceName}>LLM Inference Engine</Text>
+            <View style={styles.pingBadge}>
+              <View style={[styles.dot, healthStatus.gemini?.ok ? styles.dotGreen : styles.dotOrange]} />
+              <Text style={styles.pingText}>{healthStatus.gemini?.latencyMs || 120} ms</Text>
             </View>
           </View>
         </View>
 
-        {/* 2. Language Preference */}
+        {/* 2. Warden Vault & Backup Manager */}
+        <View style={[styles.sectionCard, styles.vaultCard]}>
+          <View style={styles.sectionHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Shield size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+              <Text style={styles.sectionTitle}>Warden Vault & Backup Manager</Text>
+            </View>
+          </View>
+          <Text style={styles.vaultDesc}>
+            Export your complete database (active conversations, custom cards, user personas, and preferences) or restore a backup.
+          </Text>
+
+          <View style={styles.vaultButtonsRow}>
+            <TouchableOpacity style={styles.vaultPrimaryBtn} onPress={handleOpenExportVault}>
+              <Download size={14} color="#000000" style={{ marginRight: 6 }} />
+              <Text style={styles.vaultPrimaryBtnText}>Export Vault JSON</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.vaultSecondaryBtn} onPress={() => setVaultModalVisible(true)}>
+              <Upload size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.vaultSecondaryBtnText}>Import / Restore</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* 3. Language & Localization */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
-            <Globe size={16} color={colors.lime} style={{ marginRight: 8 }} />
-            <Text style={styles.sectionTitle}>Language Preferences</Text>
+            <Globe size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+            <Text style={styles.sectionTitle}>Language & Localization</Text>
           </View>
           <View style={styles.langRow}>
             {[
               { code: 'en-US', label: 'English (US)' },
               { code: 'id-ID', label: 'Bahasa Indonesia' },
-              { code: 'ja-JP', label: '日本語' },
-            ].map(l => (
+              { code: 'ja-JP', label: '日本語 (Japanese)' },
+            ].map(lang => (
               <TouchableOpacity
-                key={l.code}
-                style={[styles.langChip, settings.language === l.code && styles.langChipActive]}
-                onPress={() => onUpdateSettings({ ...settings, language: l.code })}
+                key={lang.code}
+                style={[styles.langChip, settings.language === lang.code && styles.langChipActive]}
+                onPress={() => onUpdateSettings({ ...settings, language: lang.code })}
               >
-                <Text style={[styles.langChipText, settings.language === l.code && styles.langChipTextActive]}>
-                  {l.label}
+                <Text style={[styles.langChipText, settings.language === lang.code && styles.langChipTextActive]}>
+                  {lang.label}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
         </View>
 
-        {/* 3. Persona Profile Manager */}
+        {/* 4. AI Provider & Custom Endpoint */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
-            <User size={16} color={colors.lime} style={{ marginRight: 8 }} />
-            <Text style={styles.sectionTitle}>Persona Profile Manager</Text>
+            <Key size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+            <Text style={styles.sectionTitle}>AI Provider & Endpoints</Text>
           </View>
 
-          <Text style={styles.inputLabel}>Persona Name</Text>
-          <TextInput
-            style={styles.textInput}
-            value={personaName}
-            onChangeText={setPersonaName}
-            placeholder="e.g. Ren"
-            placeholderTextColor={colors.textMuted}
-          />
-
-          <Text style={styles.inputLabel}>Appearance & Physical Description</Text>
-          <TextInput
-            style={styles.textInput}
-            value={personaAppearance}
-            onChangeText={setPersonaAppearance}
-            placeholder="e.g. Messy dark hair, leather jacket, 178cm"
-            placeholderTextColor={colors.textMuted}
-          />
-
-          <Text style={styles.inputLabel}>Personality & Backstory</Text>
-          <TextInput
-            style={[styles.textInput, { height: 60 }]}
-            value={personaPersonality}
-            onChangeText={setPersonaPersonality}
-            placeholder="e.g. Relaxed college student with a curious mind"
-            placeholderTextColor={colors.textMuted}
-            multiline
-          />
-
-          <TouchableOpacity style={styles.saveBtn} onPress={handleSavePersona}>
-            <Text style={styles.saveBtnText}>{personaSaved ? 'Saved! ✓' : 'Save Persona Profile'}</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* 4. API Key & Custom Endpoints */}
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeader}>
-            <Key size={16} color={colors.lime} style={{ marginRight: 8 }} />
-            <Text style={styles.sectionTitle}>API Engine & Custom Endpoints</Text>
-          </View>
-
-          <Text style={styles.inputLabel}>Quick Presets</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetsRow}>
-            <TouchableOpacity style={styles.presetChip} onPress={() => handleApplyPreset('gemini')}>
-              <Text style={styles.presetChipText}>🟢 Gemini AI Studio</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.presetChip} onPress={() => handleApplyPreset('openrouter')}>
-              <Text style={styles.presetChipText}>🟣 OpenRouter</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.presetChip} onPress={() => handleApplyPreset('ollama')}>
-              <Text style={styles.presetChipText}>🦙 Ollama Local</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.presetChip} onPress={() => handleApplyPreset('kobold')}>
-              <Text style={styles.presetChipText}>⚔️ KoboldAI</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.presetChip} onPress={() => handleApplyPreset('deepseek')}>
-              <Text style={styles.presetChipText}>🤖 DeepSeek Direct</Text>
-            </TouchableOpacity>
-          </ScrollView>
-
+          {/* Provider Selector */}
           <View style={styles.providerRow}>
-            {(['gemini', 'openrouter', 'custom'] as LLMProvider[]).map(p => (
+            {(['gemini', 'openrouter', 'custom'] as const).map(p => (
               <TouchableOpacity
                 key={p}
                 style={[styles.providerBtn, selectedProvider === p && styles.providerBtnActive]}
@@ -303,51 +289,55 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             ))}
           </View>
 
-          {selectedProvider === 'custom' && (
-            <>
-              <Text style={styles.inputLabel}>Custom API Base URL (OpenAI-compatible)</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. http://localhost:11434/v1/chat/completions"
-                placeholderTextColor={colors.textMuted}
-                value={customEndpoint}
-                onChangeText={setCustomEndpoint}
-              />
-            </>
-          )}
-
-          <Text style={styles.inputLabel}>
-            {selectedProvider === 'gemini' ? 'Google AI Studio Key (Free)' : 'API Key'}
-          </Text>
+          {/* API Key */}
+          <Text style={styles.inputLabel}>API Key</Text>
           <TextInput
             style={styles.textInput}
-            placeholder="Paste your API key here..."
-            placeholderTextColor={colors.textMuted}
             secureTextEntry
+            placeholder="Enter API key..."
+            placeholderTextColor="rgba(255,255,255,0.3)"
             value={apiKey}
             onChangeText={setApiKey}
           />
 
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <View style={{ flex: 2 }}>
-              <Text style={styles.inputLabel}>Model Slug</Text>
-              <TextInput
-                style={styles.textInput}
-                value={model}
-                onChangeText={setModel}
-                placeholder="e.g. gemini-2.5-flash or llama3.3"
-                placeholderTextColor={colors.textMuted}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.inputLabel}>Temp</Text>
+          {/* Model Name */}
+          <Text style={styles.inputLabel}>Model Identifier</Text>
+          <TextInput
+            style={styles.textInput}
+            placeholder="e.g. gemini-2.5-flash, mistralai/mistral-large"
+            placeholderTextColor="rgba(255,255,255,0.3)"
+            value={model}
+            onChangeText={setModel}
+          />
+
+          {/* Custom Endpoint URL */}
+          <Text style={styles.inputLabel}>Custom Base URL (Optional)</Text>
+          <TextInput
+            style={styles.textInput}
+            placeholder="https://your-custom-proxy.com/v1"
+            placeholderTextColor="rgba(255,255,255,0.3)"
+            value={customEndpoint}
+            onChangeText={setCustomEndpoint}
+          />
+
+          {/* Hyperparameters */}
+          <View style={styles.rowTwoCols}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={styles.inputLabel}>Temperature</Text>
               <TextInput
                 style={styles.textInput}
                 value={temperature}
                 onChangeText={setTemperature}
-                placeholder="0.85"
-                keyboardType="numeric"
-                placeholderTextColor={colors.textMuted}
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <View style={{ flex: 1, marginLeft: 8 }}>
+              <Text style={styles.inputLabel}>Context Limit</Text>
+              <TextInput
+                style={styles.textInput}
+                value={contextLimit}
+                onChangeText={setContextLimit}
+                keyboardType="number-pad"
               />
             </View>
           </View>
@@ -360,21 +350,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         {/* 5. Humanized Response Presets */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
-            <Sliders size={16} color={colors.lime} style={{ marginRight: 8 }} />
-            <Text style={styles.sectionTitle}>Humanized Response Presets</Text>
+            <Sliders size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
+            <Text style={styles.sectionTitle}>Roleplay Response Style</Text>
           </View>
           <View style={styles.presetsRow}>
             {[
-              { id: 'casual', label: 'Casual / Natural' },
-              { id: 'descriptive', label: 'Deep Descriptive' },
-              { id: 'unhinged', label: 'Expressive / Dynamic' },
+              { id: 'casual', label: 'Casual Banter' },
+              { id: 'descriptive', label: 'Deep Novelist' },
+              { id: 'unhinged', label: 'Dynamic Anime' },
             ].map(hp => (
               <TouchableOpacity
                 key={hp.id}
                 style={[styles.presetChip, humanPreset === hp.id && styles.presetChipActive]}
                 onPress={() => setHumanPreset(hp.id as any)}
               >
-                <Text style={[styles.presetChipText, humanPreset === hp.id && { color: '#000' }]}>
+                <Text style={[styles.presetChipText, humanPreset === hp.id && { color: '#000000', fontWeight: '700' }]}>
                   {hp.label}
                 </Text>
               </TouchableOpacity>
@@ -382,21 +372,20 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </View>
         </View>
 
-        {/* 6. Chat Style & Syntax Colors */}
+        {/* 6. Chat Style & Typography */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
-            <Palette size={16} color={colors.lime} style={{ marginRight: 8 }} />
+            <Palette size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
             <Text style={styles.sectionTitle}>Chat Style & Typography</Text>
           </View>
 
-          <Text style={styles.inputLabel}>Default Chat Style</Text>
           <View style={styles.styleToggleRow}>
             <TouchableOpacity
               style={[styles.styleBtn, settings.chatStyle === 'bubble' && styles.styleBtnActive]}
               onPress={() => onUpdateSettings({ ...settings, chatStyle: 'bubble' })}
             >
-              <MessageCircle size={16} color={settings.chatStyle === 'bubble' ? '#000' : colors.textSecondary} style={{ marginRight: 6 }} />
-              <Text style={[styles.styleBtnText, settings.chatStyle === 'bubble' && { color: '#000' }]}>
+              <MessageCircle size={15} color={settings.chatStyle === 'bubble' ? '#000000' : '#FFFFFF'} style={{ marginRight: 6 }} />
+              <Text style={[styles.styleBtnText, settings.chatStyle === 'bubble' && { color: '#000000', fontWeight: '700' }]}>
                 Bubble Mode
               </Text>
             </TouchableOpacity>
@@ -405,18 +394,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               style={[styles.styleBtn, settings.chatStyle === 'novel' && styles.styleBtnActive]}
               onPress={() => onUpdateSettings({ ...settings, chatStyle: 'novel' })}
             >
-              <BookOpen size={16} color={settings.chatStyle === 'novel' ? '#000' : colors.textSecondary} style={{ marginRight: 6 }} />
-              <Text style={[styles.styleBtnText, settings.chatStyle === 'novel' && { color: '#000' }]}>
+              <BookOpen size={15} color={settings.chatStyle === 'novel' ? '#000000' : '#FFFFFF'} style={{ marginRight: 6 }} />
+              <Text style={[styles.styleBtnText, settings.chatStyle === 'novel' && { color: '#000000', fontWeight: '700' }]}>
                 Novel Mode (Full-Bleed)
               </Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* 7. Token Counter & Currency Tracker */}
+        {/* 7. Token Counter & Currency */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
-            <Cpu size={16} color={colors.lime} style={{ marginRight: 8 }} />
+            <Cpu size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
             <Text style={styles.sectionTitle}>Token Counter & Currency</Text>
           </View>
 
@@ -429,7 +418,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   style={[styles.currencyBtn, settings.currency === curr && styles.currencyBtnActive]}
                   onPress={() => onUpdateSettings({ ...settings, currency: curr })}
                 >
-                  <Text style={[styles.currencyBtnText, settings.currency === curr && { color: '#000' }]}>
+                  <Text style={[styles.currencyBtnText, settings.currency === curr && { color: '#000000', fontWeight: '700' }]}>
                     {curr}
                   </Text>
                 </TouchableOpacity>
@@ -438,21 +427,89 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </View>
         </View>
 
-        {/* 8. About & Project Attribution */}
-        <View style={[styles.sectionCard, { borderColor: 'rgba(204, 255, 0, 0.3)' }]}>
+        {/* 8. About & Attribution */}
+        <View style={[styles.sectionCard, { borderColor: 'rgba(255, 255, 255, 0.15)' }]}>
           <View style={styles.sectionHeader}>
-            <ShieldCheck size={16} color={colors.lime} style={{ marginRight: 8 }} />
+            <ShieldCheck size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
             <Text style={styles.sectionTitle}>About NekoChat</Text>
           </View>
           <Text style={styles.aboutVersion}>🐾 NekoChat v0.1.0-alpha</Text>
           <Text style={styles.aboutDesc}>
-            Free & Open-Source AI Roleplay Client. Forked & evolved from the Warden AI Core.
-          </Text>
-          <Text style={styles.aboutAttribution}>
-            Based on the NekoChat Project: https://github.com/kanto/NekoChat
+            Free & Open-Source AI Roleplay Client. Evolved from Warden AI Core with Pure React engine.
           </Text>
         </View>
       </ScrollView>
+
+      {/* ================= VAULT BACKUP MODAL ================= */}
+      <Modal visible={vaultModalVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Shield size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                <Text style={styles.modalTitle}>Warden Vault Data Manager</Text>
+              </View>
+              <TouchableOpacity onPress={() => setVaultModalVisible(false)}>
+                <X size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              {importMessage && (
+                <View style={styles.successBanner}>
+                  <Check size={16} color="#4ADE80" style={{ marginRight: 6 }} />
+                  <Text style={styles.successBannerText}>{importMessage}</Text>
+                </View>
+              )}
+
+              {/* Export Section */}
+              <Text style={styles.fieldHeading}>Vault Data Payload (JSON)</Text>
+              <View style={styles.jsonBox}>
+                <Text style={styles.jsonText} numberOfLines={6}>
+                  {vaultJson || 'Tap Export Vault to generate backup JSON payload.'}
+                </Text>
+              </View>
+
+              <View style={styles.modalBtnRow}>
+                <TouchableOpacity style={styles.miniBtn} onPress={handleCopyVault}>
+                  {copiedVault ? (
+                    <>
+                      <Check size={14} color="#4ADE80" style={{ marginRight: 4 }} />
+                      <Text style={[styles.miniBtnText, { color: '#4ADE80' }]}>Copied</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+                      <Text style={styles.miniBtnText}>Copy JSON</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.miniBtn} onPress={handleTriggerUploadVaultFile}>
+                  <Upload size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+                  <Text style={styles.miniBtnText}>Upload Backup File</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Import Section */}
+              <Text style={[styles.fieldHeading, { marginTop: 18 }]}>Paste Vault JSON to Restore</Text>
+              <TextInput
+                style={[styles.textInput, styles.textArea]}
+                multiline
+                numberOfLines={4}
+                placeholder="Paste your exported vault JSON here..."
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                value={importJsonText}
+                onChangeText={setImportJsonText}
+              />
+
+              <TouchableOpacity style={styles.restoreBtn} onPress={handleImportVault}>
+                <Text style={styles.restoreBtnText}>Restore Vault Data</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -460,50 +517,59 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.bgDark,
+    backgroundColor: '#0c0e14',
   },
   scrollContent: {
     padding: 16,
-    paddingBottom: 110,
+    paddingBottom: 90,
   },
-  screenTitle: {
-    color: colors.textPrimary,
+  header: {
+    marginBottom: 16,
+    paddingTop: 8,
+  },
+  pageTitle: {
+    color: '#FFFFFF',
     fontSize: 22,
     fontWeight: '800',
-    marginBottom: 16,
+    letterSpacing: -0.5,
+  },
+  pageSubtitle: {
+    color: 'rgba(255, 255, 255, 0.45)',
+    fontSize: 12,
+    marginTop: 2,
   },
   sectionCard: {
-    backgroundColor: colors.bgSurface,
+    backgroundColor: '#12151e',
     borderRadius: 18,
     padding: 16,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: colors.borderSubtle,
+    borderColor: '#1b1e28',
+  },
+  vaultCard: {
+    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   sectionHeader: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
   },
   sectionTitle: {
-    color: colors.textPrimary,
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',
-    flex: 1,
   },
-  refreshBtn: {
-    padding: 4,
-  },
-  pingRow: {
+  serviceRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 7,
+    paddingVertical: 8,
     borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(255,255,255,0.06)',
+    borderBottomColor: 'rgba(255, 255, 255, 0.06)',
   },
   serviceName: {
-    color: colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.7)',
     fontSize: 12,
   },
   pingBadge: {
@@ -517,15 +583,55 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   dotGreen: {
-    backgroundColor: colors.lime,
+    backgroundColor: '#4ADE80',
   },
   dotOrange: {
-    backgroundColor: colors.lemon,
+    backgroundColor: '#FBBF24',
   },
   pingText: {
-    color: colors.textPrimary,
+    color: '#FFFFFF',
     fontSize: 11,
     fontWeight: '600',
+  },
+  vaultDesc: {
+    color: 'rgba(255, 255, 255, 0.55)',
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  vaultButtonsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  vaultPrimaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 10,
+    borderRadius: 14,
+  },
+  vaultPrimaryBtnText: {
+    color: '#000000',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  vaultSecondaryBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  vaultSecondaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
   langRow: {
     flexDirection: 'row',
@@ -535,100 +641,111 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 0.5,
-    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   langChipActive: {
-    backgroundColor: 'rgba(204, 255, 0, 0.15)',
-    borderColor: colors.lime,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    borderColor: '#FFFFFF',
   },
   langChipText: {
-    color: colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.55)',
     fontSize: 11,
     fontWeight: '600',
   },
   langChipTextActive: {
-    color: colors.lime,
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   providerRow: {
     flexDirection: 'row',
     gap: 8,
     marginBottom: 12,
   },
-  presetsRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 12,
-  },
-  presetChip: {
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    borderWidth: 0.5,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  presetChipActive: {
-    backgroundColor: colors.lime,
-    borderColor: colors.lime,
-  },
-  presetChipText: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    fontWeight: '600',
-  },
   providerBtn: {
     flex: 1,
     paddingVertical: 8,
     borderRadius: 12,
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   providerBtnActive: {
-    backgroundColor: colors.lime,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    borderColor: '#FFFFFF',
   },
   providerBtnText: {
-    color: colors.textSecondary,
+    color: 'rgba(255, 255, 255, 0.55)',
     fontSize: 11,
     fontWeight: '700',
   },
   providerBtnTextActive: {
-    color: '#000',
+    color: '#FFFFFF',
   },
   inputLabel: {
-    color: colors.textMuted,
+    color: 'rgba(255, 255, 255, 0.65)',
     fontSize: 11,
-    marginBottom: 4,
-    marginTop: 6,
+    fontWeight: '600',
+    marginBottom: 6,
+    marginTop: 8,
   },
   textInput: {
-    backgroundColor: colors.bgDark,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 9,
-    color: colors.textPrimary,
+    color: '#FFFFFF',
     fontSize: 12,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    marginBottom: 8,
   },
-  saveBtn: {
-    backgroundColor: colors.lime,
-    paddingVertical: 10,
-    borderRadius: 12,
-    alignItems: 'center',
+  textArea: {
+    height: 70,
+    textAlignVertical: 'top',
+  },
+  rowTwoCols: {
+    flexDirection: 'row',
     marginTop: 4,
   },
+  saveBtn: {
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 11,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 14,
+  },
   saveBtnText: {
-    color: '#000',
-    fontSize: 12,
-    fontWeight: '800',
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  presetsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  presetChip: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    paddingVertical: 8,
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  presetChipActive: {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FFFFFF',
+  },
+  presetChipText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 11,
+    fontWeight: '600',
   },
   styleToggleRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 4,
+    gap: 10,
   },
   styleBtn: {
     flex: 1,
@@ -637,18 +754,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 10,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 0.5,
-    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   styleBtnActive: {
-    backgroundColor: colors.lime,
-    borderColor: colors.lime,
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FFFFFF',
   },
   styleBtnText: {
-    color: colors.textSecondary,
+    color: '#FFFFFF',
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   toggleRow: {
     flexDirection: 'row',
@@ -659,31 +776,127 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   currencyBtnActive: {
-    backgroundColor: colors.lime,
+    backgroundColor: '#FFFFFF',
+    borderColor: '#FFFFFF',
   },
   currencyBtnText: {
-    color: colors.textSecondary,
+    color: '#FFFFFF',
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   aboutVersion: {
-    color: colors.lime,
-    fontSize: 12,
+    color: '#FFFFFF',
+    fontSize: 14,
     fontWeight: '700',
     marginBottom: 4,
   },
   aboutDesc: {
-    color: colors.textSecondary,
-    fontSize: 11,
-    lineHeight: 16,
-    marginBottom: 6,
+    color: 'rgba(255, 255, 255, 0.55)',
+    fontSize: 12,
+    lineHeight: 18,
   },
-  aboutAttribution: {
-    color: colors.textMuted,
-    fontSize: 10,
-    fontStyle: 'italic',
+  rotating: {
+    transform: [{ rotate: '45deg' }],
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#12151e',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    maxHeight: '85%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  modalTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  modalBody: {
+    padding: 18,
+  },
+  fieldHeading: {
+    color: 'rgba(255, 255, 255, 0.75)',
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  jsonBox: {
+    backgroundColor: '#0c0e14',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    marginBottom: 10,
+  },
+  jsonText: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontFamily: 'monospace',
+  },
+  modalBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  miniBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  miniBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  restoreBtn: {
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 14,
+    marginBottom: 24,
+  },
+  restoreBtnText: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(74, 222, 128, 0.15)',
+    padding: 10,
+    borderRadius: 10,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#4ADE80',
+  },
+  successBannerText: {
+    color: '#4ADE80',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

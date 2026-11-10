@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { MessageSquare, Compass, Plus, Sparkles } from 'lucide-react-native';
-import { Character } from '../types';
+import { Character, Persona } from '../types';
 import { colors } from '../theme/colors';
 import { StoryTray } from '../components/StoryTray';
 import { BentoChatCard } from '../components/BentoChatCard';
@@ -24,6 +24,7 @@ import { StoryViewerModal } from '../components/StoryViewerModal';
 interface ChatsScreenProps {
   characters: Character[];
   trendingCharacters: Character[];
+  userPersona?: Persona | null;
   onSelectCharacter: (character: Character) => void;
   onToggleFavorite: (character: Character) => void;
   onNavigateDiscover: () => void;
@@ -33,6 +34,7 @@ interface ChatsScreenProps {
 export const ChatsScreen: React.FC<ChatsScreenProps> = ({
   characters,
   trendingCharacters,
+  userPersona,
   onSelectCharacter,
   onToggleFavorite,
   onNavigateDiscover,
@@ -76,13 +78,13 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
         contentContainerStyle={styles.listContent}
         ListHeaderComponent={
           <>
-            {/* Top 5 Trending 24h Story Tray */}
-            {trendingCharacters.length > 0 && (
-              <StoryTray
-                trendingCharacters={trendingCharacters}
-                onOpenStory={handleOpenStory}
-              />
-            )}
+            {/* Top 5 Trending 24h Story Tray with + Story Button */}
+            <StoryTray
+              trendingCharacters={trendingCharacters}
+              userPersona={userPersona}
+              onOpenStory={handleOpenStory}
+              onAddStory={onNavigateStudio}
+            />
 
             {/* My Chats Grid Section Header */}
             <View style={styles.sectionHeader}>
