@@ -51,7 +51,6 @@ import { TinderDeck } from '../components/TinderDeck';
 import {
   communityCatalogService,
   POPULAR_COMMUNITY_CATEGORIES,
-  ANIME_COMMUNITY_FALLBACK,
 } from '../services/communityCatalogService';
 import { storageService } from '../services/storageService';
 
@@ -82,17 +81,18 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   const [activeTab, setActiveTab] = useState<DiscoverTab>('community');
   const [catalogSource, setCatalogSource] = useState<CatalogSource>('janitor');
 
-  // Community Catalog State
-  const [communityCharacters, setCommunityCharacters] = useState<CommunityCharacter[]>(ANIME_COMMUNITY_FALLBACK);
-  const [communityTotalCount, setCommunityTotalCount] = useState<number>(214520);
+  // Community Catalog State — 100% Real Live Data (Starts empty)
+  const [communityCharacters, setCommunityCharacters] = useState<CommunityCharacter[]>([]);
+  const [communityTotalCount, setCommunityTotalCount] = useState<number>(0);
   const [communityLoading, setCommunityLoading] = useState<boolean>(false);
   const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false);
+  const [communityError, setCommunityError] = useState<string | null>(null);
 
   // Segmented Controls State
   const [entityMode, setEntityMode] = useState<EntityMode>('characters');
   const [sfwOnly, setSfwOnly] = useState<boolean>(false);
   const [scopeMode, setScopeMode] = useState<ScopeMode>('all');
-  const [communitySort, setCommunitySort] = useState<CatalogSort>('latest');
+  const [communitySort, setCommunitySort] = useState<CatalogSort>('trending');
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [tagsExpanded, setTagsExpanded] = useState<boolean>(false);
 
@@ -141,6 +141,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
 
   const fetchCharactersInitial = async (page = 1) => {
     setCommunityLoading(true);
+    setCommunityError(null);
     try {
       if (catalogSource === 'janitor') {
         const activeCat = POPULAR_COMMUNITY_CATEGORIES.find(c => selectedCategoryValues.includes(c.value) && c.tagId);
@@ -152,8 +153,9 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           sort: communitySort,
           sfwOnly,
         });
-        setCommunityCharacters(res.characters.length > 0 ? res.characters : ANIME_COMMUNITY_FALLBACK);
+        setCommunityCharacters(res.characters);
         setCommunityTotalCount(res.totalCount);
+        if (res.error) setCommunityError(res.error);
       } else {
         const activeTag = selectedCategoryValues.includes('all') ? undefined : selectedCategoryValues[0];
         const res = await communityCatalogService.fetchChubCharacters({
@@ -164,11 +166,13 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           sort: communitySort,
           sfwOnly,
         });
-        setCommunityCharacters(res.characters.length > 0 ? res.characters : ANIME_COMMUNITY_FALLBACK);
+        setCommunityCharacters(res.characters);
         setCommunityTotalCount(res.totalCount);
+        if (res.error) setCommunityError(res.error);
       }
-    } catch {
-      setCommunityCharacters(ANIME_COMMUNITY_FALLBACK);
+    } catch (err: any) {
+      setCommunityCharacters([]);
+      setCommunityError(err?.message || 'Failed to fetch catalog feed');
     } finally {
       setCommunityLoading(false);
     }
@@ -209,13 +213,11 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         setCommunityCharacters(prev => {
           const existingIds = new Set(prev.map(c => c.id));
           const uniqueNew = newChars.filter(c => !existingIds.has(c.id));
-          return uniqueNew.length > 0 ? [...prev, ...uniqueNew] : [...prev, ...newChars];
+          return [...prev, ...uniqueNew];
         });
         setCurrentPage(nextPage);
       }
-    } catch {
-      // Graceful fallback loop if network drops
-    } finally {
+    } catch {} finally {
       setIsLoadingMore(false);
     }
   };
@@ -833,23 +835,64 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             ) : null
           }
           ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Sparkles size={28} color="#9ca3af" style={{ marginBottom: 10 }} />
-              <Text style={styles.emptyTitle}>
-                {scopeMode === 'following'
-                  ? 'No Followed Creators Yet'
-                  : scopeMode === 'favorites'
-                  ? 'No Saved Favorites'
-                  : 'No Characters Found'}
-              </Text>
-              <Text style={styles.emptyDesc}>
-                {scopeMode === 'following'
-                  ? 'Tap "+ Follow" on any character card to see companions from your favorite creators here.'
-                  : scopeMode === 'favorites'
-                  ? 'Tap the Bookmark icon on any card to save it here for fast access.'
-                  : 'Try adjusting your search terms or selecting another tag.'}
-              </Text>
-            </View>
+            communityError ? (
+              <View style={styles.errorContainer}>
+                <View style={styles.errorIconCircle}>
+                  <Sparkles size={24} color="#f43f5e" />
+                </View>
+                <Text style={styles.errorTitle}>
+                  {catalogSource === 'janitor'
+                    ? 'JanitorAI Gateway Offline (Port 3001)'
+                    : 'Chub.ai Feed Unavailable'}
+                </Text>
+                <Text style={styles.errorDesc}>
+                  {catalogSource === 'janitor'
+                    ? 'Buka terminal baru di folder NekoChat dan jalankan "npm run proxy" untuk mengaktifkan proxy JanitorAI tanpa mock data.'
+                    : communityError}
+                </Text>
+                <View style={styles.errorActionsRow}>
+                  <TouchableOpacity
+                    style={styles.errorRetryBtn}
+                    onPress={() => fetchCharactersInitial(1)}
+                    activeOpacity={0.8}
+                  >
+                    <RefreshCw size={13} color="#000000" style={{ marginRight: 6 }} />
+                    <Text style={styles.errorRetryBtnText}>Retry Connection</Text>
+                  </TouchableOpacity>
+
+                  {catalogSource === 'janitor' && (
+                    <TouchableOpacity
+                      style={styles.errorSwitchBtn}
+                      onPress={() => {
+                        setCatalogSource('chub');
+                        setCurrentPage(1);
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.errorSwitchBtnText}>Switch to Chub.ai</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            ) : (
+              <View style={styles.emptyContainer}>
+                <Sparkles size={28} color="#9ca3af" style={{ marginBottom: 10 }} />
+                <Text style={styles.emptyTitle}>
+                  {scopeMode === 'following'
+                    ? 'No Followed Creators Yet'
+                    : scopeMode === 'favorites'
+                    ? 'No Saved Favorites'
+                    : 'No Characters Found'}
+                </Text>
+                <Text style={styles.emptyDesc}>
+                  {scopeMode === 'following'
+                    ? 'Tap "+ Follow" on any character card to see companions from your favorite creators here.'
+                    : scopeMode === 'favorites'
+                    ? 'Tap the Bookmark icon on any card to save it here for fast access.'
+                    : 'Try adjusting your search terms or selecting another tag.'}
+                </Text>
+              </View>
+            )
           }
         />
       )}
@@ -1384,6 +1427,74 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#1e2436',
     marginTop: 10,
+  },
+  errorContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+    backgroundColor: 'rgba(244, 63, 94, 0.05)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(244, 63, 94, 0.25)',
+    marginTop: 10,
+  },
+  errorIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(244, 63, 94, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(244, 63, 94, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  errorTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#fda4af',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  errorDesc: {
+    fontSize: 11,
+    color: '#9ca3af',
+    textAlign: 'center',
+    lineHeight: 16,
+    maxWidth: 300,
+    marginBottom: 14,
+  },
+  errorActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  errorRetryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#d4ff00',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 10,
+  },
+  errorRetryBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#000000',
+  },
+  errorSwitchBtn: {
+    backgroundColor: '#181c28',
+    borderWidth: 1,
+    borderColor: '#262c3f',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+  },
+  errorSwitchBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#e2e8f0',
   },
   emptyTitle: {
     fontSize: 13,

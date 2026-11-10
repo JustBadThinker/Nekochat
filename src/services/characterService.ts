@@ -6,7 +6,7 @@
 
 import { Character } from '../types';
 import { storageService } from './storageService';
-import { communityCatalogService, ANIME_COMMUNITY_FALLBACK } from './communityCatalogService';
+import { communityCatalogService } from './communityCatalogService';
 
 export const characterService = {
   /**
@@ -59,11 +59,25 @@ export const characterService = {
         sort: 'trending',
         limit: 5,
       });
-      if (liveChub.length > 0) {
-        return liveChub.slice(0, 5);
+      if (liveChub.characters.length > 0) {
+        return liveChub.characters.map((c): Character => ({
+          id: c.id,
+          name: c.name,
+          tagline: c.chatName || c.name,
+          description: c.shortDescription,
+          avatar: c.avatarUrl,
+          personality: c.personality || '',
+          scenario: c.scenario || '',
+          firstMessage: c.firstMessage || '',
+          tags: c.tags.map(t => t.name),
+          creator: c.creatorName,
+          totalChats: c.chatCount,
+          lastActive: Date.now(),
+          isFavorite: false,
+        }));
       }
     } catch {}
 
-    return ANIME_COMMUNITY_FALLBACK.slice(0, 5);
+    return characters.slice(0, 5);
   },
 };
