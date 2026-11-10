@@ -58,6 +58,8 @@ export interface ProviderConfig {
   apiKey: string;
   model: string;
   customEndpoint?: string;
+  temperature?: number;
+  contextLimit?: number;
   imageProvider: ImageProvider;
   imageApiKey?: string;
 }

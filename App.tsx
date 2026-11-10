@@ -11,6 +11,7 @@ import { colors } from './src/theme/colors';
 import { storageService } from './src/services/storageService';
 import { characterService } from './src/services/characterService';
 import { CapsuleDock, TabScreen } from './src/components/CapsuleDock';
+import { SplashScreen } from './src/components/SplashScreen';
 import { ChatsScreen } from './src/screens/ChatsScreen';
 import { DiscoverScreen } from './src/screens/DiscoverScreen';
 import { ChatRoomScreen } from './src/screens/ChatRoomScreen';
@@ -27,6 +28,7 @@ export default function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [activeChatCharacter, setActiveChatCharacter] = useState<Character | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
     initApp();
@@ -59,6 +61,10 @@ export default function App() {
     setTrendingCharacters(characterService.getTrending24h(updated));
   };
 
+  if (showSplash) {
+    return <SplashScreen onFinish={() => setShowSplash(false)} />;
+  }
+
   if (loading || !config || !settings || !activePersona) {
     return (
       <View style={styles.loadingContainer}>
@@ -71,72 +77,86 @@ export default function App() {
   // Active Chat Screen (Full-Screen overlay)
   if (activeChatCharacter) {
     return (
-      <View style={styles.container}>
-        <StatusBar style="light" />
-        <ChatRoomScreen
-          character={activeChatCharacter}
-          persona={activePersona}
-          personas={personas}
-          onSelectPersona={setActivePersona}
-          config={config}
-          onBack={() => setActiveChatCharacter(null)}
-        />
+      <View style={styles.webFrame}>
+        <View style={styles.appContainer}>
+          <StatusBar style="light" />
+          <ChatRoomScreen
+            character={activeChatCharacter}
+            persona={activePersona}
+            personas={personas}
+            onSelectPersona={setActivePersona}
+            config={config}
+            onBack={() => setActiveChatCharacter(null)}
+          />
+        </View>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <StatusBar style="light" />
+    <View style={styles.webFrame}>
+      <View style={styles.appContainer}>
+        <StatusBar style="light" />
 
-      {/* Screen Render based on activeTab */}
-      <View style={styles.screenArea}>
-        {activeTab === 'chats' && (
-          <ChatsScreen
-            characters={characters}
-            trendingCharacters={trendingCharacters}
-            onSelectCharacter={setActiveChatCharacter}
-            onToggleFavorite={handleToggleFavorite}
-            onNavigateDiscover={() => setActiveTab('discover')}
-          />
-        )}
+        {/* Screen Render based on activeTab */}
+        <View style={styles.screenArea}>
+          {activeTab === 'chats' && (
+            <ChatsScreen
+              characters={characters}
+              trendingCharacters={trendingCharacters}
+              onSelectCharacter={setActiveChatCharacter}
+              onToggleFavorite={handleToggleFavorite}
+              onNavigateDiscover={() => setActiveTab('discover')}
+            />
+          )}
 
-        {activeTab === 'discover' && (
-          <DiscoverScreen
-            characters={characters}
-            onStartChat={setActiveChatCharacter}
-            onToggleFavorite={handleToggleFavorite}
-          />
-        )}
+          {activeTab === 'discover' && (
+            <DiscoverScreen
+              characters={characters}
+              onStartChat={setActiveChatCharacter}
+              onToggleFavorite={handleToggleFavorite}
+            />
+          )}
 
-        {activeTab === 'vault' && (
-          <VaultScreen
-            characters={characters}
-            personas={personas}
-            settings={settings}
-          />
-        )}
+          {activeTab === 'vault' && (
+            <VaultScreen
+              characters={characters}
+              personas={personas}
+              settings={settings}
+            />
+          )}
 
-        {activeTab === 'settings' && (
-          <SettingsScreen
-            config={config}
-            onUpdateConfig={setConfig}
-            settings={settings}
-            onUpdateSettings={setSettings}
-          />
-        )}
+          {activeTab === 'settings' && (
+            <SettingsScreen
+              config={config}
+              onUpdateConfig={setConfig}
+              settings={settings}
+              onUpdateSettings={setSettings}
+            />
+          )}
+        </View>
+
+        {/* Floating Capsule Dock (Ref: Gambar 1) */}
+        <CapsuleDock activeTab={activeTab} onTabChange={setActiveTab} />
       </View>
-
-      {/* Floating Capsule Dock (Ref: Gambar 1) */}
-      <CapsuleDock activeTab={activeTab} onTabChange={setActiveTab} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  webFrame: {
     flex: 1,
+    backgroundColor: '#050608',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  appContainer: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 480, // Clamps perfectly to mobile smartphone frame on Edge/Firefox
     backgroundColor: colors.bgDark,
+    position: 'relative',
+    overflow: 'hidden',
   },
   loadingContainer: {
     flex: 1,

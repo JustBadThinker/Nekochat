@@ -37,6 +37,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [apiKey, setApiKey] = useState(config.apiKey || '');
   const [selectedProvider, setSelectedProvider] = useState<LLMProvider>(config.provider);
   const [model, setModel] = useState(config.model || 'gemini-2.5-flash');
+  const [customEndpoint, setCustomEndpoint] = useState(config.customEndpoint || '');
+  const [temperature, setTemperature] = useState(String(config.temperature || '0.85'));
 
   // Latency Monitor State
   const [testingHealth, setTestingHealth] = useState(false);
@@ -67,11 +69,37 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     testAllServices();
   }, []);
 
+  const handleApplyPreset = (preset: 'gemini' | 'openrouter' | 'ollama' | 'kobold' | 'deepseek') => {
+    if (preset === 'gemini') {
+      setSelectedProvider('gemini');
+      setModel('gemini-2.5-flash');
+      setCustomEndpoint('');
+    } else if (preset === 'openrouter') {
+      setSelectedProvider('openrouter');
+      setModel('deepseek/deepseek-chat');
+      setCustomEndpoint('https://openrouter.ai/api/v1/chat/completions');
+    } else if (preset === 'ollama') {
+      setSelectedProvider('custom');
+      setModel('llama3.3');
+      setCustomEndpoint('http://localhost:11434/v1/chat/completions');
+    } else if (preset === 'kobold') {
+      setSelectedProvider('custom');
+      setModel('koboldcpp');
+      setCustomEndpoint('http://localhost:5001/v1/chat/completions');
+    } else if (preset === 'deepseek') {
+      setSelectedProvider('custom');
+      setModel('deepseek-chat');
+      setCustomEndpoint('https://api.deepseek.com/v1/chat/completions');
+    }
+  };
+
   const handleSaveKeys = async () => {
     const updated = await storageService.saveProviderConfig({
       provider: selectedProvider,
       apiKey,
       model,
+      customEndpoint,
+      temperature: parseFloat(temperature) || 0.85,
     });
     onUpdateConfig(updated);
   };
@@ -132,6 +160,26 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <Text style={styles.sectionTitle}>API Key Hub</Text>
           </View>
 
+          {/* Provider Quick Presets */}
+          <Text style={styles.inputLabel}>Quick Presets</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetsRow}>
+            <TouchableOpacity style={styles.presetChip} onPress={() => handleApplyPreset('gemini')}>
+              <Text style={styles.presetChipText}>🟢 Gemini AI Studio</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.presetChip} onPress={() => handleApplyPreset('openrouter')}>
+              <Text style={styles.presetChipText}>🟣 OpenRouter</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.presetChip} onPress={() => handleApplyPreset('ollama')}>
+              <Text style={styles.presetChipText}>🦙 Ollama Local</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.presetChip} onPress={() => handleApplyPreset('kobold')}>
+              <Text style={styles.presetChipText}>⚔️ KoboldAI</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.presetChip} onPress={() => handleApplyPreset('deepseek')}>
+              <Text style={styles.presetChipText}>🤖 DeepSeek Direct</Text>
+            </TouchableOpacity>
+          </ScrollView>
+
           {/* Provider Selector */}
           <View style={styles.providerRow}>
             {(['gemini', 'openrouter', 'custom'] as LLMProvider[]).map(p => (
@@ -147,9 +195,23 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             ))}
           </View>
 
+          {/* Custom Endpoint URL */}
+          {selectedProvider === 'custom' && (
+            <>
+              <Text style={styles.inputLabel}>Custom API Base URL (OpenAI-compatible)</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="e.g. http://localhost:11434/v1/chat/completions"
+                placeholderTextColor={colors.textMuted}
+                value={customEndpoint}
+                onChangeText={setCustomEndpoint}
+              />
+            </>
+          )}
+
           {/* API Key Input */}
           <Text style={styles.inputLabel}>
-            {selectedProvider === 'gemini' ? 'Google AI Studio Key (Free)' : 'API Key'}
+            {selectedProvider === 'gemini' ? 'Google AI Studio Key (Free)' : 'API Key (Optional for local AI)'}
           </Text>
           <TextInput
             style={styles.textInput}
@@ -160,15 +222,30 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             onChangeText={setApiKey}
           />
 
-          {/* Model Selector */}
-          <Text style={styles.inputLabel}>Model Slug</Text>
-          <TextInput
-            style={styles.textInput}
-            value={model}
-            onChangeText={setModel}
-            placeholder="e.g. gemini-2.5-flash or deepseek/deepseek-v3"
-            placeholderTextColor={colors.textMuted}
-          />
+          {/* Model Selector & Temperature */}
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ flex: 2 }}>
+              <Text style={styles.inputLabel}>Model Slug</Text>
+              <TextInput
+                style={styles.textInput}
+                value={model}
+                onChangeText={setModel}
+                placeholder="e.g. gemini-2.5-flash or llama3.3"
+                placeholderTextColor={colors.textMuted}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.inputLabel}>Temperature</Text>
+              <TextInput
+                style={styles.textInput}
+                value={temperature}
+                onChangeText={setTemperature}
+                placeholder="0.85"
+                keyboardType="numeric"
+                placeholderTextColor={colors.textMuted}
+              />
+            </View>
+          </View>
 
           <TouchableOpacity style={styles.saveBtn} onPress={handleSaveKeys}>
             <Text style={styles.saveBtnText}>Save API Configuration</Text>
@@ -293,6 +370,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     marginBottom: 14,
+  },
+  presetsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 12,
+  },
+  presetChip: {
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  presetChipText: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
   },
   providerBtn: {
     flex: 1,

@@ -3,7 +3,7 @@
  * Ref: Gambar 3 — Fullscreen card with right-handed thumb action dock.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -34,7 +34,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
   onToggleFavorite,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const position = new Animated.ValueXY();
+  const position = useRef(new Animated.ValueXY()).current;
 
   const currentCharacter = characters[currentIndex];
 
@@ -45,7 +45,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
 
   const handlePass = () => {
     Animated.timing(position, {
-      toValue: { x: -width * 1.2, y: 0 },
+      toValue: { x: -width * 1.3, y: 0 },
       duration: 250,
       useNativeDriver: false,
     }).start(() => handleNext());
@@ -54,7 +54,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
   const handleChat = () => {
     if (currentCharacter) {
       Animated.timing(position, {
-        toValue: { x: width * 1.2, y: 0 },
+        toValue: { x: width * 1.3, y: 0 },
         duration: 250,
         useNativeDriver: false,
       }).start(() => {
@@ -63,6 +63,47 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
       });
     }
   };
+
+  // Full 120Hz PanGesture Drag Responder
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderMove: (_, gesture) => {
+        position.setValue({ x: gesture.dx, y: gesture.dy * 0.4 });
+      },
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dx > 120) {
+          handleChat();
+        } else if (gesture.dx < -120) {
+          handlePass();
+        } else {
+          Animated.spring(position, {
+            toValue: { x: 0, y: 0 },
+            friction: 5,
+            tension: 40,
+            useNativeDriver: false,
+          }).start();
+        }
+      },
+    })
+  ).current;
+
+  const rotate = position.x.interpolate({
+    inputRange: [-width * 1.5, 0, width * 1.5],
+    outputRange: ['-14deg', '0deg', '14deg'],
+  });
+
+  const likeOpacity = position.x.interpolate({
+    inputRange: [20, 100],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
+  const nopeOpacity = position.x.interpolate({
+    inputRange: [-100, -20],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
 
   const handleReset = () => {
     setCurrentIndex(0);
@@ -96,9 +137,27 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
         <View style={{ width: 40 }} />
       </View>
 
-      {/* Main Full-Bleed Card */}
-      <View style={styles.cardWrapper}>
+      {/* Main Full-Bleed Card with 120Hz Gesture Physics */}
+      <Animated.View
+        {...panResponder.panHandlers}
+        style={[
+          styles.cardWrapper,
+          position.getLayout(),
+          {
+            transform: [{ rotate }],
+          },
+        ]}
+      >
         <Image source={{ uri: currentCharacter.avatar }} style={styles.cardCover} />
+
+        {/* Dynamic LIKE & NOPE Stamp Overlays on Swipe */}
+        <Animated.View style={[styles.stampLike, { opacity: likeOpacity }]}>
+          <Text style={styles.stampLikeText}>MATCH 🔥</Text>
+        </Animated.View>
+
+        <Animated.View style={[styles.stampNope, { opacity: nopeOpacity }]}>
+          <Text style={styles.stampNopeText}>PASS ✕</Text>
+        </Animated.View>
 
         {/* Right-Handed Vertical Action Dock (Ref: Gambar 3) */}
         <View style={styles.rightActionDock}>
@@ -143,7 +202,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
             ))}
           </View>
         </View>
-      </View>
+      </Animated.View>
     </View>
   );
 };
@@ -189,6 +248,44 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     position: 'absolute',
+  },
+  stampLike: {
+    position: 'absolute',
+    top: 30,
+    left: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 2.5,
+    borderColor: colors.lime,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    transform: [{ rotate: '-15deg' }],
+    zIndex: 20,
+  },
+  stampLikeText: {
+    color: colors.lime,
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  stampNope: {
+    position: 'absolute',
+    top: 30,
+    right: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 2.5,
+    borderColor: colors.coral,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    transform: [{ rotate: '15deg' }],
+    zIndex: 20,
+  },
+  stampNopeText: {
+    color: colors.coral,
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
   rightActionDock: {
     position: 'absolute',

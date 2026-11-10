@@ -9,8 +9,10 @@ import { MessageSquare, Heart } from 'lucide-react-native';
 import { Character } from '../types';
 import { colors } from '../theme/colors';
 
-const { width } = Dimensions.get('window');
-const CARD_WIDTH = (width - 48) / 2;
+const { width: windowWidth } = Dimensions.get('window');
+// Clamp container width to 480px on desktop web so 2-column grid never stretches huge
+const effectiveWidth = Math.min(windowWidth, 480);
+const CARD_WIDTH = (effectiveWidth - 48) / 2;
 
 interface BentoChatCardProps {
   character: Character;

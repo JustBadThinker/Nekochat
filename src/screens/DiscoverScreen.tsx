@@ -4,7 +4,7 @@
  * Includes Collapsible Scenario Dropdown and Scraped Community Reviews.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,11 +15,13 @@ import {
   StyleSheet,
   SafeAreaView,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
-import { Search, Flame, LayoutGrid, ChevronDown, ChevronUp, MessageSquare, Star } from 'lucide-react-native';
+import { Search, Flame, LayoutGrid, ChevronDown, ChevronUp, MessageSquare, Star, Globe2, Shield } from 'lucide-react-native';
 import { Character } from '../types';
 import { colors } from '../theme/colors';
 import { TinderDeck } from '../components/TinderDeck';
+import { communityCatalogService } from '../services/communityCatalogService';
 
 interface DiscoverScreenProps {
   characters: Character[];
@@ -28,7 +30,7 @@ interface DiscoverScreenProps {
 }
 
 export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
-  characters,
+  characters: starterCharacters,
   onStartChat,
   onToggleFavorite,
 }) => {
@@ -36,15 +38,41 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTag, setSelectedTag] = useState('All');
   const [expandedScenarioId, setExpandedScenarioId] = useState<string | null>(null);
+  const [liveCharacters, setLiveCharacters] = useState<Character[]>(starterCharacters);
+  const [isLoading, setIsLoading] = useState(false);
+  const [catalogSource, setCatalogSource] = useState<'chub' | 'datacat'>('chub');
 
-  const tags = ['All', 'Romance', 'Cyberpunk', 'Fantasy', 'Slice of Life', 'Comfort'];
+  const tags = ['All', 'Romance', 'Anime', 'Fantasy', 'Cyberpunk', 'Slice of Life', 'Comfort', 'Action'];
 
-  const filteredCharacters = characters.filter(c => {
-    const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.tagline.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesTag = selectedTag === 'All' || c.tags.includes(selectedTag);
-    return matchesSearch && matchesTag;
-  });
+  // Fetch live characters on search or tag change
+  useEffect(() => {
+    fetchCatalog();
+  }, [selectedTag, catalogSource]);
+
+  const fetchCatalog = async (queryText?: string) => {
+    setIsLoading(true);
+    try {
+      const q = queryText !== undefined ? queryText : searchQuery;
+      const live = await communityCatalogService.getLiveCatalog(
+        {
+          search: q,
+          tag: selectedTag,
+          source: catalogSource,
+          limit: 24,
+        },
+        starterCharacters
+      );
+      setLiveCharacters(live.length > 0 ? live : starterCharacters);
+    } catch {
+      setLiveCharacters(starterCharacters);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSearchSubmit = () => {
+    fetchCatalog(searchQuery);
+  };
 
   const toggleScenario = (id: string) => {
     setExpandedScenarioId(prev => (prev === id ? null : id));
@@ -55,7 +83,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   if (mode === 'match') {
     return (
       <TinderDeck
-        characters={filteredCharacters}
+        characters={liveCharacters}
         onBack={() => setMode('grid')}
         onMatchChat={onStartChat}
         onToggleFavorite={onToggleFavorite}
@@ -90,16 +118,47 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         </View>
       </View>
 
+      {/* Live Catalog Source Toggle & Indicator */}
+      <View style={styles.sourceSelectorRow}>
+        <View style={styles.liveIndicator}>
+          <View style={styles.liveDot} />
+          <Text style={styles.liveText}>Live API Connected</Text>
+        </View>
+
+        <View style={styles.sourceButtons}>
+          <TouchableOpacity
+            style={[styles.sourceBtn, catalogSource === 'chub' && styles.sourceBtnActive]}
+            onPress={() => setCatalogSource('chub')}
+          >
+            <Text style={[styles.sourceBtnText, catalogSource === 'chub' && styles.sourceBtnTextActive]}>
+              Chub.ai
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.sourceBtn, catalogSource === 'datacat' && styles.sourceBtnActive]}
+            onPress={() => setCatalogSource('datacat')}
+          >
+            <Text style={[styles.sourceBtnText, catalogSource === 'datacat' && styles.sourceBtnTextActive]}>
+              Janitor / Datacat
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
       {/* Search Input Bar */}
       <View style={styles.searchBar}>
         <Search size={18} color={colors.textMuted} style={{ marginRight: 10 }} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search companions, tags, or tropes..."
+          placeholder="Search anime companions, tags, or tropes..."
           placeholderTextColor={colors.textMuted}
           value={searchQuery}
           onChangeText={setSearchQuery}
+          onSubmitEditing={handleSearchSubmit}
+          returnKeyType="search"
         />
+        {isLoading && <ActivityIndicator size="small" color={colors.lime} style={{ marginLeft: 6 }} />}
       </View>
 
       {/* Filter Tag Chips */}
@@ -121,7 +180,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
 
       {/* Character Catalog List */}
       <FlatList
-        data={filteredCharacters}
+        data={liveCharacters}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContent}
         renderItem={({ item }) => {
@@ -222,6 +281,53 @@ const styles = StyleSheet.create({
     padding: 4,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
+  },
+  sourceSelectorRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginBottom: 10,
+  },
+  liveIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.lime,
+    marginRight: 6,
+  },
+  liveText: {
+    color: colors.lime,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  sourceButtons: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  sourceBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  sourceBtnActive: {
+    backgroundColor: 'rgba(204, 255, 0, 0.15)',
+    borderColor: colors.lime,
+  },
+  sourceBtnText: {
+    color: colors.textSecondary,
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  sourceBtnTextActive: {
+    color: colors.lime,
   },
   segmentBtn: {
     flexDirection: 'row',
