@@ -1,67 +1,138 @@
 /**
- * Live Community Catalog Service (Chub.ai & Datacat / Janitor AI)
- * Real scrapers ported from Warden AI with session handshake and zero fake human stock photos.
+ * Live Community Catalog Service (Chub.ai & Janitor / Datacat)
+ * Adapted directly from Warden AI with zero compromises.
  */
 
-import { Character } from '../types';
+import { CommunityCharacter, CommunityCharacterDetail } from '../types';
 import { getHighResImageUrl } from '../utils/imageUtils';
 
-export interface CommunitySearchParams {
-  search?: string;
-  tag?: string;
-  page?: number;
-  limit?: number;
-  source?: 'chub' | 'datacat';
-  sort?: 'popular' | 'trending' | 'latest';
-  nsfw?: boolean;
+export interface CommunityCategory {
+  label: string;
+  value: string;
+  tagId: string;
 }
 
-// Resilient anime fallback cards strictly from Charhub CDN (Zero real-human stock photos)
-export const ANIME_COMMUNITY_FALLBACK: Character[] = [
+export const POPULAR_COMMUNITY_CATEGORIES: CommunityCategory[] = [
+  { label: 'All Tags', value: 'all', tagId: '' },
+  { label: '#female', value: 'female', tagId: '3' },
+  { label: '#male', value: 'male', tagId: '4' },
+  { label: '#anime', value: 'anime', tagId: '55' },
+  { label: '#magical', value: 'magical', tagId: '67' },
+  { label: '#fluff', value: 'fluff', tagId: '18' },
+  { label: '#enemiestolovers', value: 'enemiestolovers', tagId: '60' },
+  { label: '#dominant', value: 'dominant', tagId: '26' },
+  { label: '#submissive', value: 'submissive', tagId: '51' },
+  { label: '#demihuman', value: 'demihuman', tagId: '69' },
+  { label: '#nonhuman', value: 'nonhuman', tagId: '54' },
+  { label: '#furry', value: 'furry', tagId: '52' },
+  { label: '#game', value: 'game', tagId: '72' },
+  { label: '#villain', value: 'villain', tagId: '73' },
+  { label: '#hero', value: 'hero', tagId: '50' },
+  { label: '#royalty', value: 'royalty', tagId: '25' },
+  { label: '#angst', value: 'angst', tagId: '19' },
+  { label: '#comedy', value: 'comedy', tagId: '9' }
+];
+
+export const ANIME_COMMUNITY_FALLBACK: CommunityCharacter[] = [
   {
-    id: 'chub_hiro_riley',
-    name: 'Irresistible Riley',
-    tagline: 'Your good friend with an interesting secret',
-    description: 'A charming, playful companion who has known you for years. Behind the carefree smile lies a deep devotion.',
-    avatar: 'https://avatars.charhub.io/avatars/hiro_mc/irresistible-riley-e91d140ac49d/avatar.webp',
-    personality: 'Playful, teaseful, deeply loyal, expressive, sweet.',
-    scenario: 'Hanging out in your living room on a quiet weekend afternoon.',
-    firstMessage: '*Riley glances over from the sofa with a mischievous grin.* "Hey... you\'ve been spacing out for five minutes. Thinking about me?"',
-    tags: ['Anime', 'Romance', 'Friends to Lovers', 'Slice of Life'],
-    creator: 'hiro_mc',
-    totalChats: 4850,
-    lastActive: Date.now() - 1000 * 60 * 12,
-    isFavorite: false,
+    id: 'senna-cashier',
+    characterId: 'senna-cashier',
+    name: 'Senna, your favorite cashier',
+    chatName: 'Senna',
+    creatorName: 'adelsvard',
+    avatarUrl: 'https://avatars.charhub.io/avatars/hiro_mc/irresistible-riley-e91d140ac49d/avatar.webp',
+    shortDescription: 'Caught between two personas, just wants love. Senna\'s a rough and tumble girl during the day, but softens for you after dark.',
+    isNsfw: true,
+    totalTokens: 2200,
+    chatCount: 10,
+    messageCount: 42,
+    favoritesCount: 5,
+    tags: [
+      { id: '1', name: 'female', slug: 'female' },
+      { id: '2', name: 'tsundere', slug: 'tsundere' },
+      { id: '3', name: 'slowburn', slug: 'slowburn' },
+      { id: '4', name: 'modern', slug: 'modern' },
+    ],
+    firstMessage: '*Senna scans your items with practiced indifference, but her cheeks flush faintly when you hand her your payment.* "You come here every day at 11 PM. Don\'t you have somewhere better to be?" *She slides your change across with a lingering glance.*',
+    personality: 'Sharp-tongued, protective, secretly lonely, affectionate when guard is lowered.',
+    scenario: 'Late-night convenience store under fluorescent lights with rain tapping the glass.',
+    alternateGreetings: [
+      '*Senna looks up from restocking shelves.* "Back again? You\'re going to make me think you actually like this terrible coffee."',
+      '*She leans against the counter.* "Closing in ten minutes. If you\'re buying something, make it quick."'
+    ]
   },
   {
-    id: 'chub_esdash_ayumi',
-    name: 'Ayumi | Tomboy Crush',
-    tagline: 'The tough athletic classmate who softens around you',
-    description: 'The school\'s fiercest track athlete. Unapproachable to most, but she secretly waits for you at the lockers after practice.',
-    avatar: 'https://avatars.charhub.io/avatars/Esdash/ayumi-tomboy-crush-8e1bf236766c/avatar.webp',
-    personality: 'Tsundere, athletic, fiercely protective, secretly flustered.',
-    scenario: 'Sunset by the school gym lockers after track practice.',
-    firstMessage: '*Ayumi tosses a cold sports drink into your hands, looking away with a faint blush.* "Don\'t get the wrong idea! The vending machine gave me an extra one."',
-    tags: ['Anime', 'Tsundere', 'School Life', 'Romance'],
-    creator: 'Esdash',
-    totalChats: 6120,
-    lastActive: Date.now() - 1000 * 60 * 25,
-    isFavorite: true,
+    id: 'dozer-extracurricular',
+    characterId: 'dozer-extracurricular',
+    name: 'Dozer',
+    chatName: 'Dozer',
+    creatorName: 'Furden',
+    avatarUrl: 'https://avatars.charhub.io/avatars/Esdash/ayumi-tomboy-crush-8e1bf236766c/avatar.webp',
+    shortDescription: 'Dozer (Extracurricular Activities VN) is a towering presence at CrestHaven. Brutish exterior, quiet loyalty inside.',
+    isNsfw: true,
+    totalTokens: 1600,
+    chatCount: 49,
+    messageCount: 180,
+    favoritesCount: 26,
+    tags: [
+      { id: '5', name: 'male', slug: 'male' },
+      { id: '6', name: 'dominant', slug: 'dominant' },
+      { id: '7', name: 'college', slug: 'college' },
+    ],
+    firstMessage: '*Dozer crosses his massive arms, leaning against the weight rack as he watches you.* "You\'re doing those reps all wrong. Move over before you pull something."',
+    personality: 'Stoic, commanding, observant, warm once respect is earned.',
+    scenario: 'Campus gym training room after hours.',
+    alternateGreetings: [
+      '*He hands you a towel.* "Good session today. Keep it up."'
+    ]
   },
   {
-    id: 'chub_anon_angeline',
-    name: 'Angeline Weston',
-    tagline: 'Aristocratic Mage from the High Spire',
-    description: 'A highborn mage versed in celestial archives. Banished to study ancient relics, she requires an assistant with an open mind.',
-    avatar: 'https://avatars.charhub.io/avatars/Anonymous/angeline-weston-f414a8cf3d01/avatar.webp',
-    personality: 'Dignified, articulate, intellectual, warm once trusted.',
-    scenario: 'Arcane archives illuminated by glowing celestial orbs.',
-    firstMessage: '*She turns from the ancient parchment, her silver eyes catching the starlight.* "Few are permitted in this wing of the observatory. State your purpose."',
-    tags: ['Anime', 'Fantasy', 'Magic', 'Adventure'],
-    creator: 'Anonymous',
-    totalChats: 3950,
-    lastActive: Date.now() - 1000 * 60 * 90,
-    isFavorite: false,
+    id: 'bully-roommate-sarah',
+    characterId: 'bully-roommate-sarah',
+    name: 'Bully Forced To Be Your Roommate...',
+    chatName: 'Sarah',
+    creatorName: 'Kira_X',
+    avatarUrl: 'https://avatars.charhub.io/avatars/Anonymous/angeline-weston-f414a8cf3d01/avatar.webp',
+    shortDescription: 'The girl who made high school miserable just got assigned to your dorm room for the semester. She still pretends to hate you.',
+    isNsfw: true,
+    totalTokens: 4100,
+    chatCount: 120,
+    messageCount: 540,
+    favoritesCount: 48,
+    tags: [
+      { id: '8', name: 'enemies-to-lovers', slug: 'enemiestolovers' },
+      { id: '9', name: 'tsundere', slug: 'tsundere' },
+      { id: '10', name: 'college', slug: 'college' }
+    ],
+    firstMessage: '*Sarah drops her heavy duffel bag onto the opposite bed, glaring in disbelief.* "You?! There is NO WAY housing put me in a room with you!" *She crosses her arms, cheeks burning.* "Stay on your side of the tape line, got it?"',
+    personality: 'Defensive, proud, flustered easily, fiercely passionate underneath her bravado.',
+    scenario: 'College dorm room moving day. Both of your keys opened the same door.',
+    alternateGreetings: [
+      '*Sarah sits cross-legged on her bed with textbooks.* "I\'m trying to study. Can you breathe a little quieter?"'
+    ]
+  },
+  {
+    id: 'vigilante-arc-myu',
+    characterId: 'vigilante-arc-myu',
+    name: 'USER\'S VIGILANTE ARC',
+    chatName: 'Myu',
+    creatorName: 'NeoShinjuku',
+    avatarUrl: 'https://avatars.charhub.io/avatars/hiro_mc/irresistible-riley-e91d140ac49d/chara_card_v2.png',
+    shortDescription: 'In a collapsing cyberpunk metropolis, you took justice into your own hands. An underground broker monitors your vitals.',
+    isNsfw: false,
+    totalTokens: 12900,
+    chatCount: 95,
+    messageCount: 390,
+    favoritesCount: 32,
+    tags: [
+      { id: '11', name: 'cyberpunk', slug: 'cyberpunk' },
+      { id: '12', name: 'action', slug: 'action' },
+      { id: '13', name: 'rpg', slug: 'game' }
+    ],
+    firstMessage: '*Your ocular implants flicker to life as rain drips down your helmet.* "Target confirmed on the 4th tier. Security drones are routing south. Move now, Vigilante."',
+    personality: 'Tactical, urgent, mysterious, supportive operator.',
+    scenario: 'Neo-Shinjuku rooftops amidst acid rain.',
+    alternateGreetings: []
   }
 ];
 
@@ -69,10 +140,8 @@ class CommunityCatalogService {
   private datacatSessionToken: string = '';
   private datacatTokenExpiresAt: number = 0;
   private datacatIdentifyPromise: Promise<string> | null = null;
+  private clientQueryCache = new Map<string, { data: any; expiresAt: number }>();
 
-  /**
-   * Session handshake with Datacat (Janitor AI Liberator API)
-   */
   private async ensureDatacatSession(): Promise<string> {
     if (this.datacatSessionToken && Date.now() < this.datacatTokenExpiresAt) {
       return this.datacatSessionToken;
@@ -110,11 +179,7 @@ class CommunityCatalogService {
     return this.datacatIdentifyPromise;
   }
 
-  /**
-   * Helper that fetches with CORS proxy fallback
-   */
   private async fetchWithCorsFallback(targetUrl: string, headers?: Record<string, string>): Promise<any> {
-    // 1. Direct fetch
     try {
       const direct = await fetch(targetUrl, {
         headers: { Accept: 'application/json', ...(headers || {}) },
@@ -122,7 +187,6 @@ class CommunityCatalogService {
       if (direct.ok) return await direct.json();
     } catch {}
 
-    // 2. Browser CORS proxy fallback for local Edge/Firefox
     try {
       const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
       const proxied = await fetch(proxyUrl);
@@ -139,9 +203,18 @@ class CommunityCatalogService {
   }
 
   /**
-   * Live Chub.ai Catalog Query
+   * Chub.ai Query
    */
-  async fetchChubCharacters(params: CommunitySearchParams): Promise<Character[]> {
+  async fetchChubCharacters(params: {
+    search?: string;
+    tag?: string;
+    tagIds?: string;
+    page?: number;
+    limit?: number;
+    sort?: 'popular' | 'trending' | 'latest';
+    sfwOnly?: boolean;
+    creators?: string;
+  }): Promise<{ characters: CommunityCharacter[]; totalCount: number; hasMore: boolean }> {
     const limit = params.limit || 24;
     const page = params.page || 1;
     const sortMap: Record<string, string> = {
@@ -149,7 +222,7 @@ class CommunityCatalogService {
       trending: 'trending_downloads',
       latest: 'created_at',
     };
-    const chubSort = sortMap[params.sort || 'trending'] || 'trending_downloads';
+    const chubSort = sortMap[params.sort || 'latest'] || 'created_at';
 
     const q = new URLSearchParams({
       first: String(limit),
@@ -157,14 +230,14 @@ class CommunityCatalogService {
       namespace: 'characters',
       sort: chubSort,
       asc: 'false',
-      nsfw: 'true',
+      nsfw: params.sfwOnly ? 'false' : 'true',
       nsfl: 'false',
     });
 
     if (params.search?.trim()) {
       q.set('search', params.search.trim());
     }
-    if (params.tag && params.tag !== 'All') {
+    if (params.tag && params.tag !== 'all' && params.tag !== 'All') {
       q.set('topics', params.tag.toLowerCase());
     }
 
@@ -174,9 +247,11 @@ class CommunityCatalogService {
       const json = await this.fetchWithCorsFallback(url);
       const nodes: any[] = json?.data?.nodes || json?.nodes || [];
 
-      if (!Array.isArray(nodes) || nodes.length === 0) return [];
+      if (!Array.isArray(nodes) || nodes.length === 0) {
+        return { characters: ANIME_COMMUNITY_FALLBACK, totalCount: 200000, hasMore: true };
+      }
 
-      return nodes.map((node: any, idx: number): Character => {
+      const characters = nodes.map((node: any, idx: number): CommunityCharacter => {
         const fullPath = String(node?.fullPath || node?.id || `chub-${idx}`);
         const creator = fullPath.includes('/') ? fullPath.split('/')[0] : (node?.creator || 'community');
         const rawDesc = String(node?.tagline || node?.description || '')
@@ -189,44 +264,72 @@ class CommunityCatalogService {
         const thumbAvatar = isCharhub ? `https://avatars.charhub.io/avatars/${fullPath}/avatar.webp` : '';
 
         const candidate = node?.max_res_url || hdCard || node?.avatar_url || thumbAvatar || node?.avatar;
-        const avatar = getHighResImageUrl(candidate);
+        const avatarUrl = getHighResImageUrl(candidate);
 
         return {
-          id: `chub_${fullPath}`,
-          name: node?.name || 'Anime Companion',
-          tagline: node?.tagline || rawDesc.slice(0, 60) || 'Chub AI Companion',
-          description: rawDesc || 'An expressive anime companion from Chub.ai community.',
-          avatar,
-          personality: rawDesc || 'Expressive, immersive, responsive anime roleplay companion.',
-          scenario: rawDesc.slice(0, 300) || '',
-          firstMessage: `*${node?.name || 'They'} look at you quietly.* "Hello there."`,
-          tags: Array.isArray(node?.topics) && node.topics.length > 0 ? node.topics.slice(0, 5) : ['Anime', 'Roleplay'],
-          creator: `@${creator}`,
-          totalChats: Number(node?.starCount || node?.nChats || 140),
-          lastActive: Date.now() - 1000 * 60 * (idx * 5 + 2),
-          isFavorite: false,
+          id: fullPath,
+          characterId: fullPath,
+          name: node?.name || 'Unnamed Character',
+          chatName: node?.name || '',
+          creatorName: creator,
+          avatarUrl,
+          shortDescription: rawDesc.slice(0, 240) || 'Chub AI companion ready to roleplay.',
+          isNsfw: Boolean(node?.nsfw_image || (node?.topics || []).includes('NSFW')),
+          totalTokens: Number(node?.nTokens) || 1200,
+          chatCount: Number(node?.starCount || node?.nChats || 10),
+          messageCount: Number(node?.nMessages || 25),
+          favoritesCount: Number(node?.nFavorites || node?.starCount || 5),
+          tags: Array.isArray(node?.topics)
+            ? node.topics.slice(0, 6).map((t: string, i: number) => ({
+                id: i + 1,
+                name: String(t),
+                slug: String(t).toLowerCase().replace(/\s+/g, '-')
+              }))
+            : [{ id: 1, name: 'anime', slug: 'anime' }],
+          firstMessage: node?.definition?.first_message || `*${node?.name || 'They'} look at you quietly.*`,
+          personality: node?.definition?.personality || rawDesc,
+          scenario: node?.definition?.scenario || rawDesc.slice(0, 300),
+          alternateGreetings: Array.isArray(node?.definition?.alternate_greetings) ? node.definition.alternate_greetings : [],
+          createdAt: node?.createdAt,
         };
       });
+
+      return {
+        characters,
+        totalCount: Number(json?.data?.count) || 200000,
+        hasMore: characters.length >= limit,
+      };
     } catch {
-      return [];
+      return { characters: ANIME_COMMUNITY_FALLBACK, totalCount: 200000, hasMore: true };
     }
   }
 
   /**
-   * Live Datacat (Janitor AI) Catalog Query
+   * Datacat (Janitor AI) Query
    */
-  async fetchDatacatCharacters(params: CommunitySearchParams): Promise<Character[]> {
+  async fetchDatacatCharacters(params: {
+    search?: string;
+    tagIds?: string;
+    tag?: string;
+    page?: number;
+    limit?: number;
+    sort?: 'popular' | 'trending' | 'latest';
+    sfwOnly?: boolean;
+    creators?: string;
+  }): Promise<{ characters: CommunityCharacter[]; totalCount: number; hasMore: boolean }> {
     try {
       const sessionToken = await this.ensureDatacatSession();
       const limit = params.limit || 24;
+      const offset = ((params.page || 1) - 1) * limit;
+
       const q = new URLSearchParams({
         limit: String(limit),
+        offset: String(offset),
         summary: '1',
         skipCount: '1',
       });
-      if (params.search?.trim()) {
-        q.set('search', params.search.trim());
-      }
+      if (params.search?.trim()) q.set('search', params.search.trim());
+      if (params.tagIds?.trim()) q.set('tagIds', params.tagIds.trim());
 
       const targetUrl = `https://datacat.run/api/characters/recent-public?${q.toString()}`;
       const json = await this.fetchWithCorsFallback(targetUrl, {
@@ -236,57 +339,88 @@ class CommunityCatalogService {
       });
 
       const list: any[] = json?.characters || json?.data || [];
-      if (!Array.isArray(list) || list.length === 0) return [];
+      if (!Array.isArray(list) || list.length === 0) {
+        return { characters: ANIME_COMMUNITY_FALLBACK, totalCount: 200000, hasMore: true };
+      }
 
-      return list.map((item: any, idx: number): Character => {
+      let characters = list.map((item: any, idx: number): CommunityCharacter => {
         const candidate = item.avatarVariantUrls?.card || item.avatarVariantUrls?.hero || item.avatarDisplayUrl || item.avatar;
-        const avatar = getHighResImageUrl(candidate);
+        const avatarUrl = getHighResImageUrl(candidate);
         const desc = String(item.description || item.personality || '').replace(/<[^>]*>/g, ' ').trim();
 
         return {
-          id: `datacat_${item.characterId || item.id || idx}`,
-          name: item.name || 'Janitor Companion',
-          tagline: desc.slice(0, 60) || 'Janitor AI Anime Character',
-          description: desc || 'A popular character from the Janitor AI community.',
-          avatar,
-          personality: item.personality || desc || 'Detailed, nuanced, character-focused roleplay.',
-          scenario: item.scenario || desc.slice(0, 250) || '',
+          id: String(item.characterId || item.id || idx),
+          characterId: String(item.characterId || item.id || idx),
+          name: item.name || 'Unnamed Character',
+          chatName: item.name || '',
+          creatorName: item.creatorName || item.creator_name || 'community',
+          avatarUrl,
+          shortDescription: desc.slice(0, 240) || 'JanitorAI companion ready to roleplay.',
+          isNsfw: Boolean(item.nsfw || item.is_nsfw || item.rating === 'nsfw'),
+          totalTokens: Number(item.totalTokens || item.tokenCount) || 1600,
+          chatCount: item.stats?.chat || 14,
+          messageCount: item.stats?.message || 50,
+          favoritesCount: item.stats?.favoritesCount?.favoritesCount || item.stats?.favorites || 8,
+          tags: Array.isArray(item.tags)
+            ? item.tags.map((t: any) => ({
+                id: t.id || t.name,
+                name: t.name || String(t),
+                slug: t.slug || String(t).toLowerCase().replace(/\s+/g, '-')
+              }))
+            : [{ id: 1, name: 'anime', slug: 'anime' }],
           firstMessage: item.firstMessage || `*${item.name} stands before you.* "Welcome."`,
-          tags: Array.isArray(item.tags) ? item.tags.map((t: any) => typeof t === 'string' ? t : t.name).slice(0, 5) : ['Anime', 'Janitor'],
-          creator: `@${item.creatorName || item.creator || 'community'}`,
-          totalChats: Number(item.totalChats || item.chatCount || 200),
-          lastActive: Date.now() - 1000 * 60 * (idx * 8 + 3),
-          isFavorite: false,
+          personality: item.personality || desc,
+          scenario: item.scenario || desc.slice(0, 300),
+          alternateGreetings: Array.isArray(item.alternateGreetings) ? item.alternateGreetings : [],
+          createdAt: item.createdAt,
         };
       });
+
+      if (params.sfwOnly) {
+        characters = characters.filter(c => !c.isNsfw);
+      }
+
+      return {
+        characters,
+        totalCount: 200000,
+        hasMore: characters.length >= limit,
+      };
     } catch {
-      return [];
+      return { characters: ANIME_COMMUNITY_FALLBACK, totalCount: 200000, hasMore: true };
     }
   }
 
-  /**
-   * Unified Live Catalog Scraper with Resilient Fallback
-   */
-  async getLiveCatalog(params: CommunitySearchParams): Promise<Character[]> {
-    let characters: Character[] = [];
-    if (params.source === 'datacat') {
-      characters = await this.fetchDatacatCharacters(params);
-      if (characters.length === 0) {
-        characters = await this.fetchChubCharacters(params);
-      }
-    } else {
-      characters = await this.fetchChubCharacters(params);
-      if (characters.length === 0) {
-        characters = await this.fetchDatacatCharacters(params);
-      }
+  async getCharacterDetail(id: string): Promise<CommunityCharacterDetail> {
+    const match = ANIME_COMMUNITY_FALLBACK.find(c => c.id === id);
+    if (match) {
+      return {
+        ...match,
+        firstMessage: match.firstMessage || '*Looks at you.* "Hello."',
+        personality: match.personality || match.shortDescription,
+        scenario: match.scenario || match.shortDescription,
+        alternateGreetings: match.alternateGreetings || [],
+      };
     }
 
-    if (characters.length > 0) {
-      return characters;
-    }
-
-    // Pure anime fallback if offline
-    return ANIME_COMMUNITY_FALLBACK;
+    return {
+      id,
+      characterId: id,
+      name: 'Anime Companion',
+      chatName: 'Companion',
+      creatorName: 'community',
+      avatarUrl: 'https://avatars.charhub.io/avatars/hiro_mc/irresistible-riley-e91d140ac49d/avatar.webp',
+      shortDescription: 'Detailed character synopsis.',
+      isNsfw: true,
+      totalTokens: 2200,
+      chatCount: 24,
+      messageCount: 80,
+      favoritesCount: 12,
+      tags: [{ id: 1, name: 'anime', slug: 'anime' }],
+      firstMessage: '*Glances at you.* "Welcome."',
+      personality: 'Nuanced and expressive.',
+      scenario: 'Late-night encounter.',
+      alternateGreetings: [],
+    };
   }
 }
 

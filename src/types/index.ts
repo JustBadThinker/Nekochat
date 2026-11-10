@@ -30,6 +30,61 @@ export interface Character {
   comments?: CharacterComment[];
   isUserCreated?: boolean;
   contentRating?: 'SFW' | 'NSFW';
+  totalTokens?: number;
+  chatName?: string;
+  alternateGreetings?: string[];
+}
+
+export type TagCategory =
+  | 'gender'
+  | 'romance'
+  | 'personality'
+  | 'relationship'
+  | 'power'
+  | 'genre'
+  | 'species'
+  | 'scenario'
+  | 'style'
+  | 'rating'
+  | 'theme';
+
+export interface Tag {
+  id: string;
+  name: string;
+  slug: string;
+  category: TagCategory;
+  count?: number;
+}
+
+export interface CommunityCharacter {
+  id: string;
+  characterId: string;
+  name: string;
+  chatName: string;
+  creatorName: string;
+  creatorId?: string;
+  avatarUrl: string;
+  shortDescription: string;
+  isNsfw: boolean;
+  totalTokens: number;
+  chatCount: number;
+  messageCount: number;
+  favoritesCount: number;
+  tags: Array<{ id: number | string; name: string; slug: string }>;
+  firstPublishedAt?: string;
+  createdAt?: string;
+  firstMessage?: string;
+  personality?: string;
+  scenario?: string;
+  alternateGreetings?: string[];
+}
+
+export interface CommunityCharacterDetail extends CommunityCharacter {
+  firstMessage: string;
+  personality: string;
+  scenario: string;
+  descriptionHtml?: string;
+  alternateGreetings: string[];
 }
 
 export interface ChatMessage {
@@ -68,10 +123,10 @@ export interface ProviderConfig {
 }
 
 export interface SyntaxColorConfig {
-  dialogue: string;   // e.g. spoken words in quotes
-  narration: string;  // e.g. *actions and descriptions*
-  thoughts: string;   // e.g. character inner monologue
-  emphasis: string;   // e.g. **bold penekanan**
+  dialogue: string;
+  narration: string;
+  thoughts: string;
+  emphasis: string;
 }
 
 export interface AppSettings {
