@@ -1,0 +1,82 @@
+name: Build Android APK & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag (e.g. v0.1.0-beta)'
+        required: false
+        default: 'v0.1.0-beta'
+
+permissions:
+  contents: write
+
+jobs:
+  build-android-apk:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prebuild Android project
+        run: npx expo prebuild --platform android --non-interactive
+
+      - name: Build Release APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Prepare APK asset
+        id: apk
+        run: |
+          TAG="${{ github.event.inputs.tag_name || github.ref_name }}"
+          APK_SRC=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          if [ -z "$APK_SRC" ]; then
+            echo "No APK found in android/app/build/outputs/apk/release"
+            exit 1
+          fi
+          APK_OUT="NekoChat-${TAG}.apk"
+          cp "$APK_SRC" "$APK_OUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "file=$APK_OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release with APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.apk.outputs.tag }}
+          name: NekoChat ${{ steps.apk.outputs.tag }}
+          body: |
+            ## 🐾 NekoChat ${{ steps.apk.outputs.tag }}
+
+            Beta Android APK release of NekoChat — free, local-first AI roleplay & companion client.
+
+            ### ✨ Highlights
+            - **Chats & Immersion**: 2-column Bento grid, Trending 24h Stories, Novel & Bubble chat modes, fullscreen avatar lightbox, and word-by-word reveal.
+            - **Roleplay Formatting & Reasoning Isolation**: Clean italicized actions, custom syntax colors, dynamic `{{user}}` / `{{char}}` macros, and `<think>` reasoning isolated in a collapsible Thinking window.
+            - **Desk Neko & Opt-In Fidget**: 4×4 pixel Neko pet walking/paw-licking on the input bar — tap her anytime to open the timing fidget & 4×1 interactive Neko.
+            - **Discover**: Live JanitorAI (Datacat) & Chub.ai Catalog Grid, rich HTML character & creator profiles, and Match Mode swipe deck.
+            - **Studio & BYOK Settings**: Character card creator/importer, User Personas, Codex Lorebooks, 4 dark OLED themes, and local BYOK AI provider settings.
+          files: ${{ steps.apk.outputs.file }}
+          draft: false
+          prerelease: true
