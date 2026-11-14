@@ -31,6 +31,7 @@ import {
 } from 'lucide-react-native';
 import { Character, Persona, Conversation } from '../types';
 import { colors } from '../theme/colors';
+import { useTheme } from '../theme/ThemeContext';
 import { NekoLogoSvg } from '../components/NekoLogoSvg';
 import { StoryTray } from '../components/StoryTray';
 import { BentoChatCard } from '../components/BentoChatCard';
@@ -180,14 +181,16 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
     ? sessionsByCharId.get(selectedGroupChar.id) || []
     : [];
 
+  const { palette } = useTheme();
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.bgDark }]}>
       <StatusBar style="light" />
 
       {/* Screen Header */}
       <View style={styles.header}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <NekoLogoSvg size={34} color={colors.lime} />
+          <NekoLogoSvg size={34} color={palette.accent} />
           <View>
             <Text style={styles.appTitle}>NekoChat</Text>
             <Text style={styles.appSubtitle}>AI Companion & Roleplay</Text>

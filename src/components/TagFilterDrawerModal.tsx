@@ -13,6 +13,7 @@ import {
   StyleSheet,
   Modal,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   X,
   SlidersHorizontal,
@@ -141,6 +142,7 @@ export const TagFilterDrawerModal: React.FC<TagFilterDrawerModalProps> = ({
   onApply,
   matchingCount = 200000,
 }) => {
+  const insets = useSafeAreaInsets();
   const [expandedCats, setExpandedCats] = useState<Record<string, boolean>>({
     gender: true,
     romance: true,
@@ -239,7 +241,7 @@ export const TagFilterDrawerModal: React.FC<TagFilterDrawerModalProps> = ({
           </ScrollView>
 
           {/* Footer Actions */}
-          <View style={styles.footer}>
+          <View style={[styles.footer, { paddingBottom: Math.max(14, insets.bottom + 10) }]}>
             <TouchableOpacity
               style={styles.resetBtn}
               onPress={onClearTags}

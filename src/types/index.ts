@@ -178,6 +178,8 @@ export interface CommunityCharacter {
   personality?: string;
   scenario?: string;
   alternateGreetings?: string[];
+  source?: 'janitor' | 'chub';
+  fullPath?: string;
 }
 
 export interface CommunityCharacterDetail extends CommunityCharacter {

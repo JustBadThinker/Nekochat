@@ -7,7 +7,10 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MessageSquare, Compass, User, Settings } from 'lucide-react-native';
+import { useTheme } from '../theme/ThemeContext';
 
 export type TabScreen = 'chats' | 'discover' | 'studio' | 'settings';
 
@@ -28,6 +31,8 @@ interface CapsuleDockProps {
 }
 
 export const CapsuleDock: React.FC<CapsuleDockProps> = ({ activeTab, onTabChange }) => {
+  const insets = useSafeAreaInsets();
+  const { palette } = useTheme();
   const activeIdx = Math.max(0, TAB_ITEMS.findIndex(t => t.key === activeTab));
   const [slideAnim] = useState(() => new Animated.Value(activeIdx * STEP_WIDTH));
   const [scaleAnims] = useState(() => TAB_ITEMS.map((_, i) => new Animated.Value(i === activeIdx ? 1.08 : 1)));
@@ -51,8 +56,23 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({ activeTab, onTabChange
   }, [activeIdx]);
 
   return (
-    <View style={styles.dockContainer} pointerEvents="box-none">
-      <View style={styles.dockCapsule}>
+    <View
+      style={[
+        styles.dockContainer,
+        { bottom: Math.max(Platform.OS === 'ios' ? 24 : 16, insets.bottom + 8) },
+      ]}
+      pointerEvents="box-none"
+    >
+      <View style={[styles.dockCapsule, { backgroundColor: palette.dockBg }]}>
+        {Platform.OS !== 'web' && (
+          <BlurView
+            intensity={36}
+            tint="dark"
+            experimentalBlurMethod="dimezisBlurView"
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+        )}
         {/* Frosted Glass Diagonal Sheen & Rim Highlight */}
         <LinearGradient
           pointerEvents="none"
@@ -73,6 +93,8 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({ activeTab, onTabChange
           style={[
             styles.slidingPill,
             {
+              backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
+              borderColor: `rgba(${palette.accentRgb}, 0.40)`,
               transform: [{ translateX: slideAnim }],
             },
           ]}
@@ -90,13 +112,13 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({ activeTab, onTabChange
               <Animated.View style={{ transform: [{ scale: scaleAnims[idx] }], alignItems: 'center' }}>
                 <Icon
                   size={19}
-                  color="#FFFFFF"
+                  color={isActive ? palette.accent : '#FFFFFF'}
                   style={{ opacity: isActive ? 1 : 0.45 }}
                 />
-                <Text style={isActive ? styles.dockLabelActive : styles.dockLabelInactive}>
+                <Text style={[isActive ? styles.dockLabelActive : styles.dockLabelInactive, isActive && { color: palette.accent }]}>
                   {label}
                 </Text>
-                <View style={[styles.activeDot, { opacity: isActive ? 1 : 0 }]} />
+                <View style={[styles.activeDot, { backgroundColor: palette.accent, opacity: isActive ? 1 : 0 }]} />
               </Animated.View>
             </TouchableOpacity>
           );

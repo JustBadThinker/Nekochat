@@ -18,6 +18,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GLASS } from '../theme/glassTheme';
 
 interface BottomSheetModalProps {
@@ -35,6 +36,7 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
   sheetStyle,
   showDragHandle = true,
 }) => {
+  const insets = useSafeAreaInsets();
   const [translateY] = useState(() => new Animated.Value(420));
   const [backdropOpacity] = useState(() => new Animated.Value(0));
   const onCloseRef = useRef(onClose);
@@ -147,6 +149,7 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
         <Animated.View
           style={[
             styles.sheet,
+            { paddingBottom: Math.max(24, insets.bottom + 12) },
             sheetStyle,
             { transform: [{ translateY }] },
           ]}

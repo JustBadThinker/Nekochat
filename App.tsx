@@ -9,8 +9,10 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Character, Persona, ProviderConfig, AppSettings } from './src/types';
 import { colors, applyThemePalette, getThemePalette } from './src/theme/colors';
+import { ThemeProvider } from './src/theme/ThemeContext';
 import { storageService } from './src/services/storageService';
 import { characterService } from './src/services/characterService';
+import { communityCatalogService } from './src/services/communityCatalogService';
 import { CapsuleDock, TabScreen } from './src/components/CapsuleDock';
 import { SplashScreen } from './src/components/SplashScreen';
 import { NekoPulseLoader } from './src/components/NekoPulseLoader';
@@ -180,25 +182,47 @@ export default function App() {
   };
 
   const handleStartChat = async (character: any, detail?: any, conversationId?: string) => {
+    let resolvedDetail = detail;
+    const rawFirst = String(detail?.firstMessage || character.firstMessage || '').trim();
+    const isPlaceholderGreeting =
+      !rawFirst ||
+      /look at you (quietly|attentively)\.?[\*]?$/i.test(rawFirst);
+
+    if (!resolvedDetail && isPlaceholderGreeting && (character.characterId || character.id)) {
+      try {
+        const lookupId = String(character.characterId || character.id);
+        resolvedDetail = await Promise.race([
+          communityCatalogService.getCharacterDetail(lookupId, {
+            fullPath: character.fullPath,
+            source: character.source,
+          }),
+          new Promise<null>(resolve => setTimeout(() => resolve(null), 4500)),
+        ]);
+      } catch {}
+    }
+
     // Normalize character whether it's CommunityCharacter, Character, or raw JSON
     const fullChar: Character = {
       id: character.id || character.characterId || `char_${Date.now()}`,
       name: character.name || 'Unnamed Companion',
-      chatName: detail?.chatName || character.chatName || '',
-      subtitle: detail?.chatName || character.chatName || character.subtitle || '',
+      chatName: resolvedDetail?.chatName || character.chatName || '',
+      subtitle: resolvedDetail?.chatName || character.chatName || character.subtitle || '',
       tagline: character.tagline || (character.creatorName ? `Created by @${character.creatorName}` : 'Roleplay Companion'),
       avatar: character.avatar || character.avatarUrl || 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=500',
-      description: detail?.personality || detail?.descriptionHtml || character.shortDescription || character.description || 'Expressive companion ready to chat.',
-      firstMessage: detail?.firstMessage || character.firstMessage || `*${character.name || 'They'} look at you attentively.*`,
-      personality: detail?.personality || character.personality || character.shortDescription || '',
-      scenario: detail?.scenario || character.scenario || '',
+      description: resolvedDetail?.personality || resolvedDetail?.descriptionHtml || character.shortDescription || character.description || 'Expressive companion ready to chat.',
+      firstMessage: resolvedDetail?.firstMessage || character.firstMessage || `*${character.name || 'They'} look at you attentively.*`,
+      personality: resolvedDetail?.personality || character.personality || character.shortDescription || '',
+      scenario: resolvedDetail?.scenario || character.scenario || '',
       tags: Array.isArray(character.tags)
         ? character.tags.map((t: any) => typeof t === 'string' ? t : (t?.name || t?.slug || String(t)))
         : ['anime'],
       isFavorite: !!character.isFavorite,
       contentRating: character.isNsfw ? 'NSFW' : 'SFW',
       creator: character.creator || character.creatorName || 'community',
-      alternateGreetings: detail?.alternateGreetings || character.alternateGreetings || [],
+      alternateGreetings:
+        (Array.isArray(resolvedDetail?.alternateGreetings) && resolvedDetail.alternateGreetings.length > 0
+          ? resolvedDetail.alternateGreetings
+          : character.alternateGreetings) || [],
       chatCount: character.chatCount || 0,
       totalTokens: character.totalTokens || 850,
       updatedAt: new Date().toISOString(),
@@ -266,6 +290,7 @@ export default function App() {
   if (activeChatCharacter) {
     return (
       <SafeAreaProvider>
+      <ThemeProvider themeId={currentTheme}>
       <View style={[styles.webFrame, { backgroundColor: webFrameBg }]}>
         <Animated.View
           style={[
@@ -302,12 +327,14 @@ export default function App() {
           />
         </Animated.View>
       </View>
+      </ThemeProvider>
       </SafeAreaProvider>
     );
   }
 
   return (
     <SafeAreaProvider>
+    <ThemeProvider themeId={currentTheme}>
     <View style={[styles.webFrame, { backgroundColor: webFrameBg }]}>
       <SafeAreaView
         edges={['top', 'left', 'right']}
@@ -393,6 +420,7 @@ export default function App() {
         <CapsuleDock activeTab={activeTab} onTabChange={handleTabChange} />
       </SafeAreaView>
     </View>
+    </ThemeProvider>
     </SafeAreaProvider>
   );
 }

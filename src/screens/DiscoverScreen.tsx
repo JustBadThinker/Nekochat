@@ -60,6 +60,7 @@ import {
 } from '../services/communityCatalogService';
 import { storageService } from '../services/storageService';
 import { GLASS } from '../theme/glassTheme';
+import { useTheme } from '../theme/ThemeContext';
 
 interface DiscoverScreenProps {
   characters: Character[];
@@ -85,6 +86,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   onImportCard,
   onMatchModeChange,
 }) => {
+  const { palette } = useTheme();
   // Top Primary Switcher: Catalog Grid vs Match Mode
   const [topMode, setTopMode] = useState<TopMode>('catalog');
 
@@ -137,31 +139,8 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   // Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Sticky Search on Scroll State
-  const [isStickySearch, setIsStickySearch] = useState<boolean>(false);
-  const lastScrollY = useRef<number>(0);
-  const [headerExpandAnim] = useState(() => new Animated.Value(1));
-
-  useEffect(() => {
-    Animated.timing(headerExpandAnim, {
-      toValue: isStickySearch ? 0 : 1,
-      duration: 240,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [isStickySearch, headerExpandAnim]);
-
-  const handleCatalogScroll = (event: any) => {
-    const currentY = event.nativeEvent.contentOffset.y;
-    const diff = currentY - lastScrollY.current;
-
-    if (currentY > 80 && diff > 10) {
-      if (!isStickySearch) setIsStickySearch(true);
-    } else if (diff < -10 || currentY <= 24) {
-      if (isStickySearch) setIsStickySearch(false);
-    }
-    lastScrollY.current = currentY;
-  };
+  // Pagination state
+  const [hasMore, setHasMore] = useState<boolean>(true);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -267,6 +246,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         });
         setCommunityCharacters(res.characters);
         setCommunityTotalCount(res.totalCount);
+        setHasMore(res.hasMore);
         if (res.error) setCommunityError(res.error);
       } else {
         const activeTags = selectedCategoryValues.filter(c => c !== 'all');
@@ -281,10 +261,12 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         });
         setCommunityCharacters(res.characters);
         setCommunityTotalCount(res.totalCount);
+        setHasMore(res.hasMore);
         if (res.error) setCommunityError(res.error);
       }
     } catch (err: any) {
       setCommunityCharacters([]);
+      setHasMore(false);
       setCommunityError(err?.message || 'Failed to fetch catalog feed');
     } finally {
       setCommunityLoading(false);
@@ -293,11 +275,12 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
 
   // True Infinite Scroll Handler (Triggered on End Reached)
   const handleLoadMore = async () => {
-    if (communityLoading || isLoadingMore || scopeMode === 'favorites' || scopeMode === 'following') return;
+    if (communityLoading || isLoadingMore || !hasMore || scopeMode === 'favorites' || scopeMode === 'following') return;
     setIsLoadingMore(true);
     const nextPage = currentPage + 1;
     try {
       let newChars: CommunityCharacter[] = [];
+      let nextHasMore = false;
       if (catalogSource === 'janitor') {
         const activeCats = POPULAR_COMMUNITY_CATEGORIES.filter(c => selectedCategoryValues.includes(c.value) && c.tagId);
         const tagIds = activeCats.map(c => c.tagId).join(',');
@@ -310,6 +293,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           sfwOnly,
         });
         newChars = res.characters;
+        nextHasMore = res.hasMore;
       } else {
         const activeTags = selectedCategoryValues.filter(c => c !== 'all');
         const activeTag = activeTags.length > 0 ? activeTags.join(',') : undefined;
@@ -322,8 +306,10 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           sfwOnly,
         });
         newChars = res.characters;
+        nextHasMore = res.hasMore;
       }
 
+      setHasMore(nextHasMore);
       if (newChars.length > 0) {
         setCommunityCharacters(prev => {
           const existingIds = new Set(prev.map(c => c.id));
@@ -498,7 +484,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   ]);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: palette.bgDark }]}>
       {/* ── Toast Notification ── */}
       {toastMessage && (
         <View style={styles.toastBox}>
@@ -510,15 +496,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* 1. TOP PRIMARY SWITCHER: [ 🗂️ Catalog Grid ] | [ 🔥 Match Mode ]  */}
       {/* ══════════════════════════════════════════════════════════════════ */}
-      <Animated.View
-        pointerEvents={isStickySearch ? 'none' : 'auto'}
-        style={{
-          maxHeight: headerExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 62] }),
-          opacity: headerExpandAnim,
-          transform: [{ translateY: headerExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
-          overflow: 'hidden',
-        }}
-      >
+      <View>
         <View style={styles.topPrimaryBar}>
           <View style={styles.topPrimaryPill}>
             <TouchableOpacity
@@ -544,7 +522,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             </TouchableOpacity>
           </View>
         </View>
-      </Animated.View>
+      </View>
 
       {topMode === 'match' ? (
         <TinderDeck
@@ -560,15 +538,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* 2. SUB-HEADER TOOLBAR: Explore All vs My Library & Sources         */}
           {/* ══════════════════════════════════════════════════════════════════ */}
-          <Animated.View
-            pointerEvents={isStickySearch ? 'none' : 'auto'}
-            style={{
-              maxHeight: headerExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 60] }),
-              opacity: headerExpandAnim,
-              transform: [{ translateY: headerExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [-6, 0] }) }],
-              overflow: 'hidden',
-            }}
-          >
+          <View>
             <View style={styles.subHeader}>
               {/* Left: Explore vs Library */}
               <View style={styles.viewSwitcher}>
@@ -653,13 +623,13 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                 )}
               </View>
             </View>
-          </Animated.View>
+          </View>
 
       {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* 3. SEARCH BAR (Sticky when scrolling down)                         */}
+      {/* 3. SEARCH BAR                                                      */}
       {/* ══════════════════════════════════════════════════════════════════ */}
-      <View style={[styles.searchContainer, isStickySearch && styles.searchContainerSticky]}>
-        <View style={[styles.searchBarWrapper, isStickySearch && { flex: 1 }]}>
+      <View style={styles.searchContainer}>
+        <View style={styles.searchBarWrapper}>
           <Search size={15} color="#9ca3af" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
@@ -687,32 +657,12 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             </View>
           )}
         </View>
-
-        {isStickySearch && (
-          <TouchableOpacity
-            style={styles.stickyFilterToggleBtn}
-            onPress={() => setIsStickySearch(false)}
-            activeOpacity={0.8}
-            accessibilityLabel="Expand filters"
-          >
-            <SlidersHorizontal size={14} color="#d4ff00" />
-            <Text style={styles.stickyFilterToggleText}>Filters</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* 4. 18 CANONICAL TAG STRIP + DRAWER [🎛️] & EXPAND [⌵]               */}
       {/* ══════════════════════════════════════════════════════════════════ */}
-      <Animated.View
-        pointerEvents={isStickySearch ? 'none' : 'auto'}
-        style={{
-          maxHeight: headerExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 320] }),
-          opacity: headerExpandAnim,
-          transform: [{ translateY: headerExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [-10, 0] }) }],
-          overflow: 'hidden',
-        }}
-      >
+      <View>
           <View style={styles.tagStripContainer}>
         <TouchableOpacity
           style={styles.tagDrawerBtn}
@@ -770,13 +720,15 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       {/* 5. SEGMENTED FILTER PILLS (Characters | Creators & All | Limited) */}
       {/* ══════════════════════════════════════════════════════════════════ */}
       <View style={styles.filterPillsRow}>
-        <View style={styles.pillGroup}>
+        <View style={[styles.pillGroup, { flex: 1.2 }]}>
           <TouchableOpacity
             style={[styles.pillSegment, entityMode === 'characters' && styles.pillSegmentActive]}
             onPress={() => setEntityMode('characters')}
             activeOpacity={0.8}
           >
             <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
               style={[
                 styles.pillSegmentText,
                 entityMode === 'characters' && styles.pillSegmentTextActive,
@@ -792,6 +744,8 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             activeOpacity={0.8}
           >
             <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
               style={[
                 styles.pillSegmentText,
                 entityMode === 'creators' && styles.pillSegmentTextActive,
@@ -802,14 +756,14 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        <View style={styles.pillGroup}>
+        <View style={[styles.pillGroup, { flex: 0.9 }]}>
           <TouchableOpacity
             style={[styles.pillSegment, !sfwOnly && styles.pillSegmentActive]}
             onPress={() => setSfwOnly(false)}
             activeOpacity={0.8}
           >
-            <Eye size={12} color={!sfwOnly ? '#000000' : '#9ca3af'} style={{ marginRight: 4 }} />
-            <Text numberOfLines={1} style={[styles.pillSegmentText, !sfwOnly && styles.pillSegmentTextActive]}>
+            <Eye size={11} color={!sfwOnly ? '#000000' : '#9ca3af'} style={{ marginRight: 3 }} />
+            <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.pillSegmentText, !sfwOnly && styles.pillSegmentTextActive]}>
               NSFW
             </Text>
           </TouchableOpacity>
@@ -819,8 +773,8 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             onPress={() => setSfwOnly(true)}
             activeOpacity={0.8}
           >
-            <EyeOff size={12} color={sfwOnly ? '#000000' : '#9ca3af'} style={{ marginRight: 4 }} />
-            <Text numberOfLines={1} style={[styles.pillSegmentText, sfwOnly && styles.pillSegmentTextActive]}>
+            <EyeOff size={11} color={sfwOnly ? '#000000' : '#9ca3af'} style={{ marginRight: 3 }} />
+            <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.pillSegmentText, sfwOnly && styles.pillSegmentTextActive]}>
               SFW
             </Text>
           </TouchableOpacity>
@@ -950,7 +904,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           </View>
         </TouchableOpacity>
       </Modal>
-      </Animated.View>
+      </View>
 
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* 6. MAIN CONTENT: 2-COLUMN BENTO GRID WITH TRUE INFINITE SCROLL     */}
@@ -1037,8 +991,6 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           data={displayedCharacters}
           keyExtractor={item => item.id}
           numColumns={2}
-          onScroll={handleCatalogScroll}
-          scrollEventThrottle={16}
           columnWrapperStyle={styles.twoColumnWrapper}
           contentContainerStyle={styles.cardsContainer}
           onEndReached={handleLoadMore}
@@ -1604,6 +1556,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: GLASS.border,
     padding: 2,
+    overflow: 'hidden',
     ...GLASS.backdrop,
   },
   pillGroupFull: {
@@ -1622,7 +1575,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 11,
+    paddingHorizontal: 7,
     paddingVertical: 4.5,
     borderRadius: 16,
     flex: 1,

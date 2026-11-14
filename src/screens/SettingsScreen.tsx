@@ -55,6 +55,7 @@ import { wardenVaultService } from '../services/wardenVaultService';
 import { ttsService, VOICE_PROFILES, TtsConfig, DEFAULT_TTS_CONFIG } from '../services/ttsService';
 import { imageGenService, IMAGE_STYLE_OPTIONS, ImageGenConfig, DEFAULT_IMAGE_GEN_CONFIG, ImageStylePreset } from '../services/imageGenService';
 import { colors, applyThemePalette, ThemeId } from '../theme/colors';
+import { useTheme } from '../theme/ThemeContext';
 import { NekoLogoSvg } from '../components/NekoLogoSvg';
 import { BottomSheetModal } from '../components/BottomSheetModal';
 
@@ -71,6 +72,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   settings,
   onUpdateSettings,
 }) => {
+  const { palette } = useTheme();
   // Modal Visibility State
   const [activeModal, setActiveModal] = useState<
     'api' | 'theming' | 'vault' | 'personas' | 'tokens' | 'about' | 'voice' | 'image' | null
@@ -477,14 +479,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <ScrollView style={[styles.container, { backgroundColor: palette.bgDark }]} contentContainerStyle={styles.contentContainer}>
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* 1. LARGE HEALTH & LATENCY MONITOR DASHBOARD (User Requested)        */}
       {/* ══════════════════════════════════════════════════════════════════ */}
-      <View style={styles.healthCardBig}>
+      <View style={[styles.healthCardBig, { backgroundColor: palette.bgSurface }]}>
         <View style={styles.healthCardHeader}>
           <View style={styles.healthTitleRow}>
-            <Activity size={18} color="#d4ff00" style={{ marginRight: 8 }} />
+            <Activity size={18} color={palette.accent} style={{ marginRight: 8 }} />
             <Text style={styles.healthTitle}>Service Health & Latency Monitor</Text>
           </View>
 

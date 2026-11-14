@@ -604,11 +604,23 @@ export const aiProviderService = {
       if (res && res.ok) {
         datacat = { ok: true, latencyMs: Date.now() - datacatStart, error: undefined };
       } else if (Platform.OS !== 'web') {
-        const directRes = await expoFetch('https://datacat.cc/api/characters?limit=1').catch(() => null);
+        const directRes = await expoFetch('https://datacat.run/api/liberator/identify', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Origin: 'https://datacat.run',
+            Referer: 'https://datacat.run/',
+          },
+          body: JSON.stringify({ deviceToken: `ping_${Date.now().toString(36)}` }),
+        }).catch(() => null);
         if (directRes && directRes.ok) {
           datacat = { ok: true, latencyMs: Date.now() - datacatStart, error: undefined };
         } else {
-          datacat = { ok: false, latencyMs: Date.now() - datacatStart, error: 'Unreachable' };
+          datacat = {
+            ok: false,
+            latencyMs: Date.now() - datacatStart,
+            error: directRes ? `HTTP ${directRes.status}` : 'Unreachable',
+          };
         }
       } else {
         datacat = { ok: false, latencyMs: Date.now() - datacatStart, error: res ? `HTTP ${res.status}` : 'Proxy Offline (Port 3001)' };

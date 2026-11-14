@@ -80,3 +80,4 @@ jobs:
           files: ${{ steps.apk.outputs.file }}
           draft: false
           prerelease: true
+

@@ -15,6 +15,7 @@ import {
   Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import {
   MessageSquare,
   Heart,
@@ -26,6 +27,7 @@ import {
 import { CommunityCharacter } from '../types';
 import { matchAlgorithmService } from '../services/matchAlgorithmService';
 import { GLASS } from '../theme/glassTheme';
+import { useTheme } from '../theme/ThemeContext';
 
 interface CommunityCharacterCardProps {
   character: CommunityCharacter;
@@ -56,6 +58,7 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
   onCreatorClick,
   onTagClick,
 }) => {
+  const { palette } = useTheme();
   const [imgError, setImgError] = useState(false);
   const [isLiked, setIsLiked] = useState<boolean>(
     Boolean(isLikedProp ?? isBookmarked ?? matchAlgorithmService.isCharacterLiked(character.id))
@@ -133,6 +136,7 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
       style={[
         styles.cardContainer,
         {
+          backgroundColor: palette.bgSurface,
           opacity: enterAnim,
           transform: [
             { scale: Animated.multiply(pressScale, enterAnim.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1] })) },
@@ -214,8 +218,17 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
         </TouchableOpacity>
 
         {/* Progressive Blur / Gradient Scrim */}
+        {Platform.OS !== 'web' && (
+          <BlurView
+            intensity={22}
+            tint="dark"
+            experimentalBlurMethod="dimezisBlurView"
+            pointerEvents="none"
+            style={styles.bannerGradientScrim}
+          />
+        )}
         <LinearGradient
-          colors={['transparent', 'rgba(15, 18, 29, 0.4)', 'rgba(15, 18, 29, 0.85)', '#0f121d']}
+          colors={['transparent', 'rgba(15, 18, 29, 0.35)', 'rgba(15, 18, 29, 0.78)', palette.bgSurface]}
           locations={[0, 0.35, 0.75, 1]}
           style={styles.bannerGradientScrim}
         />
@@ -228,9 +241,9 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
           {character.name}
         </Text>
 
-        {/* Chat Name / Subtitle (Lime Accent) */}
+        {/* Chat Name / Subtitle (Theme Accent) */}
         {character.chatName ? (
-          <Text style={styles.chatSubtitle} numberOfLines={1}>
+          <Text style={[styles.chatSubtitle, { color: palette.accent }]} numberOfLines={1}>
             {character.chatName}
           </Text>
         ) : null}
@@ -337,15 +350,15 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
               <Animated.View style={{ transform: [{ scale: likeScale }] }}>
                 <Heart
                   size={13}
-                  color={isLiked ? '#EF4444' : '#d4ff00'}
+                  color={isLiked ? '#EF4444' : palette.accent}
                   fill={isLiked ? '#EF4444' : 'transparent'}
                 />
               </Animated.View>
             </TouchableOpacity>
 
-            {/* Glowing Lime Circular Play Button */}
+            {/* Glowing Accent Circular Play Button */}
             <TouchableOpacity
-              style={styles.playBtn}
+              style={[styles.playBtn, { backgroundColor: palette.accent, shadowColor: palette.accent }]}
               onPress={e => {
                 e.stopPropagation();
                 onStartChat(character);

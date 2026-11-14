@@ -84,6 +84,7 @@ import {
   ChatStyleMode,
 } from '../types';
 import { colors } from '../theme/colors';
+import { useTheme } from '../theme/ThemeContext';
 import { imageGenService, IMAGE_STYLE_OPTIONS, ImageStylePreset } from '../services/imageGenService';
 import { ttsService, TtsPlaybackState } from '../services/ttsService';
 import { aiProviderService, extractCleanCharacterName } from '../services/aiProviderService';
@@ -113,6 +114,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   onBack,
   initialConversationId,
 }) => {
+  const { palette } = useTheme();
   // Session & Message State
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -1223,7 +1225,12 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const totalTokens = messages.reduce((acc, m) => acc + (m.tokenCount || estimateTokens(m.content)), 0);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.bgDark }]}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior="padding"
+        keyboardVerticalOffset={0}
+      >
       {/* ── Background Wallpaper, Gaussian Blur & Dark Overlay (Blueprint Section D) ── */}
       {appearance.enableWallpaper && (
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
@@ -1236,7 +1243,13 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                 : {},
             ]}
             resizeMode="cover"
-            blurRadius={Platform.OS === 'web' ? undefined : appearance.blurRadius}
+            blurRadius={
+              Platform.OS === 'web'
+                ? undefined
+                : appearance.blurRadius > 0
+                ? Math.min(25, Math.max(1, Math.round(appearance.blurRadius * 2)))
+                : 0
+            }
           />
           <LinearGradient
             colors={[
@@ -1727,10 +1740,6 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       )}
 
       {/* Bottom Composer Area */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-      >
         {fidgetOpen && (() => {
           const lastMsg = messages[messages.length - 1];
           const rawLast = (lastMsg?.content || '').trim();

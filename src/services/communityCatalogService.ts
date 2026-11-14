@@ -129,27 +129,35 @@ class CommunityCatalogService {
     const limit = params.limit || 12;
     const offset = params.offset || 0;
 
-    const fetchLimit =
-      params.sort === 'popular' || params.sort === 'trending'
-        ? Math.min(60, Math.max(limit * 2, 48))
-        : limit;
+    const isSortedWindow = params.sort === 'popular' || params.sort === 'trending';
+    const fetchLimit = isSortedWindow ? Math.min(48, Math.max(limit * 2, 24)) : limit;
+    const pageIndex = Math.floor(offset / limit);
+    const realOffset = isSortedWindow ? pageIndex * fetchLimit : offset;
 
     const query = new URLSearchParams({
       limit: String(fetchLimit),
-      offset: String(offset),
+      offset: String(realOffset),
       summary: '1',
       skipCount: '1'
     });
     if (params.search?.trim()) query.set('search', params.search.trim());
     if (params.tagIds?.trim()) query.set('tagIds', params.tagIds.trim());
 
-    const res = await fetch(`https://datacat.run/api/characters/recent-public?${query.toString()}`, {
-      headers: {
-        'X-Session-Token': sessionToken,
-        Origin: 'https://datacat.run',
-        Referer: 'https://datacat.run/'
-      }
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    let res: Response;
+    try {
+      res = await fetch(`https://datacat.run/api/characters/recent-public?${query.toString()}`, {
+        signal: controller.signal,
+        headers: {
+          'X-Session-Token': sessionToken,
+          Origin: 'https://datacat.run',
+          Referer: 'https://datacat.run/'
+        }
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!res.ok) {
       throw new Error(`Direct Datacat query failed (${res.status})`);
@@ -168,6 +176,10 @@ class CommunityCatalogService {
         'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=500';
 
       const avatarUrl = getHighResImageUrl(candidate);
+      const cleanDesc = String(item.description || item.rawDescription || item.personality || '')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
 
       return {
         id: item.characterId || item.id,
@@ -177,8 +189,8 @@ class CommunityCatalogService {
         creatorName: String(item.creatorName || item.creator_name || 'community').replace(/^@+/, ''),
         creatorId: item.creator_id || item.creatorId,
         avatarUrl,
-        shortDescription: (item.description || item.personality || '').replace(/<[^>]*>/g, ' ').trim().slice(0, 260),
-        isNsfw: Boolean(item.nsfw || item.is_nsfw || item.rating === 'nsfw'),
+        shortDescription: cleanDesc.slice(0, 260) || 'JanitorAI companion ready to roleplay.',
+        isNsfw: Boolean(item.isNsfw || item.is_nsfw || item.nsfw || item.rating === 'nsfw'),
         totalTokens: Number(item.totalTokens || item.tokenCount) || 850,
         chatCount: item.stats?.chat || 0,
         messageCount: item.stats?.message || 0,
@@ -191,7 +203,8 @@ class CommunityCatalogService {
             }))
           : [],
         firstPublishedAt: item.firstPublishedAt || item.first_published_at,
-        createdAt: item.createdAt || item.created_at
+        createdAt: item.createdAt || item.created_at,
+        source: 'janitor' as const,
       };
     });
 
@@ -243,6 +256,7 @@ class CommunityCatalogService {
       if (!res.ok) return null;
       const data = await res.json();
       const c = data.character || data;
+      const v2Data = c.rawCardV2?.data || {};
 
       const candidate =
         c.avatarVariantUrls?.hero ||
@@ -253,17 +267,35 @@ class CommunityCatalogService {
         'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=500';
 
       const avatarUrl = getHighResImageUrl(candidate);
+      const cleanDesc = String(c.description || v2Data.description || c.rawDescription || c.personality || '')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      const resolvedFirstMessage =
+        c.firstMessage ||
+        c.first_message ||
+        v2Data.first_mes ||
+        `*${c.name || 'They'} look at you quietly.*`;
+
+      const resolvedAlternateGreetings = Array.isArray(c.alternateGreetings)
+        ? c.alternateGreetings
+        : Array.isArray(c.alternate_greetings)
+        ? c.alternate_greetings
+        : Array.isArray(v2Data.alternate_greetings)
+        ? v2Data.alternate_greetings
+        : [];
 
       return {
-        id: c.characterId || c.id || id,
-        characterId: c.characterId || c.id || id,
-        name: c.name || 'Character',
-        chatName: c.name || '',
-        creatorName: String(c.creatorName || c.creator_name || 'community').replace(/^@+/, ''),
+        id: c.character_id || c.characterId || c.id || id,
+        characterId: c.character_id || c.characterId || c.id || id,
+        name: c.name || v2Data.name || 'Character',
+        chatName: c.chat_name || c.chatName || v2Data.name || c.name || '',
+        creatorName: String(c.creator_name || c.creatorName || v2Data.creator || 'community').replace(/^@+/, ''),
         avatarUrl,
-        shortDescription: (c.description || c.personality || '').replace(/<[^>]*>/g, ' ').trim().slice(0, 260),
-        isNsfw: Boolean(c.nsfw || c.is_nsfw || c.rating === 'nsfw'),
-        totalTokens: Number(c.totalTokens || c.tokenCount) || 850,
+        shortDescription: cleanDesc.slice(0, 260),
+        isNsfw: Boolean(c.isNsfw || c.is_nsfw || c.nsfw || c.rating === 'nsfw'),
+        totalTokens: Number(c.total_tokens || c.totalTokens || c.tokenCount) || 850,
         chatCount: c.stats?.chat || 0,
         messageCount: c.stats?.message || 0,
         favoritesCount: c.stats?.favoritesCount?.favoritesCount || c.stats?.favorites || 0,
@@ -274,11 +306,12 @@ class CommunityCatalogService {
               slug: t.slug || String(t).toLowerCase().replace(/\s+/g, '-')
             }))
           : [],
-        firstMessage: c.firstMessage || c.first_message || `*${c.name || 'They'} look at you quietly.*`,
-        personality: c.personality || c.description || 'Expressive companion.',
-        scenario: c.scenario || c.description || '',
-        descriptionHtml: c.description || '',
-        alternateGreetings: Array.isArray(c.alternateGreetings) ? c.alternateGreetings : []
+        firstMessage: resolvedFirstMessage,
+        personality: c.personality || v2Data.personality || c.description || 'Expressive companion.',
+        scenario: c.scenario || v2Data.scenario || c.description || '',
+        descriptionHtml: c.description || v2Data.description || '',
+        alternateGreetings: resolvedAlternateGreetings,
+        source: 'janitor' as const,
       };
     } catch {
       return null;
@@ -391,13 +424,15 @@ class CommunityCatalogService {
                 slug: String(t).toLowerCase().replace(/\s+/g, '-'),
               }))
             : [{ id: 1, name: 'anime', slug: 'anime' }],
-          firstMessage: node?.definition?.first_message || `*${node?.name || 'They'} look at you quietly.*`,
+          firstMessage: node?.definition?.first_message || '',
           personality: node?.definition?.personality || rawDesc,
           scenario: node?.definition?.scenario || rawDesc.slice(0, 300),
           alternateGreetings: Array.isArray(node?.definition?.alternate_greetings)
             ? node.definition.alternate_greetings
             : [],
           createdAt: node?.createdAt,
+          source: 'chub' as const,
+          fullPath: fullPath.includes('/') ? fullPath : undefined,
         };
       });
 
@@ -456,11 +491,15 @@ class CommunityCatalogService {
           sort: params.sort,
           sfwOnly: params.sfwOnly,
         });
-        if (directRes.characters && directRes.characters.length > 0) {
-          return directRes;
-        }
-      } catch (_nativeErr) {
-        console.warn('[CommunityCatalogService] Direct native Datacat query failed, falling back:', _nativeErr);
+        return directRes;
+      } catch (nativeErr: any) {
+        console.warn('[CommunityCatalogService] Direct native Datacat query failed:', nativeErr);
+        return {
+          characters: [],
+          totalCount: 0,
+          hasMore: false,
+          error: `JanitorAI/Datacat unreachable: ${nativeErr?.message || 'Network timeout'}`,
+        };
       }
     }
 
@@ -516,12 +555,20 @@ class CommunityCatalogService {
   /**
    * 3. Character Detail Query (Live — Both Chub.ai & Datacat/Janitor)
    */
-  async getCharacterDetail(charId: string): Promise<CommunityCharacterDetail | null> {
-    const isChub = charId.includes('/') || charId.startsWith('chub-');
+  async getCharacterDetail(
+    charId: string,
+    opts?: { fullPath?: string; source?: 'janitor' | 'chub' }
+  ): Promise<CommunityCharacterDetail | null> {
+    const isChub =
+      opts?.source === 'chub' ||
+      Boolean(opts?.fullPath) ||
+      charId.includes('/') ||
+      charId.startsWith('chub-') ||
+      /^\d+$/.test(charId);
 
-    if (isChub) {
+    if (isChub && opts?.source !== 'janitor') {
       try {
-        const cleanPath = charId.replace(/^chub-/, '');
+        const cleanPath = (opts?.fullPath || charId).replace(/^chub-/, '');
         const res = await fetch(`https://api.chub.ai/api/characters/${cleanPath}?full=true`, {
           headers: { Accept: 'application/json' },
         });

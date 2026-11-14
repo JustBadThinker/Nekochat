@@ -225,7 +225,10 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
       storageService.isFollowingCreator(creatorName).then(setIsFollowing);
       storageService.isCommunityFavorite(character.id).then(setIsFav);
 
-      communityCatalogService.getCharacterDetail(character.id).then(d => {
+      communityCatalogService.getCharacterDetail(character.id, {
+        fullPath: (character as any).fullPath,
+        source: (character as any).source,
+      }).then(d => {
         setDetail(d);
       });
     } else {
