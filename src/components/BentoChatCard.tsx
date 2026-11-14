@@ -3,10 +3,12 @@
  * Clean 2-column cards for My Chats with pure monochrome white iconography.
  */
 
-import React from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import { View, Text, Image, TouchableOpacity, StyleSheet, Dimensions, Animated, Platform } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { MessageSquare, Heart } from 'lucide-react-native';
 import { Character } from '../types';
+import { GLASS } from '../theme/glassTheme';
 
 const { width: windowWidth } = Dimensions.get('window');
 const effectiveWidth = Math.min(windowWidth, 480);
@@ -23,6 +25,48 @@ export const BentoChatCard: React.FC<BentoChatCardProps> = ({
   onPress,
   onToggleFavorite,
 }) => {
+  const enterAnim = useRef(new Animated.Value(0)).current;
+  const pressScale = useRef(new Animated.Value(1)).current;
+  const heartScale = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.spring(enterAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 8,
+      tension: 80,
+    }).start();
+  }, []);
+
+  const handlePressIn = () => {
+    Animated.spring(pressScale, {
+      toValue: 0.965,
+      useNativeDriver: true,
+      friction: 7,
+      tension: 180,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(pressScale, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 6,
+      tension: 140,
+    }).start();
+  };
+
+  const handleFavPress = () => {
+    heartScale.setValue(0.75);
+    Animated.spring(heartScale, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 4,
+      tension: 180,
+    }).start();
+    onToggleFavorite?.();
+  };
+
   const formatTimeAgo = (timestamp?: number) => {
     if (!timestamp) return 'New';
     const diffMin = Math.round((Date.now() - timestamp) / 60000);
@@ -33,13 +77,35 @@ export const BentoChatCard: React.FC<BentoChatCardProps> = ({
   };
 
   return (
+    <Animated.View
+      style={[
+        styles.cardWrapper,
+        {
+          opacity: enterAnim,
+          transform: [
+            { scale: Animated.multiply(pressScale, enterAnim.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1] })) },
+            { translateY: enterAnim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) },
+          ],
+        },
+      ]}
+    >
     <TouchableOpacity
       style={styles.cardContainer}
       onPress={onPress}
-      activeOpacity={0.85}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      activeOpacity={0.92}
     >
       {/* Cover Image */}
       <Image source={{ uri: character.avatar }} style={styles.cardImage} />
+
+      {/* Progressive Top Scrim behind badges */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={['rgba(12, 14, 20, 0.58)', 'rgba(12, 14, 20, 0.22)', 'transparent']}
+        locations={[0, 0.55, 1]}
+        style={styles.topScrim}
+      />
 
       {/* Top Floating Badge Row */}
       <View style={styles.topRow}>
@@ -51,20 +117,26 @@ export const BentoChatCard: React.FC<BentoChatCardProps> = ({
         {onToggleFavorite && (
           <TouchableOpacity
             style={styles.favButton}
-            onPress={onToggleFavorite}
+            onPress={handleFavPress}
             activeOpacity={0.7}
           >
-            <Heart
-              size={13}
-              color={character.isFavorite ? '#FF6B6B' : 'rgba(255,255,255,0.7)'}
-              fill={character.isFavorite ? '#FF6B6B' : 'transparent'}
-            />
+            <Animated.View style={{ transform: [{ scale: heartScale }] }}>
+              <Heart
+                size={13}
+                color={character.isFavorite ? '#FF6B6B' : 'rgba(255,255,255,0.7)'}
+                fill={character.isFavorite ? '#FF6B6B' : 'transparent'}
+              />
+            </Animated.View>
           </TouchableOpacity>
         )}
       </View>
 
-      {/* Progressive Scrim / Bottom Metadata Container */}
-      <View style={styles.scrimContainer}>
+      {/* Progressive Gradient Scrim Behind Text (Character remains sharp and clear above) */}
+      <LinearGradient
+        colors={['transparent', 'rgba(12, 14, 20, 0.4)', 'rgba(12, 14, 20, 0.85)', '#0c0e14']}
+        locations={[0, 0.28, 0.68, 1]}
+        style={styles.scrimContainer}
+      >
         <Text style={styles.charName} numberOfLines={1}>
           {character.name}
         </Text>
@@ -79,22 +151,28 @@ export const BentoChatCard: React.FC<BentoChatCardProps> = ({
             {formatTimeAgo(character.lastActive)}
           </Text>
         </View>
-      </View>
+      </LinearGradient>
     </TouchableOpacity>
+    </Animated.View>
   );
 };
 
 const styles = StyleSheet.create({
+  cardWrapper: {
+    flex: 1,
+    maxWidth: '48.5%',
+    marginBottom: 14,
+  },
   cardContainer: {
-    width: CARD_WIDTH,
-    height: CARD_WIDTH * 1.35,
+    width: '100%',
+    aspectRatio: 0.68, // Crisp portrait ratio with full-bleed character artwork
     borderRadius: 18,
-    backgroundColor: '#12151e',
+    backgroundColor: GLASS.bg,
     overflow: 'hidden',
-    marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#1b1e28',
+    borderColor: GLASS.borderBright,
     position: 'relative',
+    ...GLASS.shadow,
   },
   cardImage: {
     width: '100%',
@@ -111,15 +189,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 10,
   },
+  topScrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 48,
+    zIndex: 5,
+  },
   chatBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    backgroundColor: 'rgba(14, 17, 28, 0.56)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: GLASS.borderBright,
+    ...GLASS.backdrop,
   },
   chatBadgeText: {
     color: '#FFFFFF',
@@ -130,21 +217,27 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    backgroundColor: 'rgba(14, 17, 28, 0.56)',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderColor: GLASS.borderBright,
+    ...GLASS.backdrop,
   },
   scrimContainer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    padding: 12,
-    backgroundColor: 'rgba(12, 14, 20, 0.92)',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    paddingTop: 42,
+    ...(Platform.OS === 'web'
+      ? ({
+          backgroundImage:
+            'linear-gradient(to bottom, rgba(12, 14, 20, 0) 0%, rgba(12, 14, 20, 0.4) 28%, rgba(12, 14, 20, 0.85) 68%, #0c0e14 100%)',
+        } as any)
+      : {}),
   },
   charName: {
     color: '#FFFFFF',

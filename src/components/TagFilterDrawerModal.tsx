@@ -21,6 +21,8 @@ import {
   Check,
   RotateCcw,
 } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { GLASS } from '../theme/glassTheme';
 
 interface TagCategoryItem {
   id: string;
@@ -153,12 +155,18 @@ export const TagFilterDrawerModal: React.FC<TagFilterDrawerModalProps> = ({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.overlay}>
-        <View style={styles.sheetContainer}>
+      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(6, 8, 14, 0.12)', 'rgba(6, 8, 14, 0.48)', 'rgba(6, 8, 14, 0.88)']}
+          locations={[0, 0.5, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+        <TouchableOpacity style={styles.sheetContainer} activeOpacity={1} onPress={(e: any) => e.stopPropagation?.()}>
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerLeft}>
-              <SlidersHorizontal size={17} color="#c084fc" style={{ marginRight: 8 }} />
+              <SlidersHorizontal size={17} color="#d4ff00" style={{ marginRight: 8 }} />
               <Text style={styles.headerTitle}>Filter Characters by Tags</Text>
             </View>
 
@@ -254,8 +262,8 @@ export const TagFilterDrawerModal: React.FC<TagFilterDrawerModalProps> = ({
               </Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
+        </TouchableOpacity>
+      </TouchableOpacity>
     </Modal>
   );
 };
@@ -263,17 +271,20 @@ export const TagFilterDrawerModal: React.FC<TagFilterDrawerModalProps> = ({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.78)',
+    backgroundColor: 'transparent',
     justifyContent: 'flex-end',
+    ...GLASS.backdrop,
   },
   sheetContainer: {
-    backgroundColor: '#0f121a',
+    backgroundColor: GLASS.bgModal,
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
     borderWidth: 1,
-    borderColor: '#1f2433',
+    borderColor: GLASS.borderBright,
     maxHeight: '85%',
     flex: 1,
+    ...GLASS.backdropStrong,
+    ...GLASS.shadow,
   },
   header: {
     flexDirection: 'row',
@@ -305,10 +316,10 @@ const styles = StyleSheet.create({
   },
   categoryBlock: {
     marginBottom: 14,
-    backgroundColor: '#131622',
+    backgroundColor: GLASS.bgSubtle,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1d2232',
+    borderColor: GLASS.border,
     overflow: 'hidden',
   },
   categoryHeader: {
@@ -328,7 +339,7 @@ const styles = StyleSheet.create({
     color: '#e2e8f0',
   },
   catActiveBadge: {
-    backgroundColor: '#9333ea',
+    backgroundColor: '#d4ff00',
     borderRadius: 9,
     paddingHorizontal: 6,
     paddingVertical: 1,
@@ -337,7 +348,7 @@ const styles = StyleSheet.create({
   catActiveBadgeText: {
     fontSize: 9,
     fontWeight: '800',
-    color: '#FFFFFF',
+    color: '#0c0e14',
   },
   pillsWrap: {
     flexDirection: 'row',

@@ -21,6 +21,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { GLASS } from '../theme/glassTheme';
+import { BottomSheetModal } from '../components/BottomSheetModal';
 import {
   Sparkles,
   Plus,
@@ -35,10 +37,16 @@ import {
   User,
   Shield,
   X,
+  Download,
+  Globe,
+  FileText,
+  AlertCircle,
+  BookOpen,
 } from 'lucide-react-native';
-import { Character, Persona } from '../types';
+import { Character, CharacterScenario, Persona, ContentRating, Lorebook, LorebookEntry } from '../types';
 import { colors } from '../theme/colors';
 import { storageService } from '../services/storageService';
+import { characterImportService } from '../services/characterImportService';
 import { compressImageFile, ANIME_DEFAULT_FALLBACK } from '../utils/imageUtils';
 
 interface UserStudioScreenProps {
@@ -52,9 +60,10 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
   activePersona,
   onUpdateActivePersona,
 }) => {
-  const [activeTab, setActiveTab] = useState<'cards' | 'personas'>('cards');
+  const [activeTab, setActiveTab] = useState<'cards' | 'personas' | 'lorebooks'>('cards');
   const [userCharacters, setUserCharacters] = useState<Character[]>([]);
   const [personas, setPersonas] = useState<Persona[]>([]);
+  const [lorebooks, setLorebooks] = useState<Lorebook[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Character Modal State
@@ -67,7 +76,9 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
   const [charScenario, setCharScenario] = useState('');
   const [charFirstMessage, setCharFirstMessage] = useState('');
   const [charTags, setCharTags] = useState('Anime, Roleplay');
-  const [charRating, setCharRating] = useState<'SFW' | 'NSFW'>('SFW');
+  const [charRating, setCharRating] = useState<ContentRating>('SFW');
+  const [charScenarios, setCharScenarios] = useState<CharacterScenario[]>([]);
+  const [charAlternateGreetings, setCharAlternateGreetings] = useState<string[]>([]);
 
   // Persona Modal State
   const [personaModalVisible, setPersonaModalVisible] = useState(false);
@@ -76,16 +87,77 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
   const [personaPronouns, setPersonaPronouns] = useState('');
   const [personaAvatar, setPersonaAvatar] = useState('');
   const [personaDescription, setPersonaDescription] = useState('');
+  const [personaAppearance, setPersonaAppearance] = useState('');
+  const [personaPersonality, setPersonaPersonality] = useState('');
   const [isPersonaDefault, setIsPersonaDefault] = useState(false);
+
+  // Lorebook Modal State
+  const [lorebookModalVisible, setLorebookModalVisible] = useState(false);
+  const [editingLorebookId, setEditingLorebookId] = useState<string | null>(null);
+  const [lbTitle, setLbTitle] = useState('');
+  const [lbDescription, setLbDescription] = useState('');
+  const [lbScanDepth, setLbScanDepth] = useState('2');
+  const [lbTokenBudget, setLbTokenBudget] = useState('1024');
+  const [lbEntries, setLbEntries] = useState<LorebookEntry[]>([]);
 
   // File Upload Helper
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadTarget, setUploadTarget] = useState<'char' | 'persona'>('char');
   const [isUploading, setIsUploading] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  // Character Import Modal State
+  const [importModalVisible, setImportModalVisible] = useState(false);
+  const [importMode, setImportMode] = useState<'text' | 'url'>('text');
+  const [importRawText, setImportRawText] = useState('');
+  const [importUrl, setImportUrl] = useState('');
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+
+  const handleImportSubmit = async () => {
+    setImportError(null);
+    setImportLoading(true);
+    try {
+      let res;
+      if (importMode === 'url') {
+        if (!importUrl.trim()) {
+          setImportError('Please enter a community character URL.');
+          setImportLoading(false);
+          return;
+        }
+        res = await characterImportService.fetchCommunityCharacter(importUrl.trim());
+      } else {
+        if (!importRawText.trim()) {
+          setImportError('Please paste JSON card or W++ character text.');
+          setImportLoading(false);
+          return;
+        }
+        res = characterImportService.parseManualText(importRawText.trim());
+      }
+
+      if (res.success && res.data) {
+        setCharName(res.data.name);
+        setCharTagline(res.data.subtitle || res.data.shortDescription || 'Roleplay Companion');
+        setCharAvatar(res.data.avatarUrl || ANIME_DEFAULT_FALLBACK);
+        setCharPersonality(res.data.personality);
+        setCharScenario(res.data.background);
+        setCharFirstMessage(res.data.firstMessage);
+        setCharTags(res.data.tags.join(', '));
+        setCharRating(res.data.contentRating);
+        setEditingCharId(null);
+
+        setImportModalVisible(false);
+        setImportRawText('');
+        setImportUrl('');
+        setCharModalVisible(true);
+      } else {
+        setImportError(res.error || 'Failed to parse character data.');
+      }
+    } catch (err: any) {
+      setImportError(err.message || 'Error importing character.');
+    } finally {
+      setImportLoading(false);
+    }
+  };
 
   const loadData = async () => {
     setIsLoading(true);
@@ -94,10 +166,16 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
       setUserCharacters(chars);
       const pers = await storageService.getPersonas();
       setPersonas(pers);
+      const lbs = await storageService.getLorebooks();
+      setLorebooks(lbs);
     } finally {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    loadData();
+  }, []);
 
   // --- Image Upload Handler (HTML File Input for Web) ---
   const handleTriggerUpload = (target: 'char' | 'persona') => {
@@ -139,6 +217,8 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
     setCharFirstMessage('');
     setCharTags('Anime, Roleplay');
     setCharRating('SFW');
+    setCharScenarios([]);
+    setCharAlternateGreetings([]);
     setCharModalVisible(true);
   };
 
@@ -152,7 +232,48 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
     setCharFirstMessage(char.firstMessage);
     setCharTags(char.tags.join(', '));
     setCharRating(char.contentRating || 'SFW');
+    setCharScenarios(char.scenarios || []);
+    setCharAlternateGreetings(char.alternateGreetings || []);
     setCharModalVisible(true);
+  };
+
+  const handleAddCharScenario = () => {
+    const newScen: CharacterScenario = {
+      id: `scen_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      characterId: editingCharId || 'user_char',
+      title: `Scenario #${charScenarios.length + 1}`,
+      description: '',
+      openingMessage: '',
+      scenarioInstructions: '',
+      displayOrder: charScenarios.length,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    setCharScenarios([...charScenarios, newScen]);
+  };
+
+  const handleUpdateCharScenario = (idx: number, field: keyof CharacterScenario, val: string) => {
+    const updated = [...charScenarios];
+    updated[idx] = { ...updated[idx], [field]: val };
+    setCharScenarios(updated);
+  };
+
+  const handleDeleteCharScenario = (idx: number) => {
+    setCharScenarios(charScenarios.filter((_, i) => i !== idx));
+  };
+
+  const handleAddCharGreeting = () => {
+    setCharAlternateGreetings([...charAlternateGreetings, '']);
+  };
+
+  const handleUpdateCharGreeting = (idx: number, val: string) => {
+    const updated = [...charAlternateGreetings];
+    updated[idx] = val;
+    setCharAlternateGreetings(updated);
+  };
+
+  const handleDeleteCharGreeting = (idx: number) => {
+    setCharAlternateGreetings(charAlternateGreetings.filter((_, i) => i !== idx));
   };
 
   const handleSaveCharacter = async () => {
@@ -179,13 +300,14 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
       creator: '@User',
       isUserCreated: true,
       contentRating: charRating,
+      scenarios: charScenarios.filter(s => s.title.trim()),
+      alternateGreetings: charAlternateGreetings.filter(g => g.trim()),
       totalChats: 0,
       lastActive: Date.now(),
       isFavorite: false,
     };
 
     await storageService.upsertUserCharacter(character);
-    // Also save to active characters list so it can be chatted with
     await storageService.upsertCharacter(character);
     await loadData();
     setCharModalVisible(false);
@@ -205,6 +327,8 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
     setPersonaPronouns('they/them');
     setPersonaAvatar(ANIME_DEFAULT_FALLBACK);
     setPersonaDescription('');
+    setPersonaAppearance('');
+    setPersonaPersonality('');
     setIsPersonaDefault(personas.length === 0);
     setPersonaModalVisible(true);
   };
@@ -215,6 +339,8 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
     setPersonaPronouns(pers.pronouns || 'they/them');
     setPersonaAvatar(pers.avatar || ANIME_DEFAULT_FALLBACK);
     setPersonaDescription(pers.description || '');
+    setPersonaAppearance(pers.appearance || '');
+    setPersonaPersonality(pers.personality || '');
     setIsPersonaDefault(!!pers.isDefault);
     setPersonaModalVisible(true);
   };
@@ -231,12 +357,16 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
       pronouns: personaPronouns.trim(),
       avatar: personaAvatar.trim() || ANIME_DEFAULT_FALLBACK,
       description: personaDescription.trim() || 'An observant companion.',
+      appearance: personaAppearance.trim() || undefined,
+      personality: personaPersonality.trim() || undefined,
       isDefault: isPersonaDefault,
     };
 
     await storageService.upsertPersona(persona);
     if (isPersonaDefault) {
       await storageService.setDefaultPersona(persona.id);
+    }
+    if (isPersonaDefault || persona.id === activePersona?.id) {
       onUpdateActivePersona(persona);
     }
     await loadData();
@@ -260,6 +390,124 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
     }
   };
 
+  // --- Lorebook Codex Handlers ---
+  const handleOpenCreateLorebook = () => {
+    setEditingLorebookId(null);
+    setLbTitle('');
+    setLbDescription('');
+    setLbScanDepth('2');
+    setLbTokenBudget('1024');
+    setLbEntries([]);
+    setLorebookModalVisible(true);
+  };
+
+  const handleOpenEditLorebook = (lb: Lorebook) => {
+    setEditingLorebookId(lb.id);
+    setLbTitle(lb.title);
+    setLbDescription(lb.description || '');
+    setLbScanDepth(String(lb.scanDepth || 2));
+    setLbTokenBudget(String(lb.tokenBudget || 1024));
+    setLbEntries(lb.entries || []);
+    setLorebookModalVisible(true);
+  };
+
+  const handleAddLorebookEntry = () => {
+    const newEntry: LorebookEntry = {
+      id: `entry_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      title: `Codex Entry #${lbEntries.length + 1}`,
+      keys: [],
+      content: '',
+      priority: 10,
+      enabled: true,
+    };
+    setLbEntries([...lbEntries, newEntry]);
+  };
+
+  const handleUpdateLorebookEntry = (idx: number, updates: Partial<LorebookEntry>) => {
+    const updated = [...lbEntries];
+    updated[idx] = { ...updated[idx], ...updates };
+    setLbEntries(updated);
+  };
+
+  const handleDeleteLorebookEntry = (idx: number) => {
+    setLbEntries(lbEntries.filter((_, i) => i !== idx));
+  };
+
+  const handleImportLorebookJson = (jsonString: string) => {
+    try {
+      const parsed = JSON.parse(jsonString);
+      const title = parsed.title || parsed.name || 'Imported Lorebook';
+      const desc = parsed.description || '';
+
+      let rawEntries: any[] = [];
+      if (Array.isArray(parsed.entries)) {
+        rawEntries = parsed.entries;
+      } else if (parsed.entries && typeof parsed.entries === 'object') {
+        rawEntries = Object.values(parsed.entries);
+      }
+
+      const imported: LorebookEntry[] = rawEntries.map((e, idx) => {
+        let keys: string[] = [];
+        if (Array.isArray(e.keys)) keys = e.keys;
+        else if (Array.isArray(e.key)) keys = e.key;
+        else if (typeof e.keys === 'string') keys = e.keys.split(',').map((k: string) => k.trim());
+        else if (typeof e.key === 'string') keys = e.key.split(',').map((k: string) => k.trim());
+
+        return {
+          id: `entry_${Date.now()}_${idx}`,
+          lorebookId: editingLorebookId || 'new',
+          title: e.title || e.comment || e.name || `Entry #${idx + 1}`,
+          keys: keys.filter(Boolean),
+          content: e.content || e.text || '',
+          enabled: e.enabled !== false,
+          priority: typeof e.order === 'number' ? e.order : 100,
+        };
+      });
+
+      setLbTitle(title);
+      if (desc) setLbDescription(desc);
+      if (imported.length > 0) {
+        setLbEntries(prev => [...prev, ...imported]);
+        alert(`Successfully imported ${imported.length} lorebook entries from Janitor / SillyTavern JSON format!`);
+      } else {
+        alert('Parsed JSON successfully, but no entries were found in the file.');
+      }
+    } catch (err: any) {
+      alert(`Invalid Lorebook JSON format: ${err.message || 'Syntax error'}`);
+    }
+  };
+
+  const handleSaveLorebook = async () => {
+    if (!lbTitle.trim()) {
+      alert('Please provide a Lorebook title.');
+      return;
+    }
+
+    const lorebook: Lorebook = {
+      id: editingLorebookId || `lorebook_${Date.now()}`,
+      userId: 'user',
+      title: lbTitle.trim(),
+      description: lbDescription.trim(),
+      scanDepth: parseInt(lbScanDepth, 10) || 2,
+      tokenBudget: parseInt(lbTokenBudget, 10) || 1024,
+      recursiveScanning: false,
+      entries: lbEntries,
+      isPublic: false,
+      createdAt: new Date().toISOString(),
+    };
+
+    await storageService.upsertLorebook(lorebook);
+    await loadData();
+    setLorebookModalVisible(false);
+  };
+
+  const handleDeleteLorebook = async (id: string) => {
+    if (confirm('Are you sure you want to delete this Lorebook codex?')) {
+      await storageService.deleteLorebook(id);
+      await loadData();
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="light" />
@@ -277,9 +525,9 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
             style={[styles.segmentBtn, activeTab === 'cards' && styles.segmentBtnActive]}
             onPress={() => setActiveTab('cards')}
           >
-            <Layers size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <Layers size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
             <Text style={[styles.segmentText, activeTab === 'cards' && styles.segmentTextActive]}>
-              My Cards ({userCharacters.length})
+              Cards ({userCharacters.length})
             </Text>
           </TouchableOpacity>
 
@@ -287,9 +535,19 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
             style={[styles.segmentBtn, activeTab === 'personas' && styles.segmentBtnActive]}
             onPress={() => setActiveTab('personas')}
           >
-            <User size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <User size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
             <Text style={[styles.segmentText, activeTab === 'personas' && styles.segmentTextActive]}>
-              My Personas ({personas.length})
+              Personas ({personas.length})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.segmentBtn, activeTab === 'lorebooks' && styles.segmentBtnActive]}
+            onPress={() => setActiveTab('lorebooks')}
+          >
+            <BookOpen size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
+            <Text style={[styles.segmentText, activeTab === 'lorebooks' && styles.segmentTextActive]}>
+              Codex ({lorebooks.length})
             </Text>
           </TouchableOpacity>
         </View>
@@ -305,14 +563,24 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                 <Text style={styles.sectionHeading}>My Character Cards</Text>
                 <Text style={styles.sectionDesc}>Custom characters created by you</Text>
               </View>
-              <TouchableOpacity
-                style={styles.createButton}
-                onPress={handleOpenCreateChar}
-                activeOpacity={0.8}
-              >
-                <Plus size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.createButtonText}>Create Card</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity
+                  style={styles.importButton}
+                  onPress={() => setImportModalVisible(true)}
+                  activeOpacity={0.8}
+                >
+                  <Download size={15} color="#D4FF00" style={{ marginRight: 6 }} />
+                  <Text style={styles.importButtonText}>Import</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.createButton}
+                  onPress={handleOpenCreateChar}
+                  activeOpacity={0.8}
+                >
+                  <Plus size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Text style={styles.createButtonText}>Create Card</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {/* Empty State */}
@@ -325,13 +593,22 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                 <Text style={styles.emptyDesc}>
                   Create your own anime roleplay companion with custom world lore, personality traits, and first messages.
                 </Text>
-                <TouchableOpacity
-                  style={styles.emptyActionBtn}
-                  onPress={handleOpenCreateChar}
-                >
-                  <Plus size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                  <Text style={styles.emptyActionBtnText}>Create Your First Card</Text>
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+                  <TouchableOpacity
+                    style={styles.emptyActionBtn}
+                    onPress={handleOpenCreateChar}
+                  >
+                    <Plus size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.emptyActionBtnText}>Create Card</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.emptyActionBtn, { backgroundColor: 'rgba(212, 255, 0, 0.12)', borderColor: 'rgba(212, 255, 0, 0.3)' }]}
+                    onPress={() => setImportModalVisible(true)}
+                  >
+                    <Download size={16} color="#D4FF00" style={{ marginRight: 6 }} />
+                    <Text style={[styles.emptyActionBtnText, { color: '#D4FF00' }]}>Import Card</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ) : (
               /* Character Card List */
@@ -482,12 +759,189 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
             </View>
           </View>
         )}
+
+        {/* ================= TAB 3: MY LOREBOOKS ================= */}
+        {activeTab === 'lorebooks' && (
+          <View>
+            <View style={styles.sectionHeaderRow}>
+              <View>
+                <Text style={styles.sectionHeading}>Codex Lorebooks</Text>
+                <Text style={styles.sectionDesc}>World lore & keyword-triggered memories</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.createButton}
+                onPress={handleOpenCreateLorebook}
+                activeOpacity={0.8}
+              >
+                <Plus size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.createButtonText}>Add Lorebook</Text>
+              </TouchableOpacity>
+            </View>
+
+            {lorebooks.length === 0 ? (
+              <View style={styles.emptyCardBox}>
+                <View style={styles.emptyIconCircle}>
+                  <BookOpen size={28} color="#FFFFFF" />
+                </View>
+                <Text style={styles.emptyTitle}>No Lorebooks Created</Text>
+                <Text style={styles.emptyDesc}>
+                  Lorebooks inject worldbuilding lore, character history, and specific rules dynamically when matching keywords appear in chat.
+                </Text>
+                <TouchableOpacity
+                  style={[styles.createButton, { marginTop: 12 }]}
+                  onPress={handleOpenCreateLorebook}
+                >
+                  <Text style={styles.createButtonText}>Create First Lorebook</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.personaList}>
+                {lorebooks.map(lb => (
+                  <View key={lb.id} style={styles.lorebookCard}>
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <Text style={styles.lorebookTitle}>{lb.title}</Text>
+                        <View style={styles.lorebookBadge}>
+                          <Text style={styles.lorebookBadgeText}>
+                            {lb.entries?.length || 0} entries
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.lorebookDesc} numberOfLines={2}>
+                        {lb.description || 'No description provided.'}
+                      </Text>
+                      <Text style={styles.lorebookMeta}>
+                        Scan Depth: {lb.scanDepth || 2} turns • Budget: {lb.tokenBudget || 1024} tokens
+                      </Text>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', gap: 6, marginLeft: 8 }}>
+                      <TouchableOpacity
+                        style={styles.iconMiniBtn}
+                        onPress={() => handleOpenEditLorebook(lb)}
+                      >
+                        <Edit2 size={14} color="#FFFFFF" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.iconMiniBtn}
+                        onPress={() => handleDeleteLorebook(lb.id)}
+                      >
+                        <Trash2 size={14} color="#FF6B6B" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
       </ScrollView>
 
+      {/* ================= MODAL: IMPORT CHARACTER ================= */}
+      <BottomSheetModal
+        visible={importModalVisible}
+        onClose={() => setImportModalVisible(false)}
+        sheetStyle={{ maxHeight: '90%' }}
+      >
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Download size={18} color="#D4FF00" />
+                <Text style={styles.modalTitle}>Import Character Card</Text>
+              </View>
+              <TouchableOpacity onPress={() => setImportModalVisible(false)}>
+                <X size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              {/* Import Mode Tabs */}
+              <View style={styles.segmentPill}>
+                <TouchableOpacity
+                  style={[styles.segmentBtn, importMode === 'text' && styles.segmentBtnActive]}
+                  onPress={() => setImportMode('text')}
+                >
+                  <FileText size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Text style={[styles.segmentText, importMode === 'text' && styles.segmentTextActive]}>
+                    JSON / W++ Text
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.segmentBtn, importMode === 'url' && styles.segmentBtnActive]}
+                  onPress={() => setImportMode('url')}
+                >
+                  <Globe size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Text style={[styles.segmentText, importMode === 'url' && styles.segmentTextActive]}>
+                    Community URL
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {importMode === 'text' ? (
+                <View style={{ marginTop: 16 }}>
+                  <Text style={styles.fieldLabel}>Card JSON or W++ Prompt Text</Text>
+                  <TextInput
+                    style={[styles.textInput, { height: 160, textAlignVertical: 'top' }]}
+                    placeholder={`Paste Character Card JSON (V1, V2, V3, Tavern, Warden) or manual W++ text:\n\nName: Luna\nPersonality: Playful and energetic...\nScenario: Lost in the cyber city...\nFirst Message: "Hey there! Need a hand?"`}
+                    placeholderTextColor="rgba(255, 255, 255, 0.3)"
+                    multiline
+                    value={importRawText}
+                    onChangeText={setImportRawText}
+                  />
+                  <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 11, marginTop: 4 }}>
+                    Supports Chara Card V1/V2/V3, SillyTavern, JanitorAI format, and raw roleplay prompts.
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ marginTop: 16 }}>
+                  <Text style={styles.fieldLabel}>Community Character URL</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="https://datacat.run/characters/... or jannyai.com/..."
+                    placeholderTextColor="rgba(255, 255, 255, 0.3)"
+                    value={importUrl}
+                    onChangeText={setImportUrl}
+                    autoCapitalize="none"
+                    keyboardType="url"
+                  />
+                  <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 11, marginTop: 4 }}>
+                    Enter a public character URL from Datacat, JannyAI, or JanitorAI.
+                  </Text>
+                </View>
+              )}
+
+              {importError && (
+                <View style={styles.errorBanner}>
+                  <AlertCircle size={16} color="#FF6B6B" style={{ marginRight: 6 }} />
+                  <Text style={styles.errorBannerText}>{importError}</Text>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[styles.saveSubmitBtn, { marginTop: 24, backgroundColor: '#D4FF00' }]}
+                onPress={handleImportSubmit}
+                disabled={importLoading}
+                activeOpacity={0.8}
+              >
+                {importLoading ? (
+                  <ActivityIndicator size="small" color="#000000" />
+                ) : (
+                  <>
+                    <Download size={16} color="#000000" style={{ marginRight: 6 }} />
+                    <Text style={[styles.saveSubmitBtnText, { color: '#000000' }]}>
+                      Parse & Load into Studio
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
+      </BottomSheetModal>
+
       {/* ================= MODAL: CREATE / EDIT CHARACTER ================= */}
-      <Modal visible={charModalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
+      <BottomSheetModal
+        visible={charModalVisible}
+        onClose={() => setCharModalVisible(false)}
+        sheetStyle={{ maxHeight: '90%' }}
+      >
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
                 {editingCharId ? 'Edit Character Card' : 'Create New Character'}
@@ -610,18 +1064,103 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                 </TouchableOpacity>
               </View>
 
+              {/* Alternate Scenarios Section */}
+              <View style={styles.subSectionHeader}>
+                <Text style={styles.subSectionTitle}>
+                  Alternate Scenarios ({charScenarios.length})
+                </Text>
+                <TouchableOpacity
+                  style={styles.addMiniBtn}
+                  onPress={handleAddCharScenario}
+                >
+                  <Plus size={13} color="#D4FF00" style={{ marginRight: 4 }} />
+                  <Text style={styles.addMiniBtnText}>Add Scenario</Text>
+                </TouchableOpacity>
+              </View>
+
+              {charScenarios.map((scen, sIdx) => (
+                <View key={scen.id} style={styles.subItemCard}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={styles.subItemIndex}>Scenario #{sIdx + 1}</Text>
+                    <TouchableOpacity onPress={() => handleDeleteCharScenario(sIdx)}>
+                      <Trash2 size={13} color="#FF6B6B" />
+                    </TouchableOpacity>
+                  </View>
+                  <TextInput
+                    style={[styles.textInput, { marginBottom: 6 }]}
+                    placeholder="Scenario Title (e.g. Rainy Day Shelter)"
+                    placeholderTextColor="#666"
+                    value={scen.title}
+                    onChangeText={v => handleUpdateCharScenario(sIdx, 'title', v)}
+                  />
+                  <TextInput
+                    style={[styles.textInput, styles.textArea, { marginBottom: 6, minHeight: 48 }]}
+                    placeholder="Scenario premise & environment context..."
+                    placeholderTextColor="#666"
+                    multiline
+                    value={scen.description}
+                    onChangeText={v => handleUpdateCharScenario(sIdx, 'description', v)}
+                  />
+                  <TextInput
+                    style={[styles.textInput, styles.textArea, { marginBottom: 6, minHeight: 48 }]}
+                    placeholder="Scenario opening greeting message..."
+                    placeholderTextColor="#666"
+                    multiline
+                    value={scen.openingMessage || ''}
+                    onChangeText={v => handleUpdateCharScenario(sIdx, 'openingMessage', v)}
+                  />
+                  <TextInput
+                    style={[styles.textInput, { minHeight: 38 }]}
+                    placeholder="Scenario system directive (e.g. Focus on intimate warmth)"
+                    placeholderTextColor="#666"
+                    value={scen.scenarioInstructions || ''}
+                    onChangeText={v => handleUpdateCharScenario(sIdx, 'scenarioInstructions', v)}
+                  />
+                </View>
+              ))}
+
+              {/* Alternate Greetings Section */}
+              <View style={styles.subSectionHeader}>
+                <Text style={styles.subSectionTitle}>
+                  Alternate Greetings ({charAlternateGreetings.length})
+                </Text>
+                <TouchableOpacity
+                  style={styles.addMiniBtn}
+                  onPress={handleAddCharGreeting}
+                >
+                  <Plus size={13} color="#D4FF00" style={{ marginRight: 4 }} />
+                  <Text style={styles.addMiniBtnText}>Add Greeting</Text>
+                </TouchableOpacity>
+              </View>
+
+              {charAlternateGreetings.map((greet, gIdx) => (
+                <View key={`greet_${gIdx}`} style={[styles.subItemCard, { flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
+                  <TextInput
+                    style={[styles.textInput, styles.textArea, { flex: 1, minHeight: 44 }]}
+                    placeholder={`Alternate Greeting #${gIdx + 1}...`}
+                    placeholderTextColor="#666"
+                    multiline
+                    value={greet}
+                    onChangeText={v => handleUpdateCharGreeting(gIdx, v)}
+                  />
+                  <TouchableOpacity onPress={() => handleDeleteCharGreeting(gIdx)} style={{ padding: 6 }}>
+                    <Trash2 size={14} color="#FF6B6B" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+
               <TouchableOpacity style={styles.saveSubmitBtn} onPress={handleSaveCharacter}>
                 <Text style={styles.saveSubmitBtnText}>Save Character Card</Text>
               </TouchableOpacity>
             </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      </BottomSheetModal>
 
       {/* ================= MODAL: ADD / EDIT PERSONA ================= */}
-      <Modal visible={personaModalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
+      <BottomSheetModal
+        visible={personaModalVisible}
+        onClose={() => setPersonaModalVisible(false)}
+        sheetStyle={{ maxHeight: '90%' }}
+      >
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
                 {editingPersonaId ? 'Edit Persona' : 'Add New Persona'}
@@ -677,13 +1216,13 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
               />
 
               {/* Persona Description */}
-              <Text style={styles.fieldLabel}>Appearance & Lore Description</Text>
+              <Text style={styles.fieldLabel}>Persona Description (Backstory, Appearance, Personality & RP Traits)</Text>
               <TextInput
-                style={[styles.textInput, styles.textArea]}
-                placeholder="Describe your appearance, personality, and background as the AI companion will perceive you during chats..."
+                style={[styles.textInput, styles.textArea, { minHeight: 120 }]}
+                placeholder="Describe your character's backstory, appearance, personality, mannerisms, and roleplay traits..."
                 placeholderTextColor="#666"
                 multiline
-                numberOfLines={4}
+                numberOfLines={6}
                 value={personaDescription}
                 onChangeText={setPersonaDescription}
               />
@@ -703,9 +1242,165 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                 <Text style={styles.saveSubmitBtnText}>Save Persona</Text>
               </TouchableOpacity>
             </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      </BottomSheetModal>
+
+      {/* ================= MODAL: ADD / EDIT LOREBOOK ================= */}
+      <BottomSheetModal
+        visible={lorebookModalVisible}
+        onClose={() => setLorebookModalVisible(false)}
+        sheetStyle={{ maxHeight: '90%' }}
+      >
+            <View style={styles.modalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <BookOpen size={18} color="#D4FF00" />
+                <Text style={styles.modalTitle}>
+                  {editingLorebookId ? 'Edit Codex Lorebook' : 'New Codex Lorebook'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setLorebookModalVisible(false)}>
+                <X size={20} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              <Text style={styles.fieldLabel}>Lorebook Title *</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="e.g. World of Eldoria, Guild Rules, Magic System"
+                placeholderTextColor="#666"
+                value={lbTitle}
+                onChangeText={setLbTitle}
+              />
+
+              <Text style={styles.fieldLabel}>Codex Summary / Description</Text>
+              <TextInput
+                style={[styles.textInput, styles.textArea, { minHeight: 48 }]}
+                placeholder="Brief summary of lore topics covered in this codex..."
+                placeholderTextColor="#666"
+                multiline
+                value={lbDescription}
+                onChangeText={setLbDescription}
+              />
+
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.fieldLabel}>Scan Depth (turns)</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="2"
+                    placeholderTextColor="#666"
+                    keyboardType="numeric"
+                    value={lbScanDepth}
+                    onChangeText={setLbScanDepth}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.fieldLabel}>Token Budget</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="1024"
+                    placeholderTextColor="#666"
+                    keyboardType="numeric"
+                    value={lbTokenBudget}
+                    onChangeText={setLbTokenBudget}
+                  />
+                </View>
+              </View>
+
+              {/* Entries Section */}
+              <View style={[styles.subSectionHeader, { marginTop: 16 }]}>
+                <Text style={styles.subSectionTitle}>
+                  Codex Keyword Entries ({lbEntries.length})
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <TouchableOpacity
+                    style={[styles.addMiniBtn, { backgroundColor: 'rgba(212, 255, 0, 0.12)', borderColor: 'rgba(212, 255, 0, 0.4)' }]}
+                    onPress={() => {
+                      if (Platform.OS === 'web' && typeof document !== 'undefined') {
+                        const input = document.createElement('input');
+                        input.type = 'file';
+                        input.accept = '.json,application/json';
+                        input.onchange = (e: any) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = (re: any) => {
+                            handleImportLorebookJson(re.target.result);
+                          };
+                          reader.readAsText(file);
+                        };
+                        input.click();
+                      } else {
+                        const promptJson = prompt('Paste JanitorAI or SillyTavern Lorebook JSON:');
+                        if (promptJson) handleImportLorebookJson(promptJson);
+                      }
+                    }}
+                    activeOpacity={0.8}
+                    accessibilityLabel="Import JanitorAI or SillyTavern Lorebook JSON"
+                  >
+                    <Download size={13} color="#D4FF00" style={{ marginRight: 4 }} />
+                    <Text style={styles.addMiniBtnText}>Import JSON</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.addMiniBtn}
+                    onPress={handleAddLorebookEntry}
+                    activeOpacity={0.8}
+                  >
+                    <Plus size={13} color="#D4FF00" style={{ marginRight: 4 }} />
+                    <Text style={styles.addMiniBtnText}>Add Entry</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {lbEntries.map((entry, eIdx) => (
+                <View key={entry.id} style={styles.subItemCard}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={styles.subItemIndex}>{entry.title || `Entry #${eIdx + 1}`}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <TouchableOpacity
+                        onPress={() => handleUpdateLorebookEntry(eIdx, { enabled: !entry.enabled })}
+                        style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: entry.enabled ? 'rgba(212, 255, 0, 0.15)' : 'rgba(255, 255, 255, 0.08)' }}
+                      >
+                        <Text style={{ color: entry.enabled ? '#D4FF00' : '#888', fontSize: 10, fontWeight: '700' }}>
+                          {entry.enabled ? 'ACTIVE' : 'OFF'}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => handleDeleteLorebookEntry(eIdx)}>
+                        <Trash2 size={13} color="#FF6B6B" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  <TextInput
+                    style={[styles.textInput, { marginBottom: 6 }]}
+                    placeholder="Entry Title (e.g. Ancient Ruins of Zeth)"
+                    placeholderTextColor="#666"
+                    value={entry.title}
+                    onChangeText={v => handleUpdateLorebookEntry(eIdx, { title: v })}
+                  />
+                  <TextInput
+                    style={[styles.textInput, { marginBottom: 6 }]}
+                    placeholder="Trigger Keywords (comma-separated, e.g. Zeth, ruins, ancient shrine)"
+                    placeholderTextColor="#666"
+                    value={entry.keys.join(', ')}
+                    onChangeText={v => handleUpdateLorebookEntry(eIdx, { keys: v.split(',').map(k => k.trim()).filter(Boolean) })}
+                  />
+                  <TextInput
+                    style={[styles.textInput, styles.textArea, { minHeight: 60 }]}
+                    placeholder="World lore content injected into LLM context when keyword matches..."
+                    placeholderTextColor="#666"
+                    multiline
+                    value={entry.content}
+                    onChangeText={v => handleUpdateLorebookEntry(eIdx, { content: v })}
+                  />
+                </View>
+              ))}
+
+              <TouchableOpacity style={styles.saveSubmitBtn} onPress={handleSaveLorebook}>
+                <Text style={styles.saveSubmitBtnText}>Save Codex Lorebook</Text>
+              </TouchableOpacity>
+            </ScrollView>
+      </BottomSheetModal>
     </SafeAreaView>
   );
 };
@@ -799,6 +1494,36 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  importButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(212, 255, 0, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(212, 255, 0, 0.3)',
+  },
+  importButtonText: {
+    color: '#D4FF00',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 80, 80, 0.12)',
+    padding: 12,
+    borderRadius: 12,
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 80, 80, 0.25)',
+  },
+  errorBannerText: {
+    color: '#FF6B6B',
+    fontSize: 12,
+    flex: 1,
+  },
   emptyCardBox: {
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
     borderRadius: 20,
@@ -850,11 +1575,13 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   cardItem: {
-    backgroundColor: '#12151e',
+    backgroundColor: GLASS.bg,
     borderRadius: 18,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#1b1e28',
+    borderColor: GLASS.borderBright,
+    ...GLASS.backdrop,
+    ...GLASS.shadow,
   },
   cardItemBanner: {
     width: '100%',
@@ -1044,8 +1771,16 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    backgroundColor: 'rgba(6, 8, 14, 0.68)',
     justifyContent: 'flex-end',
+    ...GLASS.backdrop,
+    ...(Platform.OS === 'web'
+      ? ({
+          backgroundColor: 'transparent',
+          backgroundImage:
+            'linear-gradient(to bottom, rgba(6, 8, 14, 0.12) 0%, rgba(6, 8, 14, 0.48) 50%, rgba(6, 8, 14, 0.88) 100%)',
+        } as any)
+      : {}),
   },
   modalSheet: {
     backgroundColor: '#12151e',
@@ -1191,6 +1926,82 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontSize: 14,
     fontWeight: '800',
+  },
+  subSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  subSectionTitle: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  addMiniBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: 'rgba(212, 255, 0, 0.12)',
+  },
+  addMiniBtnText: {
+    color: '#D4FF00',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  subItemCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    padding: 10,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  subItemIndex: {
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  lorebookCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: GLASS.bg,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: GLASS.borderBright,
+    ...GLASS.backdrop,
+    ...GLASS.shadow,
+  },
+  lorebookTitle: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  lorebookBadge: {
+    backgroundColor: 'rgba(212, 255, 0, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  lorebookBadgeText: {
+    color: '#D4FF00',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  lorebookDesc: {
+    color: 'rgba(255, 255, 255, 0.55)',
+    fontSize: 12,
+    marginTop: 2,
+    lineHeight: 17,
+  },
+  lorebookMeta: {
+    color: 'rgba(255, 255, 255, 0.35)',
+    fontSize: 10,
+    marginTop: 4,
   },
 });
 

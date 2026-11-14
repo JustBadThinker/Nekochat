@@ -4,10 +4,12 @@
  */
 
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, FlatList } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, FlatList, Platform } from 'react-native';
 import { User, ChevronDown, Check } from 'lucide-react-native';
 import { Persona } from '../types';
 import { colors } from '../theme/colors';
+import { GLASS } from '../theme/glassTheme';
+import { BottomSheetModal } from './BottomSheetModal';
 
 interface PersonaPillProps {
   personas: Persona[];
@@ -37,43 +39,39 @@ export const PersonaPill: React.FC<PersonaPillProps> = ({
       </TouchableOpacity>
 
       {/* Quick Persona Switcher Modal */}
-      <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setModalVisible(false)}
-        >
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Switch Persona</Text>
-            <FlatList
-              data={personas}
-              keyExtractor={item => item.id}
-              renderItem={({ item }) => {
-                const isSelected = item.id === activePersona.id;
-                return (
-                  <TouchableOpacity
-                    style={[styles.personaItem, isSelected && styles.personaItemActive]}
-                    onPress={() => {
-                      onSelectPersona(item);
-                      setModalVisible(false);
-                    }}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.personaName, isSelected && { color: colors.lime }]}>
-                        {item.name}
-                      </Text>
-                      <Text style={styles.personaDesc} numberOfLines={1}>
-                        {item.description}
-                      </Text>
-                    </View>
-                    {isSelected && <Check size={18} color={colors.lime} />}
-                  </TouchableOpacity>
-                );
-              }}
-            />
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      <BottomSheetModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        sheetStyle={{ maxHeight: '62%' }}
+      >
+        <Text style={styles.modalTitle}>Switch Persona</Text>
+        <FlatList
+          data={personas}
+          keyExtractor={item => item.id}
+          renderItem={({ item }) => {
+            const isSelected = item.id === activePersona.id;
+            return (
+              <TouchableOpacity
+                style={[styles.personaItem, isSelected && styles.personaItemActive]}
+                onPress={() => {
+                  onSelectPersona(item);
+                  setModalVisible(false);
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.personaName, isSelected && { color: colors.lime }]}>
+                    {item.name}
+                  </Text>
+                  <Text style={styles.personaDesc} numberOfLines={1}>
+                    {item.description}
+                  </Text>
+                </View>
+                {isSelected && <Check size={18} color={colors.lime} />}
+              </TouchableOpacity>
+            );
+          }}
+        />
+      </BottomSheetModal>
     </>
   );
 };
@@ -101,17 +99,27 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(6, 8, 14, 0.62)',
     justifyContent: 'center',
     padding: 24,
+    ...GLASS.backdrop,
+    ...(Platform.OS === 'web'
+      ? ({
+          backgroundColor: 'transparent',
+          backgroundImage:
+            'linear-gradient(to bottom, rgba(6, 8, 14, 0.12) 0%, rgba(6, 8, 14, 0.48) 50%, rgba(6, 8, 14, 0.88) 100%)',
+        } as any)
+      : {}),
   },
   modalContent: {
-    backgroundColor: colors.bgSurface,
+    backgroundColor: GLASS.bgModal,
     borderRadius: 24,
     padding: 20,
     borderWidth: 1,
-    borderColor: colors.borderSubtle,
+    borderColor: GLASS.borderBright,
     maxHeight: 350,
+    ...GLASS.backdropStrong,
+    ...GLASS.shadow,
   },
   modalTitle: {
     color: colors.textPrimary,

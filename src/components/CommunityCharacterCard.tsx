@@ -4,7 +4,7 @@
  * Matches Gambar 2 Bento 2-column grid layout with 100% fidelity.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,17 +12,20 @@ import {
   TouchableOpacity,
   StyleSheet,
   Platform,
+  Animated,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   MessageSquare,
   Heart,
   Bookmark,
   Play,
   CheckCircle2,
-  Download,
   Coins,
 } from 'lucide-react-native';
 import { CommunityCharacter } from '../types';
+import { matchAlgorithmService } from '../services/matchAlgorithmService';
+import { GLASS } from '../theme/glassTheme';
 
 interface CommunityCharacterCardProps {
   character: CommunityCharacter;
@@ -31,6 +34,8 @@ interface CommunityCharacterCardProps {
   onImport?: (character: CommunityCharacter) => void;
   isBookmarked: boolean;
   onToggleBookmark: (characterId: string) => void;
+  isLiked?: boolean;
+  onToggleLike?: (character: CommunityCharacter, nextLiked: boolean) => void;
   isFollowingCreator?: boolean;
   onToggleFollowCreator?: (creatorName: string, avatarUrl?: string) => void;
   onCreatorClick?: (creatorName: string) => void;
@@ -44,12 +49,69 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
   onImport,
   isBookmarked,
   onToggleBookmark,
+  isLiked: isLikedProp,
+  onToggleLike,
   isFollowingCreator,
   onToggleFollowCreator,
   onCreatorClick,
   onTagClick,
 }) => {
   const [imgError, setImgError] = useState(false);
+  const [isLiked, setIsLiked] = useState<boolean>(
+    Boolean(isLikedProp ?? isBookmarked ?? matchAlgorithmService.isCharacterLiked(character.id))
+  );
+  const [likesCount, setLikesCount] = useState<number>(character.favoritesCount || 0);
+  const likeScale = useRef(new Animated.Value(1)).current;
+  const enterAnim = useRef(new Animated.Value(0)).current;
+  const pressScale = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.spring(enterAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 8,
+      tension: 85,
+    }).start();
+  }, []);
+
+  const handlePressIn = () => {
+    Animated.spring(pressScale, {
+      toValue: 0.97,
+      useNativeDriver: true,
+      friction: 7,
+      tension: 180,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(pressScale, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 6,
+      tension: 140,
+    }).start();
+  };
+
+  const handlePressLike = (e: any) => {
+    e.stopPropagation();
+    const next = !isLiked;
+    setIsLiked(next);
+    setLikesCount(prev => Math.max(0, prev + (next ? 1 : -1)));
+
+    // Bouncy tactile spring feedback (social media style)
+    Animated.sequence([
+      Animated.timing(likeScale, { toValue: 1.45, duration: 110, useNativeDriver: true }),
+      Animated.spring(likeScale, { toValue: 1, friction: 3, tension: 45, useNativeDriver: true }),
+    ]).start();
+
+    // Immediately record in algorithm service & trigger callback
+    matchAlgorithmService.recordUserLike(character, next);
+    if (onToggleLike) {
+      onToggleLike(character, next);
+    } else {
+      onToggleBookmark(character.id);
+    }
+  };
 
   const formatCount = (num: number) => {
     if (!num) return '0';
@@ -67,10 +129,24 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
   const remainingTagCount = (character.tags || []).length - displayTags.length;
 
   return (
+    <Animated.View
+      style={[
+        styles.cardContainer,
+        {
+          opacity: enterAnim,
+          transform: [
+            { scale: Animated.multiply(pressScale, enterAnim.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1] })) },
+            { translateY: enterAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) },
+          ],
+        },
+      ]}
+    >
     <TouchableOpacity
-      style={styles.cardContainer}
+      style={{ flex: 1 }}
       onPress={() => onSelect(character)}
-      activeOpacity={0.88}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      activeOpacity={0.92}
     >
       {/* 1. Artwork Banner with 16/11 Aspect Ratio & Badges */}
       <View style={styles.bannerWrapper}>
@@ -93,6 +169,14 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
           </View>
         )}
 
+        {/* Progressive Top Gradient Scrim behind badges */}
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(12, 14, 20, 0.62)', 'rgba(12, 14, 20, 0.22)', 'transparent']}
+          locations={[0, 0.55, 1]}
+          style={styles.bannerTopScrim}
+        />
+
         {/* Top Badges Row */}
         <View style={styles.topBadgesRow}>
           {character.isNsfw ? (
@@ -107,7 +191,7 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
 
           {character.totalTokens > 0 && (
             <View style={styles.tokenBadge}>
-              <Coins size={10} color="#d8b4fe" style={{ marginRight: 3 }} />
+              <Coins size={10} color="#d4ff00" style={{ marginRight: 3 }} />
               <Text style={styles.tokenText}>{formatCount(character.totalTokens)}</Text>
             </View>
           )}
@@ -124,13 +208,17 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
         >
           <Bookmark
             size={13}
-            color={isBookmarked ? '#c084fc' : '#e2e8f0'}
-            fill={isBookmarked ? '#c084fc' : 'transparent'}
+            color={isBookmarked ? '#d4ff00' : '#e2e8f0'}
+            fill={isBookmarked ? '#d4ff00' : 'transparent'}
           />
         </TouchableOpacity>
 
-        {/* Subtle Dark Bottom Scrim */}
-        <View style={styles.bannerScrim} />
+        {/* Progressive Blur / Gradient Scrim */}
+        <LinearGradient
+          colors={['transparent', 'rgba(15, 18, 29, 0.4)', 'rgba(15, 18, 29, 0.85)', '#0f121d']}
+          locations={[0, 0.35, 0.75, 1]}
+          style={styles.bannerGradientScrim}
+        />
       </View>
 
       {/* 2. Card Content Body */}
@@ -220,8 +308,15 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
         <View style={styles.cardFooter}>
           <View style={styles.statsGroup}>
             <View style={styles.statItem}>
-              <Heart size={11} color="#9ca3af" style={{ marginRight: 3 }} />
-              <Text style={styles.statCount}>{formatCount(character.favoritesCount)}</Text>
+              <Heart
+                size={11}
+                color={isLiked ? '#EF4444' : '#9ca3af'}
+                fill={isLiked ? '#EF4444' : 'transparent'}
+                style={{ marginRight: 3 }}
+              />
+              <Text style={[styles.statCount, isLiked && { color: '#EF4444', fontWeight: '700' }]}>
+                {formatCount(likesCount)}
+              </Text>
             </View>
             <View style={styles.statItem}>
               <MessageSquare size={11} color="#9ca3af" style={{ marginRight: 3 }} />
@@ -232,17 +327,20 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
           </View>
 
           <View style={styles.actionsGroup}>
-            {/* Quick Import Button */}
+            {/* Social Media Style Instant-Feedback Like Button */}
             <TouchableOpacity
-              style={styles.importBtn}
-              onPress={e => {
-                e.stopPropagation();
-                onImport?.(character);
-              }}
+              style={[styles.likeActionBtn, isLiked && styles.likeActionBtnActive]}
+              onPress={handlePressLike}
               activeOpacity={0.7}
-              title="Import Card"
+              accessibilityLabel={isLiked ? "Unlike Companion" : "Like Companion"}
             >
-              <Download size={12} color="#c084fc" />
+              <Animated.View style={{ transform: [{ scale: likeScale }] }}>
+                <Heart
+                  size={13}
+                  color={isLiked ? '#EF4444' : '#d4ff00'}
+                  fill={isLiked ? '#EF4444' : 'transparent'}
+                />
+              </Animated.View>
             </TouchableOpacity>
 
             {/* Glowing Lime Circular Play Button */}
@@ -260,6 +358,7 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
         </View>
       </View>
     </TouchableOpacity>
+    </Animated.View>
   );
 };
 
@@ -267,12 +366,14 @@ const styles = StyleSheet.create({
   cardContainer: {
     flex: 1,
     maxWidth: '48.5%',
-    backgroundColor: '#0f121d',
+    backgroundColor: GLASS.bg,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#1c2232',
+    borderColor: GLASS.borderBright,
     overflow: 'hidden',
     marginBottom: 12,
+    ...GLASS.backdrop,
+    ...GLASS.shadow,
     ...Platform.select({
       web: {
         transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
@@ -283,7 +384,7 @@ const styles = StyleSheet.create({
   },
   bannerWrapper: {
     width: '100%',
-    aspectRatio: 16 / 11,
+    aspectRatio: 1, // 1:1 Square artwork provides generous headroom and profile image space
     backgroundColor: '#0c0e14',
     position: 'relative',
     overflow: 'hidden',
@@ -305,9 +406,9 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(168, 85, 247, 0.25)',
+    backgroundColor: 'rgba(212, 255, 0, 0.15)',
     borderWidth: 1,
-    borderColor: 'rgba(168, 85, 247, 0.4)',
+    borderColor: 'rgba(212, 255, 0, 0.35)',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 4,
@@ -315,19 +416,32 @@ const styles = StyleSheet.create({
   fallbackAvatarText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#e9d5ff',
+    color: '#d4ff00',
   },
   fallbackName: {
     fontSize: 10,
     color: '#9ca3af',
   },
-  bannerScrim: {
+  bannerTopScrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 44,
+    zIndex: 5,
+  },
+  bannerGradientScrim: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    height: 36,
-    backgroundColor: 'rgba(18, 21, 30, 0.65)',
+    height: 52,
+    ...(Platform.OS === 'web'
+      ? ({
+          backgroundImage:
+            'linear-gradient(to bottom, rgba(15, 18, 29, 0) 0%, rgba(15, 18, 29, 0.45) 45%, rgba(15, 18, 29, 0.92) 85%, #0f121d 100%)',
+        } as any)
+      : {}),
   },
   topBadgesRow: {
     position: 'absolute',
@@ -363,12 +477,13 @@ const styles = StyleSheet.create({
   tokenBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.78)',
+    backgroundColor: 'rgba(14, 17, 28, 0.62)',
     borderWidth: 1,
-    borderColor: 'rgba(168, 85, 247, 0.35)',
+    borderColor: 'rgba(168, 85, 247, 0.4)',
     paddingHorizontal: 5,
     paddingVertical: 2,
-    borderRadius: 5,
+    borderRadius: 6,
+    ...GLASS.backdrop,
   },
   tokenText: {
     fontSize: 9,
@@ -383,11 +498,12 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    backgroundColor: 'rgba(14, 17, 28, 0.56)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.18)',
+    borderColor: GLASS.borderBright,
     alignItems: 'center',
     justifyContent: 'center',
+    ...GLASS.backdrop,
   },
   cardBody: {
     padding: 10,
@@ -479,7 +595,7 @@ const styles = StyleSheet.create({
   moreTagChip: {
     backgroundColor: '#181c28',
     borderWidth: 1,
-    borderColor: 'rgba(168, 85, 247, 0.25)',
+    borderColor: 'rgba(212, 255, 0, 0.25)',
     borderRadius: 4,
     paddingHorizontal: 4,
     paddingVertical: 1.5,
@@ -487,7 +603,7 @@ const styles = StyleSheet.create({
   moreTagText: {
     fontSize: 8.5,
     fontWeight: '700',
-    color: '#c084fc',
+    color: '#d4ff00',
   },
   cardFooter: {
     flexDirection: 'row',
@@ -515,7 +631,21 @@ const styles = StyleSheet.create({
   actionsGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
+  },
+  likeActionBtn: {
+    width: 25,
+    height: 25,
+    borderRadius: 6,
+    backgroundColor: '#181c28',
+    borderWidth: 1,
+    borderColor: '#222736',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  likeActionBtnActive: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    borderColor: 'rgba(239, 68, 68, 0.45)',
   },
   importBtn: {
     width: 24,

@@ -20,6 +20,7 @@ import {
   Modal,
   Platform,
   Linking,
+  Image,
 } from 'react-native';
 import {
   Activity,
@@ -39,10 +40,23 @@ import {
   Copy,
   ExternalLink,
   Zap,
+  Volume2,
+  ChevronDown,
+  Image as ImageIcon,
 } from 'lucide-react-native';
 import { ProviderConfig, AppSettings, Persona } from '../types';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import * as DocumentPicker from 'expo-document-picker';
 import { storageService } from '../services/storageService';
+import { GLASS } from '../theme/glassTheme';
 import { aiProviderService } from '../services/aiProviderService';
+import { wardenVaultService } from '../services/wardenVaultService';
+import { ttsService, VOICE_PROFILES, TtsConfig, DEFAULT_TTS_CONFIG } from '../services/ttsService';
+import { imageGenService, IMAGE_STYLE_OPTIONS, ImageGenConfig, DEFAULT_IMAGE_GEN_CONFIG, ImageStylePreset } from '../services/imageGenService';
+import { colors, applyThemePalette, ThemeId } from '../theme/colors';
+import { NekoLogoSvg } from '../components/NekoLogoSvg';
+import { BottomSheetModal } from '../components/BottomSheetModal';
 
 interface SettingsScreenProps {
   config: ProviderConfig;
@@ -59,22 +73,38 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 }) => {
   // Modal Visibility State
   const [activeModal, setActiveModal] = useState<
-    'api' | 'theming' | 'vault' | 'personas' | 'tokens' | 'about' | null
+    'api' | 'theming' | 'vault' | 'personas' | 'tokens' | 'about' | 'voice' | 'image' | null
   >(null);
 
-  // Health Monitor State
+  // Health Monitor State (100% Genuine Probes — Zero Mock Data)
   const [testingHealth, setTestingHealth] = useState(false);
+  const [hasTested, setHasTested] = useState(false);
   const [healthStatus, setHealthStatus] = useState<{
-    llm: { ok: boolean; latencyMs: number; label: string };
-    chub: { ok: boolean; latencyMs: number };
-    datacat: { ok: boolean; latencyMs: number };
-    imageGen: { ok: boolean; latencyMs: number };
+    llm: { ok: boolean; latencyMs: number; label: string; error?: string };
+    chub: { ok: boolean; latencyMs: number; error?: string };
+    datacat: { ok: boolean; latencyMs: number; error?: string };
+    imageGen: { ok: boolean; latencyMs: number; error?: string };
   }>({
-    llm: { ok: true, latencyMs: 78, label: 'Custom Endpoint' },
-    chub: { ok: true, latencyMs: 145 },
-    datacat: { ok: true, latencyMs: 168 },
-    imageGen: { ok: true, latencyMs: 112 },
+    llm: { ok: false, latencyMs: 0, label: config?.model || 'LLM Engine' },
+    chub: { ok: false, latencyMs: 0 },
+    datacat: { ok: false, latencyMs: 0 },
+    imageGen: { ok: false, latencyMs: 0 },
   });
+
+  // Voice TTS State
+  const [ttsConfig, setTtsConfig] = useState<TtsConfig>(DEFAULT_TTS_CONFIG);
+  const [isTestingVoice, setIsTestingVoice] = useState(false);
+
+  // Image Gen State
+  const [imageConfig, setImageConfig] = useState<ImageGenConfig>(DEFAULT_IMAGE_GEN_CONFIG);
+  const [isTestingImage, setIsTestingImage] = useState(false);
+  const [imageTestResult, setImageTestResult] = useState<{ ok: boolean; url?: string; error?: string } | null>(null);
+
+  // Multi-Provider Profiles State
+  const [providers, setProviders] = useState<ProviderConfig[]>([]);
+  const [selectedProviderId, setSelectedProviderId] = useState<string>(config.id || 'prov_gemini');
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [availableModels, setAvailableModels] = useState<{ id: string; name: string }[]>([]);
 
   // API Config State (Custom Endpoint First)
   const [customEndpoint, setCustomEndpoint] = useState(
@@ -86,8 +116,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [testingPing, setTestingPing] = useState(false);
   const [pingResult, setPingResult] = useState<{ ok: boolean; latencyMs: number; error?: string } | null>(null);
 
+  // Unified AI Engine Tabs (LLM Text Gen, Scene Art, Voice TTS)
+  const [aiModalTab, setAiModalTab] = useState<'llm' | 'image' | 'voice'>('llm');
+
   // Theming State
-  const [selectedTheme, setSelectedTheme] = useState<'midnight' | 'sakura' | 'slate' | 'violet'>('midnight');
+  const [selectedTheme, setSelectedTheme] = useState<'midnight' | 'sakura' | 'slate' | 'cyan'>(
+    (settings?.theme as any) || 'midnight'
+  );
 
   // Vault State
   const [vaultJson, setVaultJson] = useState('');
@@ -99,19 +134,198 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [activePersonaId, setActivePersonaId] = useState<string>('default-user');
 
-  // Token Limits State
+  // Token Limits & Advanced Sampling State
   const [contextLimit, setContextLimit] = useState(String(config.contextLimit || 8192));
   const [currency, setCurrency] = useState<'IDR' | 'USD'>('IDR');
+  const [showAdvancedSampling, setShowAdvancedSampling] = useState(false);
+  const [truncationStrategy, setTruncationStrategy] = useState<'rolling' | 'smart' | 'lorebook'>('smart');
+  const [maxTokens, setMaxTokens] = useState<string>(String(config.maxTokens || '1024'));
+  const [temperature, setTemperature] = useState<string>(String(config.temperature || '0.7'));
+  const [topP, setTopP] = useState<string>(String(config.topP || '0.95'));
+  const [repPenalty, setRepPenalty] = useState<string>(String(config.repetitionPenalty || '1.15'));
 
   useEffect(() => {
     testAllServices();
     loadPersonas();
+    loadProviders();
+    loadMediaConfigs();
   }, []);
 
-  const testAllServices = async () => {
+  useEffect(() => {
+    if (settings?.theme) {
+      setSelectedTheme(settings.theme as any);
+    }
+  }, [settings?.theme]);
+
+  const loadMediaConfigs = async () => {
+    try {
+      const tc = await ttsService.loadConfig();
+      setTtsConfig(tc);
+      const ic = await imageGenService.loadConfig();
+      setImageConfig(ic);
+    } catch {}
+  };
+
+  const handleSaveTtsConfig = async (updates: Partial<TtsConfig>) => {
+    const updated = await ttsService.saveConfig(updates);
+    setTtsConfig(updated);
+  };
+
+  const handleTestVoice = async () => {
+    setIsTestingVoice(true);
+    try {
+      await ttsService.speak('Hello! NekoChat speech synthesis is operational.', 'test_voice_sample', ttsConfig);
+    } catch (e: any) {
+      alert(`Voice test error: ${e?.message || 'Failed'}`);
+    } finally {
+      setIsTestingVoice(false);
+    }
+  };
+
+  const handleSaveImageConfig = async (updates: Partial<ImageGenConfig>) => {
+    const updated = await imageGenService.saveConfig(updates);
+    setImageConfig(updated);
+  };
+
+  const handleTestImageGen = async () => {
+    setIsTestingImage(true);
+    setImageTestResult(null);
+    try {
+      const res = await imageGenService.generateImage('masterpiece ultra-detailed anime catgirl with silver hair in neon city', imageConfig);
+      setImageTestResult({ ok: true, url: res.imageUrl });
+    } catch (err: any) {
+      setImageTestResult({ ok: false, error: err.message || 'Image generation failed' });
+    } finally {
+      setIsTestingImage(false);
+    }
+  };
+
+  const loadProviders = async () => {
+    try {
+      const list = await storageService.getProviders();
+      setProviders(list);
+      const active =
+        list.find(p => p.isDefault && p.apiKey) ||
+        (config?.apiKey ? config : null) ||
+        list.find(p => p.apiKey) ||
+        list.find(p => p.isDefault) ||
+        list[0];
+      if (active) {
+        const inferredId =
+          active.id ||
+          (active.provider === 'openrouter'
+            ? 'prov_openrouter'
+            : active.provider === 'openai'
+            ? 'prov_openai'
+            : active.provider === 'custom' || active.customEndpoint
+            ? 'prov_custom'
+            : 'prov_gemini');
+        setSelectedProviderId(inferredId);
+        setCustomEndpoint(active.baseUrl || active.customEndpoint || '');
+        setApiKey(active.apiKey || '');
+        setModel(active.model || active.defaultModel || (inferredId.includes('gemini') ? 'gemini-2.5-flash' : 'gpt-4o-mini'));
+      }
+    } catch {}
+  };
+
+  const handleSelectProvider = (provId: string) => {
+    setSelectedProviderId(provId);
+    setPingResult(null);
+    setAvailableModels([]);
+
+    const found = providers.find(p => p.id === provId);
+    if (found) {
+      setCustomEndpoint(
+        found.baseUrl ||
+          found.customEndpoint ||
+          (provId === 'prov_openrouter'
+            ? 'https://openrouter.ai/api/v1'
+            : provId === 'prov_gemini'
+            ? ''
+            : 'https://api.openai.com/v1')
+      );
+      setApiKey(found.apiKey || apiKey || '');
+      setModel(found.model || found.defaultModel || (provId.includes('gemini') ? 'gemini-2.5-flash' : 'gpt-4o-mini'));
+    } else {
+      if (provId === 'prov_gemini') {
+        setCustomEndpoint('');
+        setModel('gemini-2.5-flash');
+      } else if (provId === 'prov_openrouter') {
+        setCustomEndpoint('https://openrouter.ai/api/v1');
+        setModel('anthropic/claude-3.5-sonnet');
+      } else if (provId === 'prov_openai') {
+        setCustomEndpoint('https://api.openai.com/v1');
+        setModel('gpt-4o-mini');
+      } else {
+        setCustomEndpoint(customEndpoint || 'https://api.openai.com/v1');
+        setModel(model || 'gpt-4o-mini');
+      }
+    }
+  };
+
+  const buildUpdatedProviderConfig = (): ProviderConfig => {
+    const provType = selectedProviderId.includes('gemini')
+      ? 'gemini'
+      : selectedProviderId.includes('openrouter')
+      ? 'openrouter'
+      : selectedProviderId.includes('openai')
+      ? 'openai'
+      : 'custom';
+
+    const cleanEndpoint = customEndpoint.trim();
+    const defaultModelForType =
+      provType === 'gemini'
+        ? 'gemini-2.5-flash'
+        : provType === 'openrouter'
+        ? 'anthropic/claude-3.5-sonnet'
+        : 'gpt-4o-mini';
+
+    return {
+      ...config,
+      id: selectedProviderId,
+      provider: provType,
+      providerType: provType,
+      baseUrl: cleanEndpoint,
+      customEndpoint: cleanEndpoint,
+      apiKey: apiKey.trim(),
+      model: model.trim() || defaultModelForType,
+      defaultModel: model.trim() || defaultModelForType,
+      isDefault: true,
+    };
+  };
+
+  const persistProviderConfigQuietly = async (): Promise<ProviderConfig> => {
+    const updated = buildUpdatedProviderConfig();
+    await storageService.upsertProvider(updated);
+    await storageService.setDefaultProvider(updated.id || selectedProviderId);
+    await storageService.saveProviderConfig(updated);
+    onUpdateConfig(updated);
+    const refreshed = await storageService.getProviders();
+    setProviders(refreshed);
+    return updated;
+  };
+
+  const handleFetchModels = async () => {
+    setFetchingModels(true);
+    try {
+      const updated = await persistProviderConfigQuietly();
+      const list = await aiProviderService.fetchModels(updated);
+      setAvailableModels(list);
+      if (list.length > 0 && (!model.trim() || (updated.provider !== 'gemini' && /^gemini/i.test(model)))) {
+        setModel(list[0].id);
+      }
+    } catch (err: any) {
+      setPingResult({ ok: false, latencyMs: 0, error: err.message });
+    } finally {
+      setFetchingModels(false);
+    }
+  };
+
+  const testAllServices = async (overrideCfg?: ProviderConfig) => {
     setTestingHealth(true);
-    const results = await aiProviderService.checkServiceHealth(config);
+    const results = await aiProviderService.checkServiceHealth(overrideCfg || config);
     setHealthStatus(results);
+    setHasTested(true);
     setTestingHealth(false);
   };
 
@@ -124,33 +338,40 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     } catch {}
   };
 
-  // Auto-Test Ping for Custom API
+  // Auto-Test Ping for Custom API (also persists the config so testing immediately activates it)
   const handleAutoTestPing = async () => {
     setTestingPing(true);
     setPingResult(null);
-    const res = await aiProviderService.pingCustomEndpoint(customEndpoint, apiKey, model);
-    setPingResult(res);
+    const updated = await persistProviderConfigQuietly();
+
+    if (updated.provider === 'gemini' && !updated.customEndpoint) {
+      const ping = await aiProviderService.pingService('gemini', updated.apiKey);
+      setPingResult({ ok: ping.ok, latencyMs: ping.latencyMs, error: ping.ok ? undefined : 'Invalid Gemini API Key' });
+    } else if (updated.provider === 'openrouter' && (!updated.customEndpoint || updated.customEndpoint.includes('openrouter.ai'))) {
+      const ping = await aiProviderService.pingService('openrouter', updated.apiKey);
+      setPingResult({ ok: ping.ok, latencyMs: ping.latencyMs, error: ping.ok ? undefined : 'Invalid OpenRouter Key' });
+    } else {
+      const res = await aiProviderService.pingCustomEndpoint(updated.customEndpoint || 'https://api.openai.com/v1', updated.apiKey, updated.model);
+      setPingResult(res);
+    }
     setTestingPing(false);
   };
 
   const handleSaveApi = async () => {
-    const updated: ProviderConfig = {
-      ...config,
-      provider: 'custom',
-      customEndpoint: customEndpoint.trim(),
-      apiKey: apiKey.trim(),
-      model: model.trim() || 'gpt-4o',
-    };
-    await storageService.saveProviderConfig(updated);
-    onUpdateConfig(updated);
+    const updated = await persistProviderConfigQuietly();
     setActiveModal(null);
-    testAllServices();
+    testAllServices(updated);
   };
 
   const handleOpenExportVault = async () => {
     const jsonStr = await storageService.exportVaultData();
     setVaultJson(jsonStr);
     setVaultNotice('Vault backup ready to copy or download.');
+  };
+
+  const handleDownloadVaultFile = async () => {
+    const jsonStr = vaultJson || (await storageService.exportVaultData());
+    setVaultJson(jsonStr);
 
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       try {
@@ -161,8 +382,65 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         a.download = `nekochat_vault_${Date.now()}.neko`;
         a.click();
         URL.revokeObjectURL(url);
-      } catch {}
+        setVaultNotice('Sanitized backup file (.neko) downloaded successfully!');
+      } catch (err: any) {
+        setVaultNotice(`Download error: ${err.message}`);
+      }
+    } else {
+      // Native Mobile (Android APK & iOS) - offline zero-hosting file export
+      try {
+        const fileUri = `${FileSystem.cacheDirectory}nekochat_vault_${Date.now()}.neko`;
+        await FileSystem.writeAsStringAsync(fileUri, jsonStr, { encoding: FileSystem.EncodingType.UTF8 });
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'application/json',
+          dialogTitle: 'Save NekoChat Backup (.neko)',
+          UTI: 'public.json',
+        });
+        setVaultNotice('Backup saved successfully via native share sheet!');
+      } catch (err: any) {
+        setVaultNotice(`Export error: ${err.message}`);
+      }
     }
+  };
+
+  const handlePickVaultFile = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: ['application/json', '*/*'],
+        copyToCacheDirectory: true,
+      });
+      if (!res.canceled && res.assets && res.assets[0]) {
+        const file = res.assets[0];
+        let content = '';
+        if (Platform.OS === 'web' && file.file) {
+          content = await file.file.text();
+        } else if (file.uri) {
+          content = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.UTF8 });
+        }
+        if (content) {
+          setImportJsonText(content);
+          setVaultNotice(`Loaded "${file.name || 'backup'}". Tap "Restore / Import Backup" below.`);
+        }
+      }
+    } catch (err: any) {
+      setVaultNotice(`File picker error: ${err.message}`);
+    }
+  };
+
+  const handleSelectThemeInstant = async (themeId: ThemeId) => {
+    setSelectedTheme(themeId);
+    applyThemePalette(themeId);
+    const updated: AppSettings = { ...settings, theme: themeId };
+    await storageService.saveSettings(updated);
+    onUpdateSettings(updated);
+  };
+
+  const handleApplyTheme = async () => {
+    applyThemePalette(selectedTheme);
+    const updated: AppSettings = { ...settings, theme: selectedTheme as any };
+    await storageService.saveSettings(updated);
+    onUpdateSettings(updated);
+    setActiveModal(null);
   };
 
   const handleCopyVault = () => {
@@ -176,7 +454,20 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const handleImportVault = async () => {
     if (!importJsonText.trim()) return;
     try {
-      const stats = await storageService.importVaultData(importJsonText.trim());
+      const trimmed = importJsonText.trim();
+      if (trimmed.includes('WARDEN_VAULT_V1') || trimmed.includes('"format":"warden"') || trimmed.includes('"format": "warden"')) {
+        const res = await wardenVaultService.importVault(trimmed);
+        if (res.success) {
+          setVaultNotice(`Restored from .warden vault: ${res.stats.charactersAdded} companions, ${res.stats.personasAdded} personas, ${res.stats.conversationsAdded} chats.`);
+          setImportJsonText('');
+          setTimeout(() => setActiveModal(null), 1500);
+          return;
+        } else {
+          setVaultNotice(`Import error: ${res.error || 'Failed to decrypt .warden vault'}`);
+          return;
+        }
+      }
+      const stats = await storageService.importVaultData(trimmed);
       setVaultNotice(`Restored: ${stats.characters} companions, ${stats.personas} personas.`);
       setImportJsonText('');
       setTimeout(() => setActiveModal(null), 1500);
@@ -199,7 +490,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
           <TouchableOpacity
             style={styles.healthPingBtn}
-            onPress={testAllServices}
+            onPress={() => { testAllServices(); }}
             disabled={testingHealth}
             activeOpacity={0.8}
           >
@@ -214,54 +505,118 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        {/* 4 Health Status Bars */}
+        {/* 4 Health Status Bars (100% Real Live Readings — Zero Fake Latency) */}
         <View style={styles.healthGrid}>
           {/* Service 1: Active LLM Engine */}
           <View style={styles.healthItemBox}>
             <View style={styles.healthItemTop}>
-              <View style={styles.statusDotGreen} />
+              <View
+                style={
+                  !hasTested
+                    ? styles.statusDotGray
+                    : healthStatus.llm.ok
+                    ? styles.statusDotGreen
+                    : styles.statusDotRed
+                }
+              />
               <Text style={styles.healthItemName} numberOfLines={1}>
                 LLM Engine ({healthStatus.llm.label})
               </Text>
             </View>
-            <Text style={styles.latencyText}>{healthStatus.llm.latencyMs}ms</Text>
-            <Text style={styles.statusLabelText}>🟢 Optimal Connection</Text>
+            <Text style={healthStatus.llm.ok ? styles.latencyText : styles.latencyTextOffline}>
+              {!hasTested ? 'Testing...' : healthStatus.llm.ok ? `${healthStatus.llm.latencyMs}ms` : 'Offline'}
+            </Text>
+            <Text style={styles.statusLabelText} numberOfLines={1}>
+              {!hasTested
+                ? 'Testing connection...'
+                : healthStatus.llm.ok
+                ? '🟢 Optimal Connection'
+                : `🔴 ${healthStatus.llm.error || 'Check API Key'}`}
+            </Text>
           </View>
 
           {/* Service 2: Chub.ai Community API */}
           <View style={styles.healthItemBox}>
             <View style={styles.healthItemTop}>
-              <View style={styles.statusDotGreen} />
+              <View
+                style={
+                  !hasTested
+                    ? styles.statusDotGray
+                    : healthStatus.chub.ok
+                    ? styles.statusDotGreen
+                    : styles.statusDotRed
+                }
+              />
               <Text style={styles.healthItemName} numberOfLines={1}>
                 Chub.ai Catalog
               </Text>
             </View>
-            <Text style={styles.latencyText}>{healthStatus.chub.latencyMs}ms</Text>
-            <Text style={styles.statusLabelText}>🟢 Online & Synced</Text>
+            <Text style={healthStatus.chub.ok ? styles.latencyText : styles.latencyTextOffline}>
+              {!hasTested ? 'Testing...' : healthStatus.chub.ok ? `${healthStatus.chub.latencyMs}ms` : 'Offline'}
+            </Text>
+            <Text style={styles.statusLabelText} numberOfLines={1}>
+              {!hasTested
+                ? 'Testing connection...'
+                : healthStatus.chub.ok
+                ? '🟢 Online & Synced'
+                : `🔴 ${healthStatus.chub.error || 'Catalog Unreachable'}`}
+            </Text>
           </View>
 
           {/* Service 3: Datacat Janitor Mirror */}
           <View style={styles.healthItemBox}>
             <View style={styles.healthItemTop}>
-              <View style={styles.statusDotGreen} />
+              <View
+                style={
+                  !hasTested
+                    ? styles.statusDotGray
+                    : healthStatus.datacat.ok
+                    ? styles.statusDotGreen
+                    : styles.statusDotRed
+                }
+              />
               <Text style={styles.healthItemName} numberOfLines={1}>
                 Datacat / Janitor
               </Text>
             </View>
-            <Text style={styles.latencyText}>{healthStatus.datacat.latencyMs}ms</Text>
-            <Text style={styles.statusLabelText}>🟢 Connected Session</Text>
+            <Text style={healthStatus.datacat.ok ? styles.latencyText : styles.latencyTextOffline}>
+              {!hasTested ? 'Testing...' : healthStatus.datacat.ok ? `${healthStatus.datacat.latencyMs}ms` : 'Offline'}
+            </Text>
+            <Text style={styles.statusLabelText} numberOfLines={1}>
+              {!hasTested
+                ? 'Testing connection...'
+                : healthStatus.datacat.ok
+                ? '🟢 Connected Session'
+                : `🔴 ${healthStatus.datacat.error || 'Proxy Offline (Port 3001)'}`}
+            </Text>
           </View>
 
           {/* Service 4: Image Generation Engine */}
           <View style={styles.healthItemBox}>
             <View style={styles.healthItemTop}>
-              <View style={styles.statusDotGreen} />
+              <View
+                style={
+                  !hasTested
+                    ? styles.statusDotGray
+                    : healthStatus.imageGen.ok
+                    ? styles.statusDotGreen
+                    : styles.statusDotRed
+                }
+              />
               <Text style={styles.healthItemName} numberOfLines={1}>
                 Image Gen (Flux)
               </Text>
             </View>
-            <Text style={styles.latencyText}>{healthStatus.imageGen.latencyMs}ms</Text>
-            <Text style={styles.statusLabelText}>🟢 Ready for Render</Text>
+            <Text style={healthStatus.imageGen.ok ? styles.latencyText : styles.latencyTextOffline}>
+              {!hasTested ? 'Testing...' : healthStatus.imageGen.ok ? `${healthStatus.imageGen.latencyMs}ms` : 'Offline'}
+            </Text>
+            <Text style={styles.statusLabelText} numberOfLines={1}>
+              {!hasTested
+                ? 'Testing connection...'
+                : healthStatus.imageGen.ok
+                ? '🟢 Ready for Render'
+                : `🔴 ${healthStatus.imageGen.error || 'Image Service Offline'}`}
+            </Text>
           </View>
         </View>
       </View>
@@ -272,19 +627,22 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       <Text style={styles.gridSectionHeading}>SETTINGS & CONTROL PANEL</Text>
 
       <View style={styles.bentoTwoGrid}>
-        {/* Tile 1: API Key & Custom Engine */}
+        {/* Tile 1: Unified AI Engine Suite (LLM, Scene Art & Voice TTS) */}
         <TouchableOpacity
           style={styles.bentoTile}
-          onPress={() => setActiveModal('api')}
+          onPress={() => {
+            setAiModalTab('llm');
+            setActiveModal('api');
+          }}
           activeOpacity={0.8}
         >
           <View style={styles.tileIconCircle}>
             <Key size={18} color="#d4ff00" />
           </View>
-          <Text style={styles.tileTitle}>API & Engine</Text>
-          <Text style={styles.tileSubtitle}>Custom endpoint & auto-ping test</Text>
+          <Text style={styles.tileTitle}>AI Engine Suite</Text>
+          <Text style={styles.tileSubtitle}>LLM Brain, Scene Art & Voice</Text>
           <View style={styles.tileBadgeLime}>
-            <Text style={styles.tileBadgeLimeText}>Custom Ready</Text>
+            <Text style={styles.tileBadgeLimeText}>3 Engines Active</Text>
           </View>
         </TouchableOpacity>
 
@@ -298,17 +656,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <Palette size={18} color="#d4ff00" />
           </View>
           <Text style={styles.tileTitle}>Theming</Text>
-          <Text style={styles.tileSubtitle}>Midnight OLED & Acid Lime</Text>
+          <Text style={styles.tileSubtitle}>Palette & UI Accents</Text>
           <View style={styles.tileBadge}>
-            <Text style={styles.tileBadgeText}>Midnight</Text>
+            <Text style={styles.tileBadgeText}>
+              {selectedTheme.charAt(0).toUpperCase() + selectedTheme.slice(1)}
+            </Text>
           </View>
         </TouchableOpacity>
 
-        {/* Tile 3: Neko Data Vault */}
+        {/* Tile 3: Neko Data Vault (Strictly no auto-download on tile click) */}
         <TouchableOpacity
           style={styles.bentoTile}
           onPress={() => {
-            handleOpenExportVault();
             setActiveModal('vault');
           }}
           activeOpacity={0.8}
@@ -348,8 +707,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.tileIconCircle}>
             <Cpu size={18} color="#d4ff00" />
           </View>
-          <Text style={styles.tileTitle}>Token Limits</Text>
-          <Text style={styles.tileSubtitle}>Context limit & cost tracker</Text>
+          <Text style={styles.tileTitle}>Token & Sampling</Text>
+          <Text style={styles.tileSubtitle}>Context limit & parameters</Text>
           <View style={styles.tileBadge}>
             <Text style={styles.tileBadgeText}>{contextLimit} BPE</Text>
           </View>
@@ -377,95 +736,377 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       {/* ══════════════════════════════════════════════════════════════════ */}
 
       {/* MODAL 1: API Key & Custom Endpoint with Instant Auto-Test */}
-      <Modal visible={activeModal === 'api'} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
+      <BottomSheetModal visible={activeModal === 'api'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleRow}>
                 <Key size={16} color="#d4ff00" style={{ marginRight: 6 }} />
-                <Text style={styles.modalTitle}>Custom API & Endpoint Setup</Text>
+                <Text style={styles.modalTitle}>AI Engine & Media Setup</Text>
               </View>
               <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
                 <X size={16} color="#9ca3af" />
               </TouchableOpacity>
             </View>
 
+            {/* AI Engine Sub-Tabs: [ 🧠 Text LLM ] | [ 🎨 Scene Art ] | [ 🎙️ Voice TTS ] */}
+            <View style={{ flexDirection: 'row', gap: 6, marginHorizontal: 20, marginBottom: 12, marginTop: 4 }}>
+              {[
+                { id: 'llm', label: '🧠 Text LLM' },
+                { id: 'image', label: '🎨 Scene Art' },
+                { id: 'voice', label: '🎙️ Voice TTS' },
+              ].map(tb => {
+                const isActive = aiModalTab === tb.id;
+                return (
+                  <TouchableOpacity
+                    key={tb.id}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      alignItems: 'center',
+                      backgroundColor: isActive ? '#d4ff00' : 'rgba(255, 255, 255, 0.05)',
+                      borderWidth: 1,
+                      borderColor: isActive ? '#d4ff00' : 'rgba(255, 255, 255, 0.1)',
+                    }}
+                    onPress={() => setAiModalTab(tb.id as any)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: isActive ? '#0c0e14' : '#9ca3af' }}>
+                      {tb.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
             <ScrollView style={styles.modalBody}>
-              <Text style={styles.inputLabel}>Custom Base URL (OpenAI-Compatible)</Text>
-              <TextInput
-                style={styles.inputBox}
-                value={customEndpoint}
-                onChangeText={setCustomEndpoint}
-                placeholder="https://api.openai.com/v1"
-                placeholderTextColor="#6b7280"
-              />
+              {aiModalTab === 'llm' && (
+                <>
+                  <Text style={styles.inputLabel}>Select Provider Profile</Text>
+                  <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14 }}>
+                    {[
+                      { id: 'prov_gemini', name: 'Gemini' },
+                      { id: 'prov_openrouter', name: 'OpenRouter' },
+                      { id: 'prov_openai', name: 'OpenAI' },
+                      { id: 'prov_custom', name: 'Custom Proxy' },
+                    ].map(p => {
+                      const isActive = selectedProviderId === p.id;
+                      return (
+                        <TouchableOpacity
+                          key={p.id}
+                          style={{
+                            flex: 1,
+                            paddingVertical: 8,
+                            borderRadius: 10,
+                            alignItems: 'center',
+                            backgroundColor: isActive ? 'rgba(212, 255, 0, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                            borderWidth: 1,
+                            borderColor: isActive ? '#d4ff00' : 'rgba(255, 255, 255, 0.1)',
+                          }}
+                          onPress={() => handleSelectProvider(p.id)}
+                        >
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: isActive ? '#d4ff00' : '#9ca3af' }}>
+                            {p.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
 
-              <Text style={styles.inputLabel}>API Secret Key</Text>
-              <View style={styles.inputPasswordRow}>
-                <TextInput
-                  style={styles.inputPasswordText}
-                  value={apiKey}
-                  onChangeText={setApiKey}
-                  placeholder="sk-..."
-                  placeholderTextColor="#6b7280"
-                  secureTextEntry={!showKey}
-                />
-                <TouchableOpacity onPress={() => setShowKey(!showKey)} style={{ padding: 6 }}>
-                  {showKey ? <EyeOff size={16} color="#9ca3af" /> : <Eye size={16} color="#9ca3af" />}
-                </TouchableOpacity>
-              </View>
+                  {selectedProviderId !== 'prov_gemini' && (
+                    <>
+                      <Text style={styles.inputLabel}>Base URL (Endpoint)</Text>
+                      <TextInput
+                        style={styles.inputBox}
+                        value={customEndpoint}
+                        onChangeText={setCustomEndpoint}
+                        placeholder="https://api.openai.com/v1"
+                        placeholderTextColor="#6b7280"
+                        autoCapitalize="none"
+                      />
+                    </>
+                  )}
 
-              <Text style={styles.inputLabel}>Model Identifier</Text>
-              <TextInput
-                style={styles.inputBox}
-                value={model}
-                onChangeText={setModel}
-                placeholder="gpt-4o, claude-3-5-sonnet, deepseek-v3"
-                placeholderTextColor="#6b7280"
-              />
+                  <Text style={styles.inputLabel}>API Secret Key</Text>
+                  <View style={styles.inputPasswordRow}>
+                    <TextInput
+                      style={styles.inputPasswordText}
+                      value={apiKey}
+                      onChangeText={setApiKey}
+                      placeholder="sk-..."
+                      placeholderTextColor="#6b7280"
+                      secureTextEntry={!showKey}
+                      autoCapitalize="none"
+                    />
+                    <TouchableOpacity onPress={() => setShowKey(!showKey)} style={{ padding: 6 }}>
+                      {showKey ? <EyeOff size={16} color="#9ca3af" /> : <Eye size={16} color="#9ca3af" />}
+                    </TouchableOpacity>
+                  </View>
 
-              {/* Instant Auto-Test Ping Button */}
-              <TouchableOpacity
-                style={styles.autoTestBtn}
-                onPress={handleAutoTestPing}
-                disabled={testingPing}
-                activeOpacity={0.8}
-              >
-                <Zap size={14} color="#000000" style={{ marginRight: 6 }} />
-                <Text style={styles.autoTestBtnText}>
-                  {testingPing ? 'Pinging Endpoint...' : '⚡ Auto-Test Connection'}
-                </Text>
-              </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+                    <Text style={styles.inputLabel}>Model Identifier</Text>
+                    <TouchableOpacity
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                      onPress={handleFetchModels}
+                      disabled={fetchingModels}
+                    >
+                      {fetchingModels ? (
+                        <ActivityIndicator size="small" color="#d4ff00" />
+                      ) : (
+                        <>
+                          <RefreshCw size={12} color="#d4ff00" />
+                          <Text style={{ color: '#d4ff00', fontSize: 11, fontWeight: '700' }}>Fetch Models</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                  <TextInput
+                    style={styles.inputBox}
+                    value={model}
+                    onChangeText={setModel}
+                    placeholder="gpt-4o, claude-3-5-sonnet, deepseek-v3"
+                    placeholderTextColor="#6b7280"
+                    autoCapitalize="none"
+                  />
 
-              {pingResult && (
-                <View
-                  style={[
-                    styles.pingResultBox,
-                    pingResult.ok ? styles.pingSuccess : styles.pingFailure,
-                  ]}
-                >
-                  <Text style={pingResult.ok ? styles.pingTextSuccess : styles.pingTextFailure}>
-                    {pingResult.ok
-                      ? `✓ Connection Successful (${pingResult.latencyMs}ms)`
-                      : `✕ Ping Failed: ${pingResult.error || 'Check URL and Key'}`}
-                  </Text>
-                </View>
+                  {availableModels.length > 0 && (
+                    <View style={{ marginTop: 8, marginBottom: 12 }}>
+                      <Text style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: 11, marginBottom: 6 }}>
+                        Select from fetched catalog:
+                      </Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row' }}>
+                        {availableModels.slice(0, 15).map(m => (
+                          <TouchableOpacity
+                            key={m.id}
+                            style={{
+                              backgroundColor: model === m.id ? '#d4ff00' : 'rgba(255, 255, 255, 0.06)',
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              borderRadius: 8,
+                              marginRight: 6,
+                            }}
+                            onPress={() => setModel(m.id)}
+                          >
+                            <Text style={{ color: model === m.id ? '#000' : '#fff', fontSize: 11, fontWeight: '600' }}>
+                              {m.name || m.id}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+
+                  {/* Instant Auto-Test Ping Button */}
+                  <TouchableOpacity
+                    style={styles.autoTestBtn}
+                    onPress={handleAutoTestPing}
+                    disabled={testingPing}
+                    activeOpacity={0.8}
+                  >
+                    <Zap size={14} color="#000000" style={{ marginRight: 6 }} />
+                    <Text style={styles.autoTestBtnText}>
+                      {testingPing ? 'Pinging Endpoint...' : '⚡ Auto-Test Connection'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {pingResult && (
+                    <View
+                      style={[
+                        styles.pingResultBox,
+                        pingResult.ok ? styles.pingSuccess : styles.pingFailure,
+                      ]}
+                    >
+                      <Text style={pingResult.ok ? styles.pingTextSuccess : styles.pingTextFailure}>
+                        {pingResult.ok
+                          ? `✓ Connection Successful (${pingResult.latencyMs}ms)`
+                          : `✕ Ping Failed: ${pingResult.error || 'Check URL and Key'}`}
+                      </Text>
+                    </View>
+                  )}
+                </>
+              )}
+
+              {aiModalTab === 'image' && (
+                <>
+                  {/* Enable Toggle */}
+                  <TouchableOpacity
+                    style={styles.toggleRow}
+                    onPress={() => handleSaveImageConfig({ enabled: !imageConfig.enabled })}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.toggleTitle}>Enable Scene Art Generation</Text>
+                      <Text style={styles.toggleDesc}>Depict visual scenes from roleplay context</Text>
+                    </View>
+                    <View style={[styles.toggleSwitch, imageConfig.enabled && styles.toggleSwitchActive]}>
+                      <View style={[styles.toggleThumb, imageConfig.enabled && styles.toggleThumbActive]} />
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* Provider Selection */}
+                  <Text style={[styles.sectionSub, { marginTop: 14 }]}>Image Provider Engine</Text>
+                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                    {[
+                      { id: 'pollinations', label: 'Pollinations (Zero-Key)' },
+                      { id: 'openai', label: 'OpenAI DALL-E' },
+                      { id: 'custom', label: 'Flux / Custom' },
+                    ].map(p => {
+                      const isSel = imageConfig.provider === p.id;
+                      return (
+                        <TouchableOpacity
+                          key={p.id}
+                          style={[styles.radioChip, isSel && styles.radioChipActive]}
+                          onPress={() => handleSaveImageConfig({ provider: p.id as any })}
+                        >
+                          <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
+                            {p.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {imageConfig.provider !== 'pollinations' && (
+                    <>
+                      <Text style={styles.inputLabel}>Base URL / Endpoint</Text>
+                      <TextInput
+                        style={styles.inputBox}
+                        placeholder="https://api.openai.com/v1"
+                        placeholderTextColor="#666"
+                        value={imageConfig.baseUrl}
+                        onChangeText={v => handleSaveImageConfig({ baseUrl: v })}
+                      />
+
+                      <Text style={styles.inputLabel}>API Key</Text>
+                      <TextInput
+                        style={styles.inputBox}
+                        placeholder="sk-..."
+                        placeholderTextColor="#666"
+                        secureTextEntry
+                        value={imageConfig.apiKey}
+                        onChangeText={v => handleSaveImageConfig({ apiKey: v })}
+                      />
+
+                      <Text style={styles.inputLabel}>Model Name</Text>
+                      <TextInput
+                        style={styles.inputBox}
+                        placeholder={imageConfig.provider === 'openai' ? 'dall-e-3' : 'flux-schnell'}
+                        placeholderTextColor="#666"
+                        value={imageConfig.model}
+                        onChangeText={v => handleSaveImageConfig({ model: v })}
+                      />
+                    </>
+                  )}
+
+                  {/* Test Generate Image Button */}
+                  <TouchableOpacity
+                    style={[styles.autoTestBtn, { marginTop: 16 }]}
+                    onPress={handleTestImageGen}
+                    disabled={isTestingImage}
+                    activeOpacity={0.8}
+                  >
+                    {isTestingImage ? (
+                      <ActivityIndicator size="small" color="#000" />
+                    ) : (
+                      <>
+                        <ImageIcon size={14} color="#000000" style={{ marginRight: 6 }} />
+                        <Text style={styles.autoTestBtnText}>🎨 Test Generate Sample Scene</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  {imageTestResult && (
+                    <View style={{ marginTop: 10, padding: 10, borderRadius: 10, backgroundColor: imageTestResult.ok ? 'rgba(212, 255, 0, 0.1)' : 'rgba(239, 68, 68, 0.1)', borderWidth: 1, borderColor: imageTestResult.ok ? '#d4ff00' : '#ef4444' }}>
+                      <Text style={{ color: imageTestResult.ok ? '#d4ff00' : '#ef4444', fontSize: 12, fontWeight: '700' }}>
+                        {imageTestResult.ok ? '✓ Image Generation Operational!' : `✕ Error: ${imageTestResult.error}`}
+                      </Text>
+                    </View>
+                  )}
+                </>
+              )}
+
+              {aiModalTab === 'voice' && (
+                <>
+                  {/* Enable Toggle */}
+                  <TouchableOpacity
+                    style={styles.toggleRow}
+                    onPress={() => handleSaveTtsConfig({ enabled: !ttsConfig.enabled })}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.toggleTitle}>Enable Speech Synthesis</Text>
+                      <Text style={styles.toggleDesc}>Character voice playback on companion messages</Text>
+                    </View>
+                    <View style={[styles.toggleSwitch, ttsConfig.enabled && styles.toggleSwitchActive]}>
+                      <View style={[styles.toggleThumb, ttsConfig.enabled && styles.toggleThumbActive]} />
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* Dialogue Only Toggle */}
+                  <TouchableOpacity
+                    style={styles.toggleRow}
+                    onPress={() => handleSaveTtsConfig({ dialogueOnly: !ttsConfig.dialogueOnly })}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.toggleTitle}>Dialogue Only</Text>
+                      <Text style={styles.toggleDesc}>Reads spoken quotes "..." and skips asterisk actions *...*</Text>
+                    </View>
+                    <View style={[styles.toggleSwitch, ttsConfig.dialogueOnly && styles.toggleSwitchActive]}>
+                      <View style={[styles.toggleThumb, ttsConfig.dialogueOnly && styles.toggleThumbActive]} />
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* Speed Preset Selector */}
+                  <Text style={[styles.sectionSub, { marginTop: 14 }]}>Playback Speed</Text>
+                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                    {[0.8, 1.0, 1.2, 1.4].map(spd => {
+                      const isSel = Math.abs(ttsConfig.speed - spd) < 0.05;
+                      return (
+                        <TouchableOpacity
+                          key={`spd_${spd}`}
+                          style={[styles.radioChip, isSel && styles.radioChipActive]}
+                          onPress={() => handleSaveTtsConfig({ speed: spd })}
+                        >
+                          <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
+                            {spd}x
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  {/* Test Voice Button */}
+                  <TouchableOpacity
+                    style={[styles.autoTestBtn, { marginTop: 16 }]}
+                    onPress={handleTestVoice}
+                    disabled={isTestingVoice}
+                    activeOpacity={0.8}
+                  >
+                    {isTestingVoice ? (
+                      <ActivityIndicator size="small" color="#000" />
+                    ) : (
+                      <>
+                        <Volume2 size={14} color="#000000" style={{ marginRight: 6 }} />
+                        <Text style={styles.autoTestBtnText}>🎙️ Test Voice Speech</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </>
               )}
             </ScrollView>
 
             <View style={styles.modalFooter}>
-              <TouchableOpacity style={styles.saveBtn} onPress={handleSaveApi} activeOpacity={0.8}>
-                <Text style={styles.saveBtnText}>Save API Configuration</Text>
+              <TouchableOpacity
+                style={styles.saveBtn}
+                onPress={handleSaveApi}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.saveBtnText}>
+                  {aiModalTab === 'llm' ? 'Save API Configuration' : 'Save & Done'}
+                </Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </Modal>
+      </BottomSheetModal>
 
       {/* MODAL 2: Theming & Visuals */}
-      <Modal visible={activeModal === 'theming'} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
+      <BottomSheetModal visible={activeModal === 'theming'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleRow}>
                 <Palette size={16} color="#d4ff00" style={{ marginRight: 6 }} />
@@ -477,50 +1118,65 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
 
             <ScrollView style={styles.modalBody}>
-              <Text style={styles.sectionSub}>Select Theme Preset</Text>
+              <Text style={styles.sectionSub}>Select Theme Preset (Applies Instantly)</Text>
               {[
-                { id: 'midnight', name: '⚡ Midnight Cyber', desc: 'True OLED Black (#000000) + Acid Lime (#d4ff00)' },
-                { id: 'sakura', name: '🌸 Sakura Dusk', desc: 'Deep Charcoal (#0e1017) + Pastel Rose (#fb7185)' },
-                { id: 'slate', name: '☕ Warm Slate', desc: 'Warm Dark Slate (#12151f) + Amber (#facc15)' },
-                { id: 'violet', name: '🌌 Neon Violet', desc: 'Abyss (#090a12) + Lavender (#c084fc)' },
-              ].map(th => (
-                <TouchableOpacity
-                  key={th.id}
-                  style={[
-                    styles.themeOptionCard,
-                    selectedTheme === th.id && styles.themeOptionActive,
-                  ]}
-                  onPress={() => setSelectedTheme(th.id as any)}
-                  activeOpacity={0.8}
-                >
-                  <View>
-                    <Text style={[styles.themeOptionName, selectedTheme === th.id && { color: '#d4ff00' }]}>
-                      {th.name}
-                    </Text>
-                    <Text style={styles.themeOptionDesc}>{th.desc}</Text>
-                  </View>
-                  {selectedTheme === th.id && <Check size={16} color="#d4ff00" />}
-                </TouchableOpacity>
-              ))}
+                { id: 'midnight', name: '⚡ Midnight Cyber', desc: 'True OLED Black (#0c0e14) + Acid Lime (#d4ff00)', accent: '#D4FF00', bg: '#0c0e14' },
+                { id: 'sakura', name: '🌸 Sakura Dusk', desc: 'Deep Charcoal (#120d14) + Pastel Rose (#fb7185)', accent: '#FB7185', bg: '#120d14' },
+                { id: 'slate', name: '☕ Warm Slate', desc: 'Warm Dark Slate (#12151f) + Amber (#facc15)', accent: '#FACC15', bg: '#12151f' },
+                { id: 'cyan', name: '💠 Cyber Cyan', desc: 'Deep Void (#070c12) + Electric Cyan (#38bdf8)', accent: '#38BDF8', bg: '#070c12' },
+              ].map(th => {
+                const isSelected = selectedTheme === th.id;
+                return (
+                  <TouchableOpacity
+                    key={th.id}
+                    style={[
+                      styles.themeOptionCard,
+                      isSelected && [styles.themeOptionActive, { borderColor: th.accent }],
+                    ]}
+                    onPress={() => handleSelectThemeInstant(th.id as ThemeId)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                      <View
+                        style={{
+                          width: 44,
+                          height: 44,
+                          borderRadius: 12,
+                          backgroundColor: th.bg,
+                          borderWidth: 1.5,
+                          borderColor: th.accent,
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <NekoLogoSvg size={30} color={th.accent} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.themeOptionName, isSelected && { color: th.accent }]}>
+                          {th.name}
+                        </Text>
+                        <Text style={styles.themeOptionDesc}>{th.desc}</Text>
+                      </View>
+                    </View>
+                    {isSelected && <Check size={16} color={th.accent} />}
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
 
             <View style={styles.modalFooter}>
               <TouchableOpacity
                 style={styles.saveBtn}
-                onPress={() => setActiveModal(null)}
+                onPress={handleApplyTheme}
                 activeOpacity={0.8}
               >
                 <Text style={styles.saveBtnText}>Apply Theme</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </Modal>
+      </BottomSheetModal>
 
       {/* MODAL 3: Data Vault & Sanitizer */}
-      <Modal visible={activeModal === 'vault'} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
+      <BottomSheetModal visible={activeModal === 'vault'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleRow}>
                 <ShieldCheck size={16} color="#d4ff00" style={{ marginRight: 6 }} />
@@ -538,7 +1194,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
               <TouchableOpacity
                 style={styles.exportBtn}
-                onPress={handleOpenExportVault}
+                onPress={handleDownloadVaultFile}
                 activeOpacity={0.8}
               >
                 <Download size={14} color="#000000" style={{ marginRight: 6 }} />
@@ -557,7 +1213,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 </View>
               ) : null}
 
-              <Text style={[styles.inputLabel, { marginTop: 14 }]}>Restore from .neko or .warden JSON</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginBottom: 6 }}>
+                <Text style={styles.inputLabel}>Restore from .neko or .warden JSON</Text>
+                <TouchableOpacity
+                  style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(212, 255, 0, 0.1)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(212, 255, 0, 0.3)' }}
+                  onPress={handlePickVaultFile}
+                  activeOpacity={0.8}
+                >
+                  <Upload size={12} color="#d4ff00" style={{ marginRight: 4 }} />
+                  <Text style={{ color: '#d4ff00', fontSize: 11, fontWeight: '700' }}>Pick File</Text>
+                </TouchableOpacity>
+              </View>
               <TextInput
                 style={[styles.inputBox, { height: 75, textAlignVertical: 'top' }]}
                 multiline
@@ -578,14 +1244,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
               {vaultNotice && <Text style={styles.vaultNoticeText}>{vaultNotice}</Text>}
             </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      </BottomSheetModal>
 
       {/* MODAL 4: Persona Studio */}
-      <Modal visible={activeModal === 'personas'} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
+      <BottomSheetModal visible={activeModal === 'personas'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleRow}>
                 <Users size={16} color="#d4ff00" style={{ marginRight: 6 }} />
@@ -630,14 +1292,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 <Text style={styles.saveBtnText}>Done</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </Modal>
+      </BottomSheetModal>
 
       {/* MODAL 5: Token Limits & Cost */}
-      <Modal visible={activeModal === 'tokens'} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
+      <BottomSheetModal visible={activeModal === 'tokens'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleRow}>
                 <Cpu size={16} color="#d4ff00" style={{ marginRight: 6 }} />
@@ -690,28 +1348,451 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   </TouchableOpacity>
                 ))}
               </View>
+
+              {/* Advanced Sampling Controls Dropdown */}
+              <TouchableOpacity
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  backgroundColor: 'rgba(212, 255, 0, 0.08)',
+                  padding: 12,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: 'rgba(212, 255, 0, 0.25)',
+                  marginTop: 18,
+                  marginBottom: 10,
+                }}
+                onPress={() => setShowAdvancedSampling(!showAdvancedSampling)}
+                activeOpacity={0.8}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Cpu size={15} color="#d4ff00" />
+                  <Text style={{ color: '#d4ff00', fontSize: 13, fontWeight: '700' }}>
+                    Advanced Sampling & Context Truncation
+                  </Text>
+                </View>
+                <ChevronDown
+                  size={16}
+                  color="#d4ff00"
+                  style={{ transform: [{ rotate: showAdvancedSampling ? '180deg' : '0deg' }] }}
+                />
+              </TouchableOpacity>
+
+              {showAdvancedSampling && (
+                <View style={{ backgroundColor: '#161922', padding: 12, borderRadius: 12, marginBottom: 14, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)' }}>
+                  {/* Context Truncation Strategy */}
+                  <Text style={styles.inputLabel}>Context Truncation Strategy</Text>
+                  <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12 }}>
+                    {[
+                      { id: 'rolling', label: 'Rolling Window', sub: 'Trim oldest' },
+                      { id: 'smart', label: 'Smart Summary', sub: 'Balanced' },
+                      { id: 'lorebook', label: 'Lorebook First', sub: 'Protect keys' },
+                    ].map(st => (
+                      <TouchableOpacity
+                        key={st.id}
+                        style={[
+                          styles.tokenPill,
+                          truncationStrategy === st.id && styles.tokenPillActive,
+                          { flex: 1, paddingVertical: 6, alignItems: 'center' },
+                        ]}
+                        onPress={() => setTruncationStrategy(st.id as any)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.tokenPillText, truncationStrategy === st.id && styles.tokenPillTextActive, { fontSize: 11 }]}>
+                          {st.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {/* Max Output Tokens */}
+                  <Text style={styles.inputLabel}>Max Generation Output Tokens</Text>
+                  <View style={[styles.tokenPillRow, { marginBottom: 12 }]}>
+                    {['256', '512', '1024', '2048'].map(tok => (
+                      <TouchableOpacity
+                        key={tok}
+                        style={[styles.tokenPill, maxTokens === tok && styles.tokenPillActive, { flex: 1, alignItems: 'center' }]}
+                        onPress={() => setMaxTokens(tok)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.tokenPillText, maxTokens === tok && styles.tokenPillTextActive]}>
+                          {tok}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {/* Temperature */}
+                  <Text style={styles.inputLabel}>Temperature (Creativity: {temperature})</Text>
+                  <View style={[styles.tokenPillRow, { marginBottom: 12 }]}>
+                    {[
+                      { val: '0.3', label: '0.3 (Strict)' },
+                      { val: '0.7', label: '0.7 (RP Default)' },
+                      { val: '1.0', label: '1.0 (Creative)' },
+                      { val: '1.3', label: '1.3 (Chaotic)' },
+                    ].map(t => (
+                      <TouchableOpacity
+                        key={t.val}
+                        style={[styles.tokenPill, temperature === t.val && styles.tokenPillActive, { flex: 1, alignItems: 'center' }]}
+                        onPress={() => setTemperature(t.val)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.tokenPillText, temperature === t.val && styles.tokenPillTextActive, { fontSize: 10 }]}>
+                          {t.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {/* Top-P */}
+                  <Text style={styles.inputLabel}>Top-P Sampling ({topP})</Text>
+                  <View style={[styles.tokenPillRow, { marginBottom: 12 }]}>
+                    {['0.70', '0.85', '0.95', '1.00'].map(p => (
+                      <TouchableOpacity
+                        key={p}
+                        style={[styles.tokenPill, topP === p && styles.tokenPillActive, { flex: 1, alignItems: 'center' }]}
+                        onPress={() => setTopP(p)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.tokenPillText, topP === p && styles.tokenPillTextActive]}>
+                          {p}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {/* Repetition Penalty */}
+                  <Text style={styles.inputLabel}>Repetition Penalty ({repPenalty})</Text>
+                  <View style={styles.tokenPillRow}>
+                    {[
+                      { val: '1.00', label: 'Off' },
+                      { val: '1.05', label: 'Light' },
+                      { val: '1.15', label: 'Default' },
+                      { val: '1.25', label: 'Strict' },
+                    ].map(r => (
+                      <TouchableOpacity
+                        key={r.val}
+                        style={[styles.tokenPill, repPenalty === r.val && styles.tokenPillActive, { flex: 1, alignItems: 'center' }]}
+                        onPress={() => setRepPenalty(r.val)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.tokenPillText, repPenalty === r.val && styles.tokenPillTextActive, { fontSize: 10 }]}>
+                          {r.val} ({r.label})
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              )}
             </ScrollView>
 
             <View style={styles.modalFooter}>
               <TouchableOpacity
                 style={styles.saveBtn}
-                onPress={() => {
-                  onUpdateConfig({ ...config, contextLimit: parseInt(contextLimit, 10) || 8192 });
+                onPress={async () => {
+                  const updated: ProviderConfig = {
+                    ...config,
+                    contextLimit: parseInt(contextLimit, 10) || 8192,
+                    maxTokens: parseInt(maxTokens, 10) || 1024,
+                    temperature: parseFloat(temperature) || 0.7,
+                    topP: parseFloat(topP) || 0.95,
+                    repetitionPenalty: parseFloat(repPenalty) || 1.15,
+                  };
+                  await storageService.saveProviderConfig(updated);
+                  if (updated.id) {
+                    await storageService.upsertProvider(updated);
+                  }
+                  onUpdateConfig(updated);
                   setActiveModal(null);
                 }}
                 activeOpacity={0.8}
               >
-                <Text style={styles.saveBtnText}>Save Limit</Text>
+                <Text style={styles.saveBtnText}>Save Sampling & Limits</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </Modal>
+      </BottomSheetModal>
+
+      {/* MODAL: Voice & Speech Synthesis */}
+      <BottomSheetModal visible={activeModal === 'voice'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleRow}>
+                <Volume2 size={16} color="#d4ff00" style={{ marginRight: 6 }} />
+                <Text style={styles.modalTitle}>Voice & Speech Synthesis</Text>
+              </View>
+              <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+                <X size={16} color="#9ca3af" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              {/* Enable Toggle */}
+              <TouchableOpacity
+                style={styles.toggleRow}
+                onPress={() => handleSaveTtsConfig({ enabled: !ttsConfig.enabled })}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.toggleTitle}>Enable Speech Synthesis</Text>
+                  <Text style={styles.toggleDesc}>Character voice playback on companion messages</Text>
+                </View>
+                <View style={[styles.toggleSwitch, ttsConfig.enabled && styles.toggleSwitchActive]}>
+                  <View style={[styles.toggleThumb, ttsConfig.enabled && styles.toggleThumbActive]} />
+                </View>
+              </TouchableOpacity>
+
+              {/* Dialogue Only Toggle */}
+              <TouchableOpacity
+                style={styles.toggleRow}
+                onPress={() => handleSaveTtsConfig({ dialogueOnly: !ttsConfig.dialogueOnly })}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.toggleTitle}>Dialogue Only</Text>
+                  <Text style={styles.toggleDesc}>Reads spoken quotes "..." and skips asterisk actions *...*</Text>
+                </View>
+                <View style={[styles.toggleSwitch, ttsConfig.dialogueOnly && styles.toggleSwitchActive]}>
+                  <View style={[styles.toggleThumb, ttsConfig.dialogueOnly && styles.toggleThumbActive]} />
+                </View>
+              </TouchableOpacity>
+
+              {/* Speed Preset Selector */}
+              <Text style={[styles.sectionSub, { marginTop: 14 }]}>Playback Speed</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                {[0.8, 1.0, 1.2, 1.4].map(spd => {
+                  const isSel = Math.abs(ttsConfig.speed - spd) < 0.05;
+                  return (
+                    <TouchableOpacity
+                      key={`spd_${spd}`}
+                      style={[styles.radioChip, isSel && styles.radioChipActive]}
+                      onPress={() => handleSaveTtsConfig({ speed: spd })}
+                    >
+                      <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
+                        {spd}x
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* Pitch Selector */}
+              <Text style={styles.sectionSub}>Pitch</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                {[0.8, 1.0, 1.2].map(pt => {
+                  const isSel = Math.abs(ttsConfig.pitch - pt) < 0.05;
+                  return (
+                    <TouchableOpacity
+                      key={`pt_${pt}`}
+                      style={[styles.radioChip, isSel && styles.radioChipActive]}
+                      onPress={() => handleSaveTtsConfig({ pitch: pt })}
+                    >
+                      <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
+                        {pt === 1.0 ? 'Normal (1.0)' : pt < 1.0 ? 'Lower (0.8)' : 'Higher (1.2)'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* Voice Profiles Roster */}
+              <Text style={styles.sectionSub}>Character Voice Profile</Text>
+              <View style={{ gap: 8, marginBottom: 16 }}>
+                {VOICE_PROFILES.map(vp => {
+                  const isSel = ttsConfig.voiceId === vp.id;
+                  return (
+                    <TouchableOpacity
+                      key={vp.id}
+                      style={[styles.voiceItemCard, isSel && styles.voiceItemCardActive]}
+                      onPress={() => handleSaveTtsConfig({ voiceId: vp.id })}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={[styles.voiceItemName, isSel && { color: '#D4FF00' }]}>{vp.name}</Text>
+                          <View style={styles.voiceGenderBadge}>
+                            <Text style={styles.voiceGenderBadgeText}>{vp.gender}</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.voiceArchetype}>{vp.archetype}</Text>
+                        <Text style={styles.voiceDesc} numberOfLines={1}>{vp.description}</Text>
+                      </View>
+                      {isSel && <Check size={16} color="#D4FF00" />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.saveBtn, isTestingVoice && { opacity: 0.7 }]}
+                onPress={handleTestVoice}
+                disabled={isTestingVoice}
+                activeOpacity={0.8}
+              >
+                {isTestingVoice ? (
+                  <ActivityIndicator size="small" color="#000" />
+                ) : (
+                  <>
+                    <Volume2 size={16} color="#000" style={{ marginRight: 6 }} />
+                    <Text style={styles.saveBtnText}>Test Voice Playback</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+      </BottomSheetModal>
+
+      {/* MODAL: Scene Art & Image Generation */}
+      <BottomSheetModal visible={activeModal === 'image'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleRow}>
+                <ImageIcon size={16} color="#d4ff00" style={{ marginRight: 6 }} />
+                <Text style={styles.modalTitle}>Scene Art & Image Generation</Text>
+              </View>
+              <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+                <X size={16} color="#9ca3af" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalBody}>
+              {/* Enable Toggle */}
+              <TouchableOpacity
+                style={styles.toggleRow}
+                onPress={() => handleSaveImageConfig({ enabled: !imageConfig.enabled })}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.toggleTitle}>Enable Scene Art Generation</Text>
+                  <Text style={styles.toggleDesc}>Depict visual scenes from roleplay context</Text>
+                </View>
+                <View style={[styles.toggleSwitch, imageConfig.enabled && styles.toggleSwitchActive]}>
+                  <View style={[styles.toggleThumb, imageConfig.enabled && styles.toggleThumbActive]} />
+                </View>
+              </TouchableOpacity>
+
+              {/* Provider Selection */}
+              <Text style={[styles.sectionSub, { marginTop: 14 }]}>Image Provider Engine</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                {[
+                  { id: 'pollinations', label: 'Pollinations (Zero-Key)' },
+                  { id: 'openai', label: 'OpenAI DALL-E' },
+                  { id: 'custom', label: 'Flux / Custom' },
+                ].map(p => {
+                  const isSel = imageConfig.provider === p.id;
+                  return (
+                    <TouchableOpacity
+                      key={p.id}
+                      style={[styles.radioChip, isSel && styles.radioChipActive]}
+                      onPress={() => handleSaveImageConfig({ provider: p.id as any })}
+                    >
+                      <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
+                        {p.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {imageConfig.provider !== 'pollinations' && (
+                <>
+                  <Text style={styles.inputLabel}>Base URL / Endpoint</Text>
+                  <TextInput
+                    style={styles.inputBox}
+                    placeholder="https://api.openai.com/v1"
+                    placeholderTextColor="#666"
+                    value={imageConfig.baseUrl}
+                    onChangeText={v => handleSaveImageConfig({ baseUrl: v })}
+                  />
+
+                  <Text style={styles.inputLabel}>API Key</Text>
+                  <TextInput
+                    style={styles.inputBox}
+                    placeholder="sk-..."
+                    placeholderTextColor="#666"
+                    secureTextEntry
+                    value={imageConfig.apiKey}
+                    onChangeText={v => handleSaveImageConfig({ apiKey: v })}
+                  />
+
+                  <Text style={styles.inputLabel}>Model Name</Text>
+                  <TextInput
+                    style={styles.inputBox}
+                    placeholder={imageConfig.provider === 'openai' ? 'dall-e-3' : 'flux-schnell'}
+                    placeholderTextColor="#666"
+                    value={imageConfig.model}
+                    onChangeText={v => handleSaveImageConfig({ model: v })}
+                  />
+                </>
+              )}
+
+              {/* Default Style Preset */}
+              <Text style={styles.sectionSub}>Default Aesthetic Style</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+                {IMAGE_STYLE_OPTIONS.map(st => {
+                  const isSel = imageConfig.style === st.id;
+                  return (
+                    <TouchableOpacity
+                      key={st.id}
+                      style={[styles.radioChip, isSel && styles.radioChipActive]}
+                      onPress={() => handleSaveImageConfig({ style: st.id })}
+                    >
+                      <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
+                        {st.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* Aspect Ratio */}
+              <Text style={styles.sectionSub}>Aspect Ratio</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                {(['portrait', 'square', 'landscape'] as const).map(ar => {
+                  const isSel = imageConfig.aspectRatio === ar;
+                  return (
+                    <TouchableOpacity
+                      key={ar}
+                      style={[styles.radioChip, isSel && styles.radioChipActive]}
+                      onPress={() => handleSaveImageConfig({ aspectRatio: ar })}
+                    >
+                      <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
+                        {ar.toUpperCase()}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {imageTestResult?.url && (
+                <View style={{ borderRadius: 14, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: '#D4FF00' }}>
+                  <Image source={{ uri: imageTestResult.url }} style={{ width: '100%', height: 200 }} resizeMode="cover" />
+                </View>
+              )}
+
+              {imageTestResult?.error && (
+                <View style={{ backgroundColor: 'rgba(255, 107, 107, 0.15)', padding: 10, borderRadius: 10, marginBottom: 12 }}>
+                  <Text style={{ color: '#FF6B6B', fontSize: 12 }}>{imageTestResult.error}</Text>
+                </View>
+              )}
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <TouchableOpacity
+                style={[styles.saveBtn, isTestingImage && { opacity: 0.7 }]}
+                onPress={handleTestImageGen}
+                disabled={isTestingImage}
+                activeOpacity={0.8}
+              >
+                {isTestingImage ? (
+                  <ActivityIndicator size="small" color="#000" />
+                ) : (
+                  <>
+                    <Sparkles size={16} color="#000" style={{ marginRight: 6 }} />
+                    <Text style={styles.saveBtnText}>Test Image Generation</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+      </BottomSheetModal>
 
       {/* MODAL 6: About NekoChat */}
-      <Modal visible={activeModal === 'about'} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
+      <BottomSheetModal visible={activeModal === 'about'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleRow}>
                 <Sparkles size={16} color="#d4ff00" style={{ marginRight: 6 }} />
@@ -724,7 +1805,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
             <ScrollView style={styles.modalBody}>
               <View style={styles.aboutCard}>
-                <Text style={styles.aboutTitle}>🐾 NekoChat</Text>
+                <View style={{ alignItems: 'center', marginBottom: 10 }}>
+                  <NekoLogoSvg size={48} color={colors.lime} />
+                </View>
+                <Text style={styles.aboutTitle}>NekoChat</Text>
                 <Text style={styles.aboutVersion}>v0.1.0-alpha • Free & Open-Source</Text>
                 <Text style={styles.aboutDesc}>
                   Mobile-first, zero-telemetry, ultra-responsive roleplay companion client built on Pure React Native.
@@ -738,11 +1822,59 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   <ExternalLink size={13} color="#000000" style={{ marginRight: 5 }} />
                   <Text style={styles.repoLinkBtnText}>Source Code & Upstream</Text>
                 </TouchableOpacity>
+
+                {/* Open-Source & Ecosystem Credits */}
+                <View style={{ marginTop: 18, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.08)', paddingTop: 14 }}>
+                  <Text style={{ color: '#d4ff00', fontSize: 12, fontWeight: '800', letterSpacing: 0.5, marginBottom: 10 }}>
+                    OPEN-SOURCE & COMMUNITY CREDITS
+                  </Text>
+
+                  {[
+                    {
+                      title: 'Warden AI',
+                      desc: 'Architectural blueprint, Datacat proxy protocol, and community catalog scraper foundation.',
+                      badge: 'Architecture',
+                    },
+                    {
+                      title: 'SillyTavern',
+                      desc: 'World Info / Lorebook specification, character card V2 format, and roleplay token ergonomics.',
+                      badge: 'Standards',
+                    },
+                    {
+                      title: 'JanitorAI & Chub.ai',
+                      desc: 'Open companion character ecosystem, prompt metadata conventions, and community catalog feed.',
+                      badge: 'Ecosystem',
+                    },
+                    {
+                      title: 'Expo & React Native',
+                      desc: 'Cross-platform mobile native runtime, gesture responders, and high-performance native drivers.',
+                      badge: 'Framework',
+                    },
+                  ].map((credit, i) => (
+                    <View
+                      key={i}
+                      style={{
+                        backgroundColor: '#161922',
+                        padding: 10,
+                        borderRadius: 10,
+                        marginBottom: 8,
+                        borderWidth: 1,
+                        borderColor: 'rgba(255, 255, 255, 0.06)',
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                        <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '700' }}>{credit.title}</Text>
+                        <View style={{ backgroundColor: 'rgba(212, 255, 0, 0.12)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                          <Text style={{ color: '#d4ff00', fontSize: 9.5, fontWeight: '800' }}>{credit.badge}</Text>
+                        </View>
+                      </View>
+                      <Text style={{ color: '#9ca3af', fontSize: 11, lineHeight: 15 }}>{credit.desc}</Text>
+                    </View>
+                  ))}
+                </View>
               </View>
             </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      </BottomSheetModal>
     </ScrollView>
   );
 };
@@ -814,6 +1946,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#d4ff00',
     marginRight: 6,
   },
+  statusDotRed: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#f43f5e',
+    marginRight: 6,
+  },
+  statusDotGray: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#64748b',
+    marginRight: 6,
+  },
   healthItemName: {
     fontSize: 11.5,
     fontWeight: '700',
@@ -824,6 +1970,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     color: '#d4ff00',
+    marginTop: 2,
+  },
+  latencyTextOffline: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#f43f5e',
     marginTop: 2,
   },
   statusLabelText: {
@@ -846,13 +1998,15 @@ const styles = StyleSheet.create({
   },
   bentoTile: {
     width: '48.2%',
-    backgroundColor: '#0f121d',
+    backgroundColor: GLASS.bg,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: GLASS.borderBright,
     padding: 12,
     marginBottom: 2,
     justifyContent: 'space-between',
+    ...GLASS.backdrop,
+    ...GLASS.shadow,
     minHeight: 120,
   },
   tileIconCircle: {
@@ -909,8 +2063,16 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    backgroundColor: 'rgba(6, 8, 14, 0.68)',
     justifyContent: 'flex-end',
+    ...GLASS.backdrop,
+    ...(Platform.OS === 'web'
+      ? ({
+          backgroundColor: 'transparent',
+          backgroundImage:
+            'linear-gradient(to bottom, rgba(6, 8, 14, 0.12) 0%, rgba(6, 8, 14, 0.48) 50%, rgba(6, 8, 14, 0.88) 100%)',
+        } as any)
+      : {}),
   },
   modalSheet: {
     backgroundColor: '#0f121d',
@@ -1044,11 +2206,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#151926',
+    backgroundColor: GLASS.bgSubtle,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: GLASS.border,
     padding: 12,
+    ...GLASS.backdrop,
     marginBottom: 8,
   },
   themeOptionActive: {
@@ -1199,12 +2362,13 @@ const styles = StyleSheet.create({
     color: '#000000',
   },
   aboutCard: {
-    backgroundColor: '#151926',
+    backgroundColor: GLASS.bgSubtle,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: GLASS.border,
     padding: 14,
     alignItems: 'center',
+    ...GLASS.backdrop,
   },
   aboutTitle: {
     fontSize: 18,
@@ -1237,5 +2401,108 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
     color: '#000000',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#151926',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1e2436',
+    padding: 12,
+    marginBottom: 10,
+  },
+  toggleTitle: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  toggleDesc: {
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  toggleSwitch: {
+    width: 44,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    padding: 2,
+    justifyContent: 'center',
+  },
+  toggleSwitchActive: {
+    backgroundColor: '#D4FF00',
+  },
+  toggleThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  toggleThumbActive: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#000000',
+  },
+  radioChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+    backgroundColor: '#151926',
+    borderWidth: 1,
+    borderColor: '#1e2436',
+  },
+  radioChipActive: {
+    borderColor: '#D4FF00',
+    backgroundColor: 'rgba(212, 255, 0, 0.12)',
+  },
+  radioChipText: {
+    color: '#9ca3af',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  radioChipTextActive: {
+    color: '#D4FF00',
+  },
+  voiceItemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: GLASS.bgSubtle,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: GLASS.border,
+    padding: 12,
+    ...GLASS.backdrop,
+  },
+  voiceItemCardActive: {
+    borderColor: '#D4FF00',
+    backgroundColor: 'rgba(212, 255, 0, 0.06)',
+  },
+  voiceItemName: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  voiceGenderBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  voiceGenderBadgeText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 10,
+    textTransform: 'uppercase',
+  },
+  voiceArchetype: {
+    color: '#D4FF00',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  voiceDesc: {
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontSize: 11,
+    marginTop: 2,
   },
 });

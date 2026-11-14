@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { X, Heart, MessageCircle } from 'lucide-react-native';
 import { Character } from '../types';
+import { GLASS } from '../theme/glassTheme';
 
 interface StoryViewerModalProps {
   visible: boolean;
@@ -242,12 +243,14 @@ const styles = StyleSheet.create({
     bottom: 24,
     left: 16,
     right: 16,
-    backgroundColor: 'rgba(12, 14, 20, 0.94)',
+    backgroundColor: GLASS.bgModal,
     borderRadius: 24,
     padding: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: GLASS.borderBright,
     zIndex: 30,
+    ...GLASS.backdropStrong,
+    ...GLASS.shadow,
   },
   characterBottomHeader: {
     flexDirection: 'row',

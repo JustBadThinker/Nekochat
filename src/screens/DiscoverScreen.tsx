@@ -21,12 +21,16 @@ import {
   StyleSheet,
   ActivityIndicator,
   Platform,
+  Animated,
+  Easing,
+  Modal,
 } from 'react-native';
 import {
   Search,
   SlidersHorizontal,
   X,
   ChevronDown,
+  Check,
   Sparkles,
   Download,
   Heart,
@@ -43,22 +47,27 @@ import {
   Menu,
   Bell,
 } from 'lucide-react-native';
-import { Character, CommunityCharacter, CommunityCharacterDetail } from '../types';
+import { Character, CommunityCharacter, CommunityCharacterDetail, Persona } from '../types';
 import { CommunityCharacterCard } from '../components/CommunityCharacterCard';
 import { CommunityCharacterModal } from '../components/CommunityCharacterModal';
+import { CreatorProfileModal } from '../components/CreatorProfileModal';
 import { TagFilterDrawerModal } from '../components/TagFilterDrawerModal';
 import { TinderDeck } from '../components/TinderDeck';
+import { NekoPulseLoader } from '../components/NekoPulseLoader';
 import {
   communityCatalogService,
   POPULAR_COMMUNITY_CATEGORIES,
 } from '../services/communityCatalogService';
 import { storageService } from '../services/storageService';
+import { GLASS } from '../theme/glassTheme';
 
 interface DiscoverScreenProps {
   characters: Character[];
+  activePersona?: Persona;
   onStartChat: (character: any, detail?: CommunityCharacterDetail) => void;
   onToggleFavorite?: (character: any) => void;
   onImportCard?: (character: any) => void;
+  onMatchModeChange?: (isMatchMode: boolean) => void;
 }
 
 type TopMode = 'catalog' | 'match';
@@ -70,12 +79,18 @@ type CatalogSource = 'janitor' | 'chub';
 
 export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   characters,
+  activePersona,
   onStartChat,
   onToggleFavorite,
   onImportCard,
+  onMatchModeChange,
 }) => {
   // Top Primary Switcher: Catalog Grid vs Match Mode
   const [topMode, setTopMode] = useState<TopMode>('catalog');
+
+  useEffect(() => {
+    onMatchModeChange?.(topMode === 'match');
+  }, [topMode, onMatchModeChange]);
 
   // Sub-tabs in Catalog Grid
   const [activeTab, setActiveTab] = useState<DiscoverTab>('community');
@@ -104,14 +119,49 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   // Modals & Drawers
   const [isTagDrawerOpen, setIsTagDrawerOpen] = useState<boolean>(false);
   const [selectedCommunityChar, setSelectedCommunityChar] = useState<CommunityCharacter | null>(null);
-  const [sortDropdownOpen, setSortDropdownOpen] = useState<boolean>(false);
+  const [selectedCreator, setSelectedCreator] = useState<{
+    name: string;
+    id?: string;
+    avatarUrl?: string;
+  } | null>(null);
+  const [scopeDropdownOpen, setScopeDropdownOpen] = useState<boolean>(false);
+  const [scopeMenuPos, setScopeMenuPos] = useState<{ top: number; left: number }>({ top: 220, left: 12 });
+  const scopeBtnRef = useRef<any>(null);
 
   // Social State
   const [followedCreators, setFollowedCreators] = useState<string[]>([]);
+  const [followingCharacters, setFollowingCharacters] = useState<CommunityCharacter[]>([]);
+  const [followingLoading, setFollowingLoading] = useState<boolean>(false);
   const [favoriteCharacters, setFavoriteCharacters] = useState<CommunityCharacter[]>([]);
 
   // Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Sticky Search on Scroll State
+  const [isStickySearch, setIsStickySearch] = useState<boolean>(false);
+  const lastScrollY = useRef<number>(0);
+  const [headerExpandAnim] = useState(() => new Animated.Value(1));
+
+  useEffect(() => {
+    Animated.timing(headerExpandAnim, {
+      toValue: isStickySearch ? 0 : 1,
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [isStickySearch, headerExpandAnim]);
+
+  const handleCatalogScroll = (event: any) => {
+    const currentY = event.nativeEvent.contentOffset.y;
+    const diff = currentY - lastScrollY.current;
+
+    if (currentY > 80 && diff > 10) {
+      if (!isStickySearch) setIsStickySearch(true);
+    } else if (diff < -10 || currentY <= 24) {
+      if (isStickySearch) setIsStickySearch(false);
+    }
+    lastScrollY.current = currentY;
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -131,6 +181,67 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
     } catch {}
   };
 
+  // Fetch live characters for all followed creators when "Following" scope is active
+  useEffect(() => {
+    if (activeTab !== 'community' || scopeMode !== 'following') return;
+    if (followedCreators.length === 0) {
+      setFollowingCharacters([]);
+      setFollowingLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setFollowingLoading(true);
+
+    (async () => {
+      try {
+        const results = await Promise.all(
+          followedCreators.map(handle =>
+            communityCatalogService
+              .fetchCreatorCharacters(handle, {
+                source: catalogSource,
+                limit: 24,
+                sort: communitySort,
+                sfwOnly,
+              })
+              .catch(() => ({ characters: [] as CommunityCharacter[] }))
+          )
+        );
+        if (cancelled) return;
+
+        const seen = new Set<string>();
+        const merged: CommunityCharacter[] = [];
+        for (const res of results) {
+          for (const char of res.characters || []) {
+            if (!seen.has(char.id)) {
+              seen.add(char.id);
+              merged.push(char);
+            }
+          }
+        }
+        // Also include any matching characters already in communityCharacters
+        for (const char of communityCharacters) {
+          const handle = (char.creatorName || '').replace(/^@+/, '').toLowerCase();
+          if (
+            followedCreators.some(f => f.replace(/^@+/, '').toLowerCase() === handle) &&
+            !seen.has(char.id)
+          ) {
+            seen.add(char.id);
+            merged.push(char);
+          }
+        }
+
+        setFollowingCharacters(merged);
+      } finally {
+        if (!cancelled) setFollowingLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, scopeMode, followedCreators, catalogSource, communitySort, sfwOnly]);
+
   // Initial Fetch on filter changes
   useEffect(() => {
     if (activeTab === 'community') {
@@ -144,10 +255,11 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
     setCommunityError(null);
     try {
       if (catalogSource === 'janitor') {
-        const activeCat = POPULAR_COMMUNITY_CATEGORIES.find(c => selectedCategoryValues.includes(c.value) && c.tagId);
+        const activeCats = POPULAR_COMMUNITY_CATEGORIES.filter(c => selectedCategoryValues.includes(c.value) && c.tagId);
+        const tagIds = activeCats.map(c => c.tagId).join(',');
         const res = await communityCatalogService.fetchDatacatCharacters({
           search: communitySearch,
-          tagIds: activeCat ? activeCat.tagId : undefined,
+          tagIds: tagIds || undefined,
           page,
           limit: 12,
           sort: communitySort,
@@ -157,7 +269,8 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         setCommunityTotalCount(res.totalCount);
         if (res.error) setCommunityError(res.error);
       } else {
-        const activeTag = selectedCategoryValues.includes('all') ? undefined : selectedCategoryValues[0];
+        const activeTags = selectedCategoryValues.filter(c => c !== 'all');
+        const activeTag = activeTags.length > 0 ? activeTags.join(',') : undefined;
         const res = await communityCatalogService.fetchChubCharacters({
           search: communitySearch,
           tag: activeTag,
@@ -180,16 +293,17 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
 
   // True Infinite Scroll Handler (Triggered on End Reached)
   const handleLoadMore = async () => {
-    if (communityLoading || isLoadingMore || scopeMode === 'favorites') return;
+    if (communityLoading || isLoadingMore || scopeMode === 'favorites' || scopeMode === 'following') return;
     setIsLoadingMore(true);
     const nextPage = currentPage + 1;
     try {
       let newChars: CommunityCharacter[] = [];
       if (catalogSource === 'janitor') {
-        const activeCat = POPULAR_COMMUNITY_CATEGORIES.find(c => selectedCategoryValues.includes(c.value) && c.tagId);
+        const activeCats = POPULAR_COMMUNITY_CATEGORIES.filter(c => selectedCategoryValues.includes(c.value) && c.tagId);
+        const tagIds = activeCats.map(c => c.tagId).join(',');
         const res = await communityCatalogService.fetchDatacatCharacters({
           search: communitySearch,
-          tagIds: activeCat ? activeCat.tagId : undefined,
+          tagIds: tagIds || undefined,
           page: nextPage,
           limit: 12,
           sort: communitySort,
@@ -197,7 +311,8 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         });
         newChars = res.characters;
       } else {
-        const activeTag = selectedCategoryValues.includes('all') ? undefined : selectedCategoryValues[0];
+        const activeTags = selectedCategoryValues.filter(c => c !== 'all');
+        const activeTag = activeTags.length > 0 ? activeTags.join(',') : undefined;
         const res = await communityCatalogService.fetchChubCharacters({
           search: communitySearch,
           tag: activeTag,
@@ -233,7 +348,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         const next = withoutAll.filter(c => c !== val);
         return next.length === 0 ? ['all'] : next;
       } else {
-        return [val];
+        return [...withoutAll, val];
       }
     });
   };
@@ -242,19 +357,24 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
     setCommunitySearch(communitySearchInput.trim());
   };
 
-  const handleToggleFollowCreator = async (creatorName: string, avatarUrl?: string) => {
-    const next = await storageService.toggleFollowCreator(creatorName, avatarUrl);
+  const handleToggleFollowCreator = async (creatorName: string) => {
+    const next = await storageService.toggleFollowCreator(creatorName);
     loadSocialData();
     showToast(next ? `👤 Now following @${creatorName}` : `Unfollowed @${creatorName}`);
   };
 
-  const handleToggleCommunityFavorite = async (char: CommunityCharacter) => {
-    const next = await storageService.toggleCommunityFavorite(char as any);
+  const handleToggleCommunityFavorite = async (char: CommunityCharacter, knownState?: boolean) => {
+    let next: boolean;
+    if (typeof knownState === 'boolean') {
+      next = knownState;
+    } else {
+      next = await storageService.toggleCommunityFavorite(char as any);
+    }
     loadSocialData();
     showToast(next ? `❤️ Added ${char.name} to Favorites` : `Removed from Favorites`);
   };
 
-  // Creator Profiles Aggregator
+  // Creator Profiles Aggregator (100% Genuine Catalog Data — Zero Mock Stock Photos)
   const creatorProfiles = useMemo(() => {
     const map = new Map<
       string,
@@ -265,15 +385,6 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         sampleBots: string[];
       }
     >();
-
-    for (const fc of followedCreators) {
-      map.set(fc.toLowerCase(), {
-        creatorName: fc,
-        avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-        botCount: 12,
-        sampleBots: [],
-      });
-    }
 
     for (const c of communityCharacters) {
       const key = (c.creatorName || 'Community Creator').toLowerCase();
@@ -286,9 +397,22 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       } else {
         map.set(key, {
           creatorName: c.creatorName || 'Community Creator',
-          avatarUrl: c.avatarUrl,
+          avatarUrl: c.avatarUrl || '',
           botCount: 1,
           sampleBots: [c.name],
+        });
+      }
+    }
+
+    // Ensure followed creators exist with verified data or clean empty state
+    for (const fc of followedCreators) {
+      const key = fc.toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, {
+          creatorName: fc,
+          avatarUrl: '',
+          botCount: 0,
+          sampleBots: [],
         });
       }
     }
@@ -297,30 +421,81 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   }, [communityCharacters, followedCreators]);
 
   const displayedCharacters = useMemo(() => {
-    if (scopeMode === 'favorites') {
-      return favoriteCharacters.length > 0 ? favoriteCharacters : communityCharacters.slice(0, 4);
-    }
-    if (scopeMode === 'following') {
-      if (followedCreators.length === 0) return [];
-      return communityCharacters.filter(c => {
-        const handle = (c.creatorName || '').replace(/^@/, '').toLowerCase();
-        return followedCreators.some(f => f.toLowerCase() === handle);
-      });
-    }
-    return communityCharacters;
-  }, [communityCharacters, scopeMode, favoriteCharacters, followedCreators]);
+    // 1. My Library Tab: show saved & created characters from user's active library
+    if (activeTab === 'library') {
+      let libChars: CommunityCharacter[] = characters.map((c, idx) => ({
+        id: c.id,
+        characterId: c.id,
+        name: c.name,
+        chatName: c.name,
+        creatorName: c.creator || 'My Library',
+        avatarUrl: c.avatar,
+        shortDescription: c.description || c.personality || 'My saved roleplay companion.',
+        isNsfw: c.contentRating === 'NSFW',
+        totalTokens: c.totalTokens || 850,
+        chatCount: c.chatCount || 0,
+        messageCount: 0,
+        favoritesCount: c.isFavorite ? 1 : 0,
+        tags: (c.tags || []).map((t, i) => ({ id: i, name: t, slug: t.toLowerCase() })),
+        createdAt: c.updatedAt,
+      }));
 
-  // If in Match Mode, render the Tinder-style Deck
-  if (topMode === 'match') {
-    return (
-      <TinderDeck
-        characters={communityCharacters as any}
-        onBack={() => setTopMode('catalog')}
-        onMatchChat={onStartChat}
-        onToggleFavorite={onToggleFavorite as any}
-      />
-    );
-  }
+      if (communitySearch.trim()) {
+        const q = communitySearch.toLowerCase();
+        libChars = libChars.filter(
+          c =>
+            c.name.toLowerCase().includes(q) ||
+            c.shortDescription.toLowerCase().includes(q) ||
+            (c.creatorName && c.creatorName.toLowerCase().includes(q))
+        );
+      }
+      if (sfwOnly) {
+        libChars = libChars.filter(c => !c.isNsfw);
+      }
+      return libChars;
+    }
+
+    // 2. Explore All Tab: show live community catalog
+    let list = communityCharacters;
+    if (scopeMode === 'favorites') {
+      list = favoriteCharacters.length > 0 ? favoriteCharacters : communityCharacters.slice(0, 4);
+    } else if (scopeMode === 'following') {
+      if (followedCreators.length === 0) {
+        list = [];
+      } else {
+        const sourceList = followingCharacters.length > 0 ? followingCharacters : communityCharacters;
+        list = sourceList.filter(c => {
+          const handle = (c.creatorName || '').replace(/^@+/, '').toLowerCase();
+          return followedCreators.some(f => f.replace(/^@+/, '').toLowerCase() === handle);
+        });
+        const q = communitySearch.trim().toLowerCase();
+        if (q) {
+          list = list.filter(
+            c =>
+              c.name.toLowerCase().includes(q) ||
+              c.shortDescription.toLowerCase().includes(q) ||
+              (c.creatorName && c.creatorName.toLowerCase().includes(q))
+          );
+        }
+      }
+    }
+
+    // Client-side Limited Only (SFW) Filter guarantee
+    if (sfwOnly) {
+      list = list.filter(c => !c.isNsfw);
+    }
+    return list;
+  }, [
+    communityCharacters,
+    followingCharacters,
+    scopeMode,
+    favoriteCharacters,
+    followedCreators,
+    activeTab,
+    characters,
+    communitySearch,
+    sfwOnly,
+  ]);
 
   return (
     <View style={styles.container}>
@@ -333,163 +508,158 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       )}
 
       {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* 0. BRAND HEADER (Matches Warden AI Image 5 Header Hierarchy)       */}
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      <View style={styles.topBrandHeader}>
-        <View style={styles.brandLeft}>
-          <TouchableOpacity style={styles.brandIconBtn} activeOpacity={0.7}>
-            <Menu size={18} color="#FFFFFF" />
-          </TouchableOpacity>
-          <View style={styles.brandTitleWrap}>
-            <Text style={styles.brandTitleText}>NekoChat</Text>
-            <View style={styles.brandDotLime} />
-          </View>
-        </View>
-
-        <View style={styles.brandRight}>
-          <TouchableOpacity
-            style={styles.brandIconBtn}
-            activeOpacity={0.7}
-            onPress={() => {
-              // Focus search
-            }}
-          >
-            <Search size={16} color="#9ca3af" />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.brandIconBtn} activeOpacity={0.7}>
-            <Bell size={16} color="#9ca3af" />
-            <View style={styles.bellUnreadDot} />
-          </TouchableOpacity>
-
-          <View style={styles.profileAvatarCircle}>
-            <Text style={styles.profileAvatarLetter}>N</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* ══════════════════════════════════════════════════════════════════ */}
       {/* 1. TOP PRIMARY SWITCHER: [ 🗂️ Catalog Grid ] | [ 🔥 Match Mode ]  */}
       {/* ══════════════════════════════════════════════════════════════════ */}
-      <View style={styles.topPrimaryBar}>
-        <View style={styles.topPrimaryPill}>
-          <TouchableOpacity
-            style={[styles.topPrimaryBtn, topMode === 'catalog' && styles.topPrimaryBtnActive]}
-            onPress={() => setTopMode('catalog')}
-            activeOpacity={0.8}
-          >
-            <LayoutGrid size={13} color={topMode === 'catalog' ? '#000000' : '#FFFFFF'} style={{ marginRight: 5 }} />
-            <Text style={[styles.topPrimaryBtnText, topMode === 'catalog' && styles.topPrimaryBtnTextActive]}>
-              Catalog Grid
-            </Text>
-          </TouchableOpacity>
+      <Animated.View
+        pointerEvents={isStickySearch ? 'none' : 'auto'}
+        style={{
+          maxHeight: headerExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 62] }),
+          opacity: headerExpandAnim,
+          transform: [{ translateY: headerExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
+          overflow: 'hidden',
+        }}
+      >
+        <View style={styles.topPrimaryBar}>
+          <View style={styles.topPrimaryPill}>
+            <TouchableOpacity
+              style={[styles.topPrimaryBtn, topMode === 'catalog' && styles.topPrimaryBtnActive]}
+              onPress={() => setTopMode('catalog')}
+              activeOpacity={0.8}
+            >
+              <LayoutGrid size={13} color={topMode === 'catalog' ? '#000000' : '#FFFFFF'} style={{ marginRight: 5 }} />
+              <Text style={[styles.topPrimaryBtnText, topMode === 'catalog' && styles.topPrimaryBtnTextActive]}>
+                Catalog Grid
+              </Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.topPrimaryBtn, topMode === 'match' && styles.topPrimaryBtnActive]}
-            onPress={() => setTopMode('match')}
-            activeOpacity={0.8}
-          >
-            <Flame size={13} color={topMode === 'match' ? '#000000' : '#d4ff00'} style={{ marginRight: 5 }} />
-            <Text style={[styles.topPrimaryBtnText, topMode === 'match' && styles.topPrimaryBtnTextActive]}>
-              Match Mode
-            </Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.topPrimaryBtn, (topMode as TopMode) === 'match' && styles.topPrimaryBtnActive]}
+              onPress={() => setTopMode('match')}
+              activeOpacity={0.8}
+            >
+              <Flame size={13} color={(topMode as TopMode) === 'match' ? '#000000' : '#d4ff00'} style={{ marginRight: 5 }} />
+              <Text style={[styles.topPrimaryBtnText, (topMode as TopMode) === 'match' && styles.topPrimaryBtnTextActive]}>
+                Match Mode
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </Animated.View>
 
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* 2. SUB-HEADER TOOLBAR: Explore All vs My Library & Sources         */}
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      <View style={styles.subHeader}>
-        {/* Left: Explore vs Library */}
-        <View style={styles.viewSwitcher}>
-          <TouchableOpacity
-            style={[styles.viewTabBtn, activeTab === 'community' && styles.viewTabBtnActive]}
-            onPress={() => setActiveTab('community')}
-            activeOpacity={0.8}
+      {topMode === 'match' ? (
+        <TinderDeck
+          characters={communityCharacters.length > 0 ? communityCharacters : (characters as any)}
+          activePersona={activePersona}
+          onBack={() => setTopMode('catalog')}
+          onMatchChat={onStartChat}
+          onToggleFavorite={handleToggleCommunityFavorite}
+          favoriteIds={new Set(favoriteCharacters.map(f => f.id))}
+        />
+      ) : (
+        <>
+          {/* ══════════════════════════════════════════════════════════════════ */}
+          {/* 2. SUB-HEADER TOOLBAR: Explore All vs My Library & Sources         */}
+          {/* ══════════════════════════════════════════════════════════════════ */}
+          <Animated.View
+            pointerEvents={isStickySearch ? 'none' : 'auto'}
+            style={{
+              maxHeight: headerExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 60] }),
+              opacity: headerExpandAnim,
+              transform: [{ translateY: headerExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [-6, 0] }) }],
+              overflow: 'hidden',
+            }}
           >
-            <Compass size={13} color={activeTab === 'community' ? '#000000' : '#FFFFFF'} style={{ marginRight: 5 }} />
-            <Text style={[styles.viewTabBtnText, activeTab === 'community' && styles.viewTabBtnTextActive]}>
-              Explore All
-            </Text>
-            <View style={styles.greenPulseDot} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.viewTabBtn, activeTab === 'library' && styles.viewTabBtnActive]}
-            onPress={() => setActiveTab('library')}
-            activeOpacity={0.8}
-          >
-            <Bookmark size={13} color={activeTab === 'library' ? '#000000' : '#9ca3af'} style={{ marginRight: 5 }} />
-            <Text style={[styles.viewTabBtnText, activeTab === 'library' ? styles.viewTabBtnTextActive : { color: '#9ca3af' }]}>
-              My Library
-            </Text>
-            <View style={styles.libraryCountPill}>
-              <Text style={styles.libraryCountText}>{characters.length || 20}</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        {/* Right: JanitorAI | Chub.ai toggle & Actions */}
-        <View style={styles.subHeaderRight}>
-          {activeTab === 'community' && (
-            <>
-              <View style={styles.sourcePillSwitch}>
+            <View style={styles.subHeader}>
+              {/* Left: Explore vs Library */}
+              <View style={styles.viewSwitcher}>
                 <TouchableOpacity
-                  style={[styles.sourcePillBtn, catalogSource === 'janitor' && styles.sourcePillBtnActive]}
-                  onPress={() => {
-                    setCatalogSource('janitor');
-                    setCurrentPage(1);
-                  }}
+                  style={[styles.viewTabBtn, activeTab === 'community' && styles.viewTabBtnActive]}
+                  onPress={() => setActiveTab('community')}
                   activeOpacity={0.8}
                 >
-                  <Text
-                    style={[
-                      styles.sourcePillText,
-                      catalogSource === 'janitor' && styles.sourcePillTextActive,
-                    ]}
-                  >
-                    JanitorAI
+                  <Compass size={13} color={activeTab === 'community' ? '#000000' : '#FFFFFF'} style={{ marginRight: 5 }} />
+                  <Text style={[styles.viewTabBtnText, activeTab === 'community' && styles.viewTabBtnTextActive]}>
+                    Explore All
                   </Text>
+                  <View style={styles.greenPulseDot} />
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.sourcePillBtn, catalogSource === 'chub' && styles.sourcePillBtnActive]}
-                  onPress={() => {
-                    setCatalogSource('chub');
-                    setCurrentPage(1);
-                  }}
+                  style={[styles.viewTabBtn, activeTab === 'library' && styles.viewTabBtnActive]}
+                  onPress={() => setActiveTab('library')}
                   activeOpacity={0.8}
                 >
-                  <Text
-                    style={[
-                      styles.sourcePillText,
-                      catalogSource === 'chub' && styles.sourcePillTextActive,
-                    ]}
-                  >
-                    Chub.ai
+                  <Bookmark size={13} color={activeTab === 'library' ? '#000000' : '#9ca3af'} style={{ marginRight: 5 }} />
+                  <Text style={[styles.viewTabBtnText, activeTab === 'library' ? styles.viewTabBtnTextActive : { color: '#9ca3af' }]}>
+                    My Library
                   </Text>
+                  <View style={styles.libraryCountPill}>
+                    <Text style={styles.libraryCountText}>{characters.length}</Text>
+                  </View>
                 </TouchableOpacity>
               </View>
 
-              <TouchableOpacity
-                style={styles.iconBtn}
-                onPress={() => fetchCharactersInitial(1)}
-                activeOpacity={0.7}
-                title="Refresh Catalog Feed"
-              >
-                <RefreshCw size={13} color="#9ca3af" />
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-      </View>
+              {/* Right: JanitorAI | Chub.ai toggle & Actions */}
+              <View style={styles.subHeaderRight}>
+                {activeTab === 'community' && (
+                  <>
+                    <View style={styles.sourcePillSwitch}>
+                      <TouchableOpacity
+                        style={[styles.sourcePillBtn, catalogSource === 'janitor' && styles.sourcePillBtnActive]}
+                        onPress={() => {
+                          setCatalogSource('janitor');
+                          setCurrentPage(1);
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Text
+                          style={[
+                            styles.sourcePillText,
+                            catalogSource === 'janitor' && styles.sourcePillTextActive,
+                          ]}
+                        >
+                          JanitorAI
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.sourcePillBtn, catalogSource === 'chub' && styles.sourcePillBtnActive]}
+                        onPress={() => {
+                          setCatalogSource('chub');
+                          setCurrentPage(1);
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Text
+                          style={[
+                            styles.sourcePillText,
+                            catalogSource === 'chub' && styles.sourcePillTextActive,
+                          ]}
+                        >
+                          Chub.ai
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.iconBtn}
+                      onPress={() => fetchCharactersInitial(1)}
+                      activeOpacity={0.7}
+                      accessibilityLabel="Refresh Catalog Feed"
+                    >
+                      <RefreshCw size={13} color="#9ca3af" />
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+            </View>
+          </Animated.View>
 
       {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* 3. SEARCH BAR WITH KEYBOARD BADGE                                  */}
+      {/* 3. SEARCH BAR (Sticky when scrolling down)                         */}
       {/* ══════════════════════════════════════════════════════════════════ */}
-      <View style={styles.searchContainer}>
-        <View style={styles.searchBarWrapper}>
+      <View style={[styles.searchContainer, isStickySearch && styles.searchContainerSticky]}>
+        <View style={[styles.searchBarWrapper, isStickySearch && { flex: 1 }]}>
           <Search size={15} color="#9ca3af" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
@@ -517,17 +687,38 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             </View>
           )}
         </View>
+
+        {isStickySearch && (
+          <TouchableOpacity
+            style={styles.stickyFilterToggleBtn}
+            onPress={() => setIsStickySearch(false)}
+            activeOpacity={0.8}
+            accessibilityLabel="Expand filters"
+          >
+            <SlidersHorizontal size={14} color="#d4ff00" />
+            <Text style={styles.stickyFilterToggleText}>Filters</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* 4. 18 CANONICAL TAG STRIP + DRAWER [🎛️] & EXPAND [⌵]               */}
       {/* ══════════════════════════════════════════════════════════════════ */}
-      <View style={styles.tagStripContainer}>
+      <Animated.View
+        pointerEvents={isStickySearch ? 'none' : 'auto'}
+        style={{
+          maxHeight: headerExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 320] }),
+          opacity: headerExpandAnim,
+          transform: [{ translateY: headerExpandAnim.interpolate({ inputRange: [0, 1], outputRange: [-10, 0] }) }],
+          overflow: 'hidden',
+        }}
+      >
+          <View style={styles.tagStripContainer}>
         <TouchableOpacity
           style={styles.tagDrawerBtn}
           onPress={() => setIsTagDrawerOpen(true)}
           activeOpacity={0.7}
-          title="Filter Drawer"
+          accessibilityLabel="Filter Drawer"
         >
           <SlidersHorizontal size={14} color="#d4ff00" />
         </TouchableOpacity>
@@ -618,8 +809,8 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             activeOpacity={0.8}
           >
             <Eye size={12} color={!sfwOnly ? '#000000' : '#9ca3af'} style={{ marginRight: 4 }} />
-            <Text style={[styles.pillSegmentText, !sfwOnly && styles.pillSegmentTextActive]}>
-              All
+            <Text numberOfLines={1} style={[styles.pillSegmentText, !sfwOnly && styles.pillSegmentTextActive]}>
+              NSFW
             </Text>
           </TouchableOpacity>
 
@@ -629,62 +820,75 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             activeOpacity={0.8}
           >
             <EyeOff size={12} color={sfwOnly ? '#000000' : '#9ca3af'} style={{ marginRight: 4 }} />
-            <Text style={[styles.pillSegmentText, sfwOnly && styles.pillSegmentTextActive]}>
-              Limited Only
+            <Text numberOfLines={1} style={[styles.pillSegmentText, sfwOnly && styles.pillSegmentTextActive]}>
+              SFW
             </Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Scope: All | Following | Favorites */}
+      {/* Sort Bar: Trending | Popular | Latest */}
       <View style={styles.scopeRow}>
         <View style={styles.pillGroupFull}>
-          <TouchableOpacity
-            style={[styles.pillSegment, scopeMode === 'all' && styles.pillSegmentActive]}
-            onPress={() => setScopeMode('all')}
-            activeOpacity={0.8}
-          >
-            <Globe size={12} color={scopeMode === 'all' ? '#000000' : '#9ca3af'} style={{ marginRight: 4 }} />
-            <Text style={[styles.pillSegmentText, scopeMode === 'all' && styles.pillSegmentTextActive]}>
-              All
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.pillSegment, scopeMode === 'following' && styles.pillSegmentActive]}
-            onPress={() => setScopeMode('following')}
-            activeOpacity={0.8}
-          >
-            <Users size={12} color={scopeMode === 'following' ? '#000000' : '#9ca3af'} style={{ marginRight: 4 }} />
-            <Text style={[styles.pillSegmentText, scopeMode === 'following' && styles.pillSegmentTextActive]}>
-              Following {followedCreators.length > 0 ? `(${followedCreators.length})` : ''}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.pillSegment, scopeMode === 'favorites' && styles.pillSegmentActive]}
-            onPress={() => setScopeMode('favorites')}
-            activeOpacity={0.8}
-          >
-            <Heart size={12} color={scopeMode === 'favorites' ? '#000000' : '#9ca3af'} style={{ marginRight: 4 }} />
-            <Text style={[styles.pillSegmentText, scopeMode === 'favorites' && styles.pillSegmentTextActive]}>
-              Favorites
-            </Text>
-          </TouchableOpacity>
+          {(['trending', 'popular', 'latest'] as CatalogSort[]).map(s => {
+            const isActive = communitySort === s;
+            const label = s === 'trending' ? '🔥 Trending' : s === 'popular' ? '❤️ Popular' : '✨ Latest';
+            return (
+              <TouchableOpacity
+                key={s}
+                style={[styles.pillSegment, isActive && styles.pillSegmentActive]}
+                onPress={() => setCommunitySort(s)}
+                activeOpacity={0.8}
+              >
+                <Text
+                  numberOfLines={1}
+                  style={[styles.pillSegmentText, isActive && styles.pillSegmentTextActive]}
+                >
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       </View>
 
-      {/* Count & Sort Row */}
+      {/* Scope Dropdown (All | Following | Favorites) & Count Row */}
       <View style={styles.sortCountRow}>
         <TouchableOpacity
-          style={styles.sortDropdownBtn}
-          onPress={() => setSortDropdownOpen(prev => !prev)}
+          ref={scopeBtnRef}
+          style={[styles.sortDropdownBtn, scopeDropdownOpen && styles.sortDropdownBtnActive]}
+          onPress={() => {
+            scopeBtnRef.current?.measureInWindow?.((x: number, y: number, _w: number, h: number) => {
+              if (typeof x === 'number' && typeof y === 'number') {
+                setScopeMenuPos({ top: y + h + 6, left: Math.max(12, x) });
+              }
+            });
+            setScopeDropdownOpen(prev => !prev);
+          }}
           activeOpacity={0.8}
         >
+          {scopeMode === 'all' ? (
+            <Globe size={12} color="#d4ff00" style={{ marginRight: 5 }} />
+          ) : scopeMode === 'following' ? (
+            <Users size={12} color="#d4ff00" style={{ marginRight: 5 }} />
+          ) : (
+            <Heart size={12} color="#d4ff00" style={{ marginRight: 5 }} />
+          )}
           <Text style={styles.sortDropdownText}>
-            {communitySort === 'latest' ? '✨ Latest' : communitySort === 'trending' ? '🔥 Trending' : '❤️ Popular'}
+            {scopeMode === 'all'
+              ? 'All'
+              : scopeMode === 'following'
+              ? `Following${followedCreators.length > 0 ? ` (${followedCreators.length})` : ''}`
+              : 'Favorites'}
           </Text>
-          <ChevronDown size={12} color="#9ca3af" style={{ marginLeft: 4 }} />
+          <ChevronDown
+            size={12}
+            color="#d4ff00"
+            style={{
+              marginLeft: 5,
+              transform: [{ rotate: scopeDropdownOpen ? '180deg' : '0deg' }],
+            }}
+          />
         </TouchableOpacity>
 
         <View style={styles.countBadge}>
@@ -694,38 +898,73 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         </View>
       </View>
 
-      {sortDropdownOpen && (
-        <View style={styles.sortDropdownMenu}>
-          {(['latest', 'trending', 'popular'] as CatalogSort[]).map(s => (
-            <TouchableOpacity
-              key={s}
-              style={[styles.sortMenuItem, communitySort === s && styles.sortMenuItemActive]}
-              onPress={() => {
-                setCommunitySort(s);
-                setSortDropdownOpen(false);
-              }}
-              activeOpacity={0.8}
-            >
-              <Text
-                style={[
-                  styles.sortMenuItemText,
-                  communitySort === s && styles.sortMenuItemTextActive,
-                ]}
-              >
-                {s === 'latest' ? '✨ Latest' : s === 'trending' ? '🔥 Trending' : '❤️ Popular'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
+      <Modal
+        visible={scopeDropdownOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setScopeDropdownOpen(false)}
+      >
+        <TouchableOpacity
+          style={styles.scopeDropdownOverlay}
+          activeOpacity={1}
+          onPress={() => setScopeDropdownOpen(false)}
+        >
+          <View
+            style={[styles.scopeMenuCard, { top: scopeMenuPos.top, left: scopeMenuPos.left }]}
+            onStartShouldSetResponder={() => true}
+          >
+            {([
+              { key: 'all' as ScopeMode, label: 'All Companions', icon: Globe },
+              { key: 'following' as ScopeMode, label: 'Following Creators', icon: Users, count: followedCreators.length },
+              { key: 'favorites' as ScopeMode, label: 'Favorites', icon: Heart, count: favoriteCharacters.length },
+            ]).map(opt => {
+              const Icon = opt.icon;
+              const isSelected = scopeMode === opt.key;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[styles.scopeMenuItem, isSelected && styles.scopeMenuItemActive]}
+                  onPress={() => {
+                    setScopeMode(opt.key);
+                    setScopeDropdownOpen(false);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.scopeMenuIconWrap, isSelected && styles.scopeMenuIconWrapActive]}>
+                    <Icon size={13} color={isSelected ? '#000000' : '#d4ff00'} />
+                  </View>
+                  <Text style={[styles.scopeMenuText, isSelected && styles.scopeMenuTextActive]}>
+                    {opt.label}
+                  </Text>
+                  {typeof opt.count === 'number' && opt.count > 0 && (
+                    <View style={[styles.scopeCountBadge, isSelected && styles.scopeCountBadgeActive]}>
+                      <Text style={[styles.scopeCountBadgeText, isSelected && styles.scopeCountBadgeTextActive]}>
+                        {opt.count}
+                      </Text>
+                    </View>
+                  )}
+                  {isSelected && <Check size={13} color="#000000" style={{ marginLeft: 6 }} />}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+      </Animated.View>
 
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* 6. MAIN CONTENT: 2-COLUMN BENTO GRID WITH TRUE INFINITE SCROLL     */}
       {/* ══════════════════════════════════════════════════════════════════ */}
-      {communityLoading ? (
+      {(communityLoading || (scopeMode === 'following' && followingLoading && displayedCharacters.length === 0)) ? (
         <View style={styles.loaderBox}>
-          <ActivityIndicator size="large" color="#d4ff00" />
-          <Text style={styles.loaderText}>Loading NekoChat companions...</Text>
+          <NekoPulseLoader
+            size={46}
+            label={
+              scopeMode === 'following'
+                ? 'Loading companions from followed creators...'
+                : 'Loading NekoChat companions...'
+            }
+          />
         </View>
       ) : entityMode === 'creators' ? (
         <ScrollView contentContainerStyle={styles.creatorsList}>
@@ -736,18 +975,26 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             return (
               <View key={creator.creatorName} style={styles.creatorCard}>
                 <View style={styles.creatorCardTop}>
-                  <Image source={{ uri: creator.avatarUrl }} style={styles.creatorAvatar} />
+                  {creator.avatarUrl ? (
+                    <Image source={{ uri: creator.avatarUrl }} style={styles.creatorAvatar} />
+                  ) : (
+                    <View style={[styles.creatorAvatar, { alignItems: 'center', justifyContent: 'center' }]}>
+                      <Text style={{ fontSize: 16, fontWeight: '800', color: '#d4ff00' }}>
+                        {creator.creatorName.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
                   <View style={styles.creatorInfoCol}>
                     <View style={styles.creatorNameRow}>
                       <Text style={styles.creatorCardName}>@{creator.creatorName}</Text>
                       <CheckCircle2 size={13} color="#d4ff00" style={{ marginLeft: 3 }} />
                     </View>
-                    <Text style={styles.creatorBotCount}>{creator.botCount}+ public companions</Text>
+                    <Text style={styles.creatorBotCount}>{creator.botCount} public companions</Text>
                   </View>
 
                   <TouchableOpacity
                     style={[styles.creatorFollowBtn, isFollowing && styles.creatorFollowBtnActive]}
-                    onPress={() => handleToggleFollowCreator(creator.creatorName, creator.avatarUrl)}
+                    onPress={() => handleToggleFollowCreator(creator.creatorName)}
                     activeOpacity={0.8}
                   >
                     <Text
@@ -770,15 +1017,15 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                 <TouchableOpacity
                   style={styles.viewBotsBtn}
                   onPress={() => {
-                    setEntityMode('characters');
-                    setScopeMode('all');
-                    setCommunitySearchInput(creator.creatorName);
-                    setCommunitySearch(creator.creatorName);
+                    setSelectedCreator({
+                      name: creator.creatorName,
+                      avatarUrl: creator.avatarUrl,
+                    });
                   }}
                   activeOpacity={0.8}
                 >
                   <Text style={styles.viewBotsBtnText}>
-                    View all companions by @{creator.creatorName} →
+                    View Creator Profile & Companions →
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -790,6 +1037,8 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           data={displayedCharacters}
           keyExtractor={item => item.id}
           numColumns={2}
+          onScroll={handleCatalogScroll}
+          scrollEventThrottle={16}
           columnWrapperStyle={styles.twoColumnWrapper}
           contentContainerStyle={styles.cardsContainer}
           onEndReached={handleLoadMore}
@@ -808,12 +1057,14 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
               isFollowingCreator={followedCreators.some(
                 f => f.toLowerCase() === (item.creatorName || '').toLowerCase()
               )}
-              onToggleFollowCreator={(creatorName, avatarUrl) =>
-                handleToggleFollowCreator(creatorName, avatarUrl)
+              onToggleFollowCreator={creatorName =>
+                handleToggleFollowCreator(creatorName)
               }
               onCreatorClick={cName => {
-                setCommunitySearchInput(cName);
-                setCommunitySearch(cName);
+                setSelectedCreator({
+                  name: cName,
+                  id: item.creatorId,
+                });
               }}
               onTagClick={(tagId, tagName) => {
                 const matchedCat = POPULAR_COMMUNITY_CATEGORIES.find(c => c.tagId === tagId);
@@ -827,12 +1078,11 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             />
           )}
           ListFooterComponent={
-            isLoadingMore ? (
+            isLoadingMore && scopeMode === 'all' ? (
               <View style={styles.footerLoader}>
-                <ActivityIndicator size="small" color="#d4ff00" />
-                <Text style={styles.footerLoaderText}>Streaming more characters...</Text>
+                <NekoPulseLoader size={26} label="Streaming more characters..." />
               </View>
-            ) : null
+            ) : undefined
           }
           ListEmptyComponent={
             communityError ? (
@@ -879,14 +1129,18 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                 <Sparkles size={28} color="#9ca3af" style={{ marginBottom: 10 }} />
                 <Text style={styles.emptyTitle}>
                   {scopeMode === 'following'
-                    ? 'No Followed Creators Yet'
+                    ? followedCreators.length === 0
+                      ? 'No Followed Creators Yet'
+                      : 'No Companions Found'
                     : scopeMode === 'favorites'
                     ? 'No Saved Favorites'
                     : 'No Characters Found'}
                 </Text>
                 <Text style={styles.emptyDesc}>
                   {scopeMode === 'following'
-                    ? 'Tap "+ Follow" on any character card to see companions from your favorite creators here.'
+                    ? followedCreators.length === 0
+                      ? 'Tap "+ Follow" on any character card to see companions from your favorite creators here.'
+                      : `Following ${followedCreators.map(f => '@' + f.replace(/^@+/, '')).join(', ')}, but no matching public companions were found in ${catalogSource === 'janitor' ? 'JanitorAI' : 'Chub.ai'}.`
                     : scopeMode === 'favorites'
                     ? 'Tap the Bookmark icon on any card to save it here for fast access.'
                     : 'Try adjusting your search terms or selecting another tag.'}
@@ -895,6 +1149,8 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             )
           }
         />
+      )}
+      </>
       )}
 
       {/* ══════════════════════════════════════════════════════════════════ */}
@@ -912,12 +1168,43 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           onImportCard?.(char);
           showToast(`✨ Imported "${char.name}" into My Library!`);
         }}
-        onToggleFavorite={onToggleFavorite}
+        onToggleFavorite={handleToggleCommunityFavorite}
         onTagClick={tagName => {
           setSelectedCommunityChar(null);
           setCommunitySearchInput(tagName);
           setCommunitySearch(tagName);
         }}
+        onCreatorClick={(creatorName, creatorId) => {
+          setSelectedCommunityChar(null);
+          setSelectedCreator({ name: creatorName, id: creatorId });
+        }}
+        onFollowChange={loadSocialData}
+      />
+
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {/* 7b. CREATOR PROFILE MODAL                                          */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      <CreatorProfileModal
+        visible={Boolean(selectedCreator)}
+        creatorName={selectedCreator?.name || null}
+        creatorId={selectedCreator?.id}
+        initialAvatarUrl={selectedCreator?.avatarUrl}
+        catalogSource={catalogSource}
+        sfwOnly={sfwOnly}
+        onClose={() => setSelectedCreator(null)}
+        onSelectCharacter={char => {
+          setSelectedCreator(null);
+          setSelectedCommunityChar(char);
+        }}
+        onStartChat={char => {
+          setSelectedCreator(null);
+          onStartChat(char);
+        }}
+        onImport={char => {
+          onImportCard?.(char);
+          showToast(`✨ Imported "${char.name}" into My Library!`);
+        }}
+        onFollowChange={loadSocialData}
       />
 
       {/* ══════════════════════════════════════════════════════════════════ */}
@@ -1180,15 +1467,42 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 5,
   },
-  searchBarWrapper: {
+  searchContainerSticky: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    backgroundColor: '#0c0e14',
+    borderBottomWidth: 1,
+    borderBottomColor: '#161a26',
+    zIndex: 20,
+  },
+  stickyFilterToggleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#0f121d',
+    paddingHorizontal: 10,
+    height: 36,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: 'rgba(212, 255, 0, 0.35)',
+  },
+  stickyFilterToggleText: {
+    color: '#d4ff00',
+    fontSize: 11,
+    fontWeight: '700',
+    marginLeft: 4,
+  },
+  searchBarWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: GLASS.bgSubtle,
+    borderWidth: 1,
+    borderColor: GLASS.border,
     borderRadius: 12,
     paddingHorizontal: 10,
     height: 36,
+    ...GLASS.backdrop,
   },
   searchIcon: {
     marginRight: 7,
@@ -1227,11 +1541,12 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 7,
-    backgroundColor: '#0f121d',
+    backgroundColor: GLASS.bgSubtle,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: GLASS.border,
     alignItems: 'center',
     justifyContent: 'center',
+    ...GLASS.backdrop,
   },
   tagStripScroll: {
     flexDirection: 'row',
@@ -1242,12 +1557,13 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   communityTagChip: {
-    backgroundColor: '#0f121d',
+    backgroundColor: GLASS.bgSubtle,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: GLASS.border,
     borderRadius: 8,
     paddingHorizontal: 9,
     paddingVertical: 4,
+    ...GLASS.backdrop,
   },
   communityTagChipActive: {
     backgroundColor: '#d4ff00',
@@ -1283,22 +1599,24 @@ const styles = StyleSheet.create({
   pillGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0f121d',
+    backgroundColor: GLASS.bgSubtle,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: GLASS.border,
     padding: 2,
+    ...GLASS.backdrop,
   },
   pillGroupFull: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0f121d',
+    backgroundColor: GLASS.bgSubtle,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: GLASS.border,
     padding: 2,
     width: '100%',
     justifyContent: 'space-between',
+    ...GLASS.backdrop,
   },
   pillSegment: {
     flexDirection: 'row',
@@ -1334,12 +1652,13 @@ const styles = StyleSheet.create({
   sortDropdownBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0f121d',
+    backgroundColor: GLASS.bgSubtle,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: GLASS.border,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 4,
+    ...GLASS.backdrop,
   },
   sortDropdownText: {
     fontSize: 10,
@@ -1351,11 +1670,13 @@ const styles = StyleSheet.create({
     top: 215,
     left: 12,
     zIndex: 999,
-    backgroundColor: '#0f121d',
+    backgroundColor: GLASS.bgModal,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: GLASS.borderBright,
     borderRadius: 10,
     padding: 4,
+    ...GLASS.backdropStrong,
+    ...GLASS.shadow,
   },
   sortMenuItem: {
     paddingHorizontal: 12,
@@ -1374,13 +1695,83 @@ const styles = StyleSheet.create({
     color: '#000000',
     fontWeight: '800',
   },
-  countBadge: {
-    backgroundColor: '#0f121d',
+  sortDropdownBtnActive: {
+    borderColor: 'rgba(212, 255, 0, 0.55)',
+    backgroundColor: 'rgba(212, 255, 0, 0.12)',
+  },
+  scopeDropdownOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(5, 7, 12, 0.35)',
+  },
+  scopeMenuCard: {
+    position: 'absolute',
+    minWidth: 215,
+    backgroundColor: GLASS.bgModal,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: GLASS.borderBright,
+    borderRadius: 16,
+    padding: 6,
+    gap: 4,
+    ...GLASS.backdropStrong,
+    ...GLASS.shadow,
+  },
+  scopeMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderRadius: 11,
+  },
+  scopeMenuItemActive: {
+    backgroundColor: '#d4ff00',
+  },
+  scopeMenuIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: 'rgba(212, 255, 0, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 9,
+  },
+  scopeMenuIconWrapActive: {
+    backgroundColor: 'rgba(0, 0, 0, 0.14)',
+  },
+  scopeMenuText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#e2e8f0',
+  },
+  scopeMenuTextActive: {
+    color: '#000000',
+    fontWeight: '800',
+  },
+  scopeCountBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  scopeCountBadgeActive: {
+    backgroundColor: 'rgba(0, 0, 0, 0.16)',
+  },
+  scopeCountBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#d4ff00',
+  },
+  scopeCountBadgeTextActive: {
+    color: '#000000',
+  },
+  countBadge: {
+    backgroundColor: GLASS.bgSubtle,
+    borderWidth: 1,
+    borderColor: GLASS.border,
     borderRadius: 12,
     paddingHorizontal: 9,
     paddingVertical: 3.5,
+    ...GLASS.backdrop,
   },
   countBadgeText: {
     fontSize: 9.5,
@@ -1515,11 +1906,13 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   creatorCard: {
-    backgroundColor: '#0f121d',
+    backgroundColor: GLASS.bg,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: GLASS.borderBright,
     padding: 12,
+    ...GLASS.backdrop,
+    ...GLASS.shadow,
   },
   creatorCardTop: {
     flexDirection: 'row',

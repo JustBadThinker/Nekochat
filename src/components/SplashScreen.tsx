@@ -4,11 +4,9 @@
  */
 
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
-import { Cat } from 'lucide-react-native';
+import { View, Text, StyleSheet, Animated } from 'react-native';
 import { colors } from '../theme/colors';
-
-const { width, height } = Dimensions.get('window');
+import { NekoLogoSvg } from './NekoLogoSvg';
 
 interface SplashScreenProps {
   onFinish?: () => void;
@@ -64,27 +62,46 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
   }, []);
 
   return (
-    <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
+    <Animated.View style={[styles.container, { opacity: fadeAnim, backgroundColor: colors.bgDark }]}>
       <Animated.View
         style={[
           styles.catWrapper,
           {
+            shadowColor: colors.lime,
             transform: [{ scale: pulseAnim }],
             shadowOpacity: glowAnim as any,
           },
         ]}
       >
-        <View style={styles.catGlowCircle}>
-          <Cat size={64} color={colors.lime} />
+        <View
+          style={[
+            styles.catGlowCircle,
+            {
+              borderColor: colors.lime,
+              backgroundColor: `rgba(${colors.accentRgb}, 0.08)`,
+            },
+          ]}
+        >
+          <NekoLogoSvg size={82} color={colors.lime} />
         </View>
       </Animated.View>
 
       <Text style={styles.title}>NekoChat</Text>
       <Text style={styles.subtitle}>AI Companion & Roleplay Client</Text>
-      <Text style={styles.versionBadge}>v0.1.0-alpha • Powered by Warden Core</Text>
+      <Text
+        style={[
+          styles.versionBadge,
+          {
+            color: colors.lime,
+            backgroundColor: `rgba(${colors.accentRgb}, 0.12)`,
+          },
+        ]}
+      >
+        v0.1.0-alpha • Powered by Warden Core
+      </Text>
 
       <View style={styles.loaderBarContainer}>
-        <Animated.View style={[styles.loaderBar, { opacity: glowAnim }]} />
+        <Animated.View style={[styles.loaderBar, { opacity: glowAnim, backgroundColor: colors.lime }]} />
       </View>
     </Animated.View>
   );
@@ -92,7 +109,11 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
 
 const styles = StyleSheet.create({
   container: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: '#000000',
     justifyContent: 'center',
     alignItems: 'center',

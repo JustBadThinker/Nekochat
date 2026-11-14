@@ -3,23 +3,37 @@
  * Bento-OLED High-Contrast Design System with Minimalist Floating Navigation Dock.
  */
 
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ActivityIndicator, Platform } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, StyleSheet, Platform, ScrollView, Dimensions, Animated, BackHandler } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Character, Persona, ProviderConfig, AppSettings } from './src/types';
-import { colors } from './src/theme/colors';
+import { colors, applyThemePalette, getThemePalette } from './src/theme/colors';
 import { storageService } from './src/services/storageService';
 import { characterService } from './src/services/characterService';
 import { CapsuleDock, TabScreen } from './src/components/CapsuleDock';
 import { SplashScreen } from './src/components/SplashScreen';
+import { NekoPulseLoader } from './src/components/NekoPulseLoader';
 import { ChatsScreen } from './src/screens/ChatsScreen';
 import { DiscoverScreen } from './src/screens/DiscoverScreen';
 import { ChatRoomScreen } from './src/screens/ChatRoomScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { UserStudioScreen } from './src/screens/UserStudioScreen';
 
+const TABS: TabScreen[] = ['chats', 'discover', 'studio', 'settings'];
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabScreen>('chats');
+  const [isDiscoverMatchMode, setIsDiscoverMatchMode] = useState(false);
+  const [pagerWidth, setPagerWidth] = useState<number>(() => {
+    const w = Dimensions.get('window').width;
+    return Platform.OS === 'web' ? Math.min(w, 1080) : w;
+  });
+  const pagerRef = useRef<any>(null);
+  const scrollSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chatRoomEnterAnim = useRef(new Animated.Value(0)).current;
+  const tabHistoryRef = useRef<TabScreen[]>(['chats']);
+
   const [characters, setCharacters] = useState<Character[]>([]);
   const [trendingCharacters, setTrendingCharacters] = useState<Character[]>([]);
   const [personas, setPersonas] = useState<Persona[]>([]);
@@ -27,6 +41,7 @@ export default function App() {
   const [config, setConfig] = useState<ProviderConfig | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [activeChatCharacter, setActiveChatCharacter] = useState<Character | null>(null);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showSplash, setShowSplash] = useState(true);
 
@@ -87,8 +102,8 @@ export default function App() {
       const chars = await characterService.ensureStarters();
       setCharacters(chars);
 
-      // 2. Load trending 24h characters (fetched live or genuine anime)
-      const trending = await characterService.getTrending24h(chars);
+      // 2. Load trending 24h characters (fetched live from community catalog)
+      const trending = await characterService.getTrending24h();
       setTrendingCharacters(trending);
 
       // 3. Load personas
@@ -103,10 +118,60 @@ export default function App() {
 
       const appSet = await storageService.getSettings();
       setSettings(appSet);
+      applyThemePalette(appSet.theme || 'midnight');
     } finally {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (settings?.theme) {
+      applyThemePalette(settings.theme);
+    }
+  }, [settings?.theme, activeTab, activeChatCharacter, showSplash]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const onBackPress = () => {
+      if (activeChatCharacter) {
+        setActiveChatCharacter(null);
+        setActiveConversationId(null);
+        storageService.getCharacters().then(updated => setCharacters(updated)).catch(() => {});
+        return true;
+      }
+      if (activeTab !== 'chats') {
+        const hist = tabHistoryRef.current;
+        let targetTab: TabScreen = 'chats';
+        if (hist.length > 1) {
+          hist.pop();
+          targetTab = hist[hist.length - 1] || 'chats';
+        } else {
+          tabHistoryRef.current = ['chats'];
+        }
+        setActiveTab(targetTab);
+        const idx = TABS.indexOf(targetTab);
+        if (idx >= 0 && pagerRef.current && pagerWidth > 0) {
+          pagerRef.current.scrollTo({ x: idx * pagerWidth, animated: true });
+        }
+        return true;
+      }
+      return false;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [activeChatCharacter, activeTab, pagerWidth]);
+
+  useEffect(() => {
+    if (activeChatCharacter) {
+      chatRoomEnterAnim.setValue(0);
+      Animated.spring(chatRoomEnterAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        friction: 9,
+        tension: 90,
+      }).start();
+    }
+  }, [activeChatCharacter?.id]);
 
   const handleToggleFavorite = async (character: Character) => {
     await storageService.toggleFavorite(character.id);
@@ -114,12 +179,41 @@ export default function App() {
     setCharacters(updated);
   };
 
-  const handleStartChat = async (character: Character) => {
-    // Ensure character is saved into active characters list
-    await storageService.upsertCharacter(character);
-    const updated = await storageService.getCharacters();
-    setCharacters(updated);
-    setActiveChatCharacter(character);
+  const handleStartChat = async (character: any, detail?: any, conversationId?: string) => {
+    // Normalize character whether it's CommunityCharacter, Character, or raw JSON
+    const fullChar: Character = {
+      id: character.id || character.characterId || `char_${Date.now()}`,
+      name: character.name || 'Unnamed Companion',
+      chatName: detail?.chatName || character.chatName || '',
+      subtitle: detail?.chatName || character.chatName || character.subtitle || '',
+      tagline: character.tagline || (character.creatorName ? `Created by @${character.creatorName}` : 'Roleplay Companion'),
+      avatar: character.avatar || character.avatarUrl || 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=500',
+      description: detail?.personality || detail?.descriptionHtml || character.shortDescription || character.description || 'Expressive companion ready to chat.',
+      firstMessage: detail?.firstMessage || character.firstMessage || `*${character.name || 'They'} look at you attentively.*`,
+      personality: detail?.personality || character.personality || character.shortDescription || '',
+      scenario: detail?.scenario || character.scenario || '',
+      tags: Array.isArray(character.tags)
+        ? character.tags.map((t: any) => typeof t === 'string' ? t : (t?.name || t?.slug || String(t)))
+        : ['anime'],
+      isFavorite: !!character.isFavorite,
+      contentRating: character.isNsfw ? 'NSFW' : 'SFW',
+      creator: character.creator || character.creatorName || 'community',
+      alternateGreetings: detail?.alternateGreetings || character.alternateGreetings || [],
+      chatCount: character.chatCount || 0,
+      totalTokens: character.totalTokens || 850,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Open ChatRoom immediately without blocking on storage read/write
+    setActiveConversationId(conversationId || null);
+    setActiveChatCharacter(fullChar);
+
+    // Persist character into active characters list in the background
+    storageService
+      .upsertCharacter(fullChar)
+      .then(() => storageService.getCharacters())
+      .then(updated => setCharacters(updated))
+      .catch(() => {});
   };
 
   if (showSplash) {
@@ -130,16 +224,66 @@ export default function App() {
     return (
       <View style={styles.loadingContainer}>
         <StatusBar style="light" />
-        <ActivityIndicator size="large" color="#FFFFFF" />
+        <NekoPulseLoader size={54} label="Starting NekoChat..." />
       </View>
     );
   }
 
-  // Active Chat Screen (Full-Screen overlay)
+  // Active theme background tokens
+  const currentTheme = settings?.theme || 'midnight';
+  const activePalette = applyThemePalette(currentTheme);
+  const themeBg = activePalette.bgDark;
+  const webFrameBg = activePalette.webFrameBg;
+
+  const handleTabChange = (tab: TabScreen, recordHistory = true) => {
+    if (recordHistory && tab !== activeTab) {
+      const hist = tabHistoryRef.current;
+      if (hist[hist.length - 1] !== tab) {
+        tabHistoryRef.current = [...hist.slice(-9), tab];
+      }
+    }
+    setActiveTab(tab);
+    const idx = TABS.indexOf(tab);
+    if (idx >= 0 && pagerRef.current && pagerWidth > 0) {
+      pagerRef.current.scrollTo({ x: idx * pagerWidth, animated: true });
+    }
+  };
+
+  const syncTabFromOffset = (offsetX: number) => {
+    if (pagerWidth <= 0) return;
+    const idx = Math.max(0, Math.min(TABS.length - 1, Math.round(offsetX / pagerWidth)));
+    const nextTab = TABS[idx];
+    if (nextTab && nextTab !== activeTab) {
+      const hist = tabHistoryRef.current;
+      if (hist[hist.length - 1] !== nextTab) {
+        tabHistoryRef.current = [...hist.slice(-9), nextTab];
+      }
+      setActiveTab(nextTab);
+    }
+  };
+
+  // Active Chat Screen (Full-Screen overlay with smooth entrance animation)
   if (activeChatCharacter) {
     return (
-      <View style={styles.webFrame}>
-        <View style={styles.appContainer}>
+      <SafeAreaProvider>
+      <View style={[styles.webFrame, { backgroundColor: webFrameBg }]}>
+        <Animated.View
+          style={[
+            styles.appContainer,
+            {
+              backgroundColor: themeBg,
+              opacity: chatRoomEnterAnim,
+              transform: [
+                {
+                  translateX: chatRoomEnterAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [28, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
           <StatusBar style="light" />
           <ChatRoomScreen
             character={activeChatCharacter}
@@ -147,67 +291,109 @@ export default function App() {
             personas={personas}
             onSelectPersona={setActivePersona}
             config={config}
+            initialConversationId={activeConversationId || undefined}
             onBack={async () => {
               setActiveChatCharacter(null);
+              setActiveConversationId(null);
               // Refresh active chat characters on return
               const updated = await storageService.getCharacters();
               setCharacters(updated);
             }}
           />
-        </View>
+        </Animated.View>
       </View>
+      </SafeAreaProvider>
     );
   }
 
   return (
-    <View style={styles.webFrame}>
-      <View style={styles.appContainer}>
+    <SafeAreaProvider>
+    <View style={[styles.webFrame, { backgroundColor: webFrameBg }]}>
+      <SafeAreaView
+        edges={['top', 'left', 'right']}
+        style={[styles.appContainer, { backgroundColor: themeBg }]}
+      >
         <StatusBar style="light" />
 
-        {/* Screen Render based on activeTab */}
-        <View style={styles.screenArea}>
-          {activeTab === 'chats' && (
-            <ChatsScreen
-              characters={characters}
-              trendingCharacters={trendingCharacters}
-              userPersona={activePersona}
-              onSelectCharacter={handleStartChat}
-              onToggleFavorite={handleToggleFavorite}
-              onNavigateDiscover={() => setActiveTab('discover')}
-              onNavigateStudio={() => setActiveTab('studio')}
-            />
-          )}
+        {/* Horizontal Swipeable Pager across Chats, Discover, Studio, Settings */}
+        <View
+          style={styles.screenArea}
+          onLayout={e => {
+            const w = e.nativeEvent.layout.width;
+            if (w > 0 && Math.abs(w - pagerWidth) > 1) {
+              setPagerWidth(w);
+              const idx = TABS.indexOf(activeTab);
+              setTimeout(() => {
+                pagerRef.current?.scrollTo({ x: idx * w, animated: false });
+              }, 0);
+            }
+          }}
+        >
+          <ScrollView
+            ref={pagerRef}
+            horizontal
+            pagingEnabled
+            scrollEnabled={!(activeTab === 'discover' && isDiscoverMatchMode)}
+            showsHorizontalScrollIndicator={false}
+            bounces={false}
+            nestedScrollEnabled
+            scrollEventThrottle={16}
+            onMomentumScrollEnd={e => syncTabFromOffset(e.nativeEvent.contentOffset.x)}
+            onScroll={e => {
+              const x = e.nativeEvent.contentOffset.x;
+              if (scrollSettleTimer.current) clearTimeout(scrollSettleTimer.current);
+              scrollSettleTimer.current = setTimeout(() => {
+                syncTabFromOffset(x);
+              }, 90);
+            }}
+            style={{ flex: 1 }}
+          >
+            <View style={{ width: pagerWidth, height: '100%' }}>
+              <ChatsScreen
+                characters={characters}
+                trendingCharacters={trendingCharacters}
+                userPersona={activePersona}
+                onSelectCharacter={handleStartChat}
+                onToggleFavorite={handleToggleFavorite}
+                onNavigateDiscover={() => handleTabChange('discover')}
+                onNavigateStudio={() => handleTabChange('studio')}
+              />
+            </View>
 
-          {activeTab === 'discover' && (
-            <DiscoverScreen
-              characters={characters}
-              onStartChat={handleStartChat}
-              onToggleFavorite={handleToggleFavorite}
-            />
-          )}
+            <View style={{ width: pagerWidth, height: '100%' }}>
+              <DiscoverScreen
+                characters={characters}
+                activePersona={activePersona}
+                onStartChat={handleStartChat}
+                onToggleFavorite={handleToggleFavorite}
+                onMatchModeChange={setIsDiscoverMatchMode}
+              />
+            </View>
 
-          {activeTab === 'studio' && (
-            <UserStudioScreen
-              onStartChat={handleStartChat}
-              activePersona={activePersona}
-              onUpdateActivePersona={setActivePersona}
-            />
-          )}
+            <View style={{ width: pagerWidth, height: '100%' }}>
+              <UserStudioScreen
+                onStartChat={handleStartChat}
+                activePersona={activePersona}
+                onUpdateActivePersona={setActivePersona}
+              />
+            </View>
 
-          {activeTab === 'settings' && (
-            <SettingsScreen
-              config={config}
-              onUpdateConfig={setConfig}
-              settings={settings}
-              onUpdateSettings={setSettings}
-            />
-          )}
+            <View style={{ width: pagerWidth, height: '100%' }}>
+              <SettingsScreen
+                config={config}
+                onUpdateConfig={setConfig}
+                settings={settings}
+                onUpdateSettings={setSettings}
+              />
+            </View>
+          </ScrollView>
         </View>
 
         {/* Minimalist Floating Capsule Dock (Warden AI Monochrome Style) */}
-        <CapsuleDock activeTab={activeTab} onTabChange={setActiveTab} />
-      </View>
+        <CapsuleDock activeTab={activeTab} onTabChange={handleTabChange} />
+      </SafeAreaView>
     </View>
+    </SafeAreaProvider>
   );
 }
 
@@ -221,7 +407,7 @@ const styles = StyleSheet.create({
   appContainer: {
     flex: 1,
     width: '100%',
-    maxWidth: 480, // Clamps perfectly to mobile smartphone frame on Edge/Firefox
+    maxWidth: 1080, // Responsive container: fluidly expands to tablets, foldables, and desktop Edge browsers
     backgroundColor: '#0c0e14',
     position: 'relative',
     overflow: 'hidden',

@@ -129,6 +129,33 @@ class DatacatService {
     return res;
   }
 
+  sortMappedCharacters(characters, sortMode) {
+    if (sortMode === 'popular') {
+      characters.sort((a, b) => {
+        const scoreA = (a.chatCount || 0) * 3 + (a.messageCount || 0) + (a.favoritesCount || 0) * 5;
+        const scoreB = (b.chatCount || 0) * 3 + (b.messageCount || 0) + (b.favoritesCount || 0) * 5;
+        return scoreB - scoreA;
+      });
+    } else if (sortMode === 'trending') {
+      const now = Date.now();
+      characters.sort((a, b) => {
+        const timeA = new Date(a.firstPublishedAt || a.createdAt || now).getTime();
+        const timeB = new Date(b.firstPublishedAt || b.createdAt || now).getTime();
+        const hoursA = Math.max(1, (now - timeA) / 3600000);
+        const hoursB = Math.max(1, (now - timeB) / 3600000);
+        const engagementA = (a.chatCount || 0) * 2 + (a.favoritesCount || 0) * 6 + (a.messageCount || 0) * 0.5 + 15;
+        const engagementB = (b.chatCount || 0) * 2 + (b.favoritesCount || 0) * 6 + (b.messageCount || 0) * 0.5 + 15;
+        return engagementB / Math.pow(hoursB + 2, 0.6) - engagementA / Math.pow(hoursA + 2, 0.6);
+      });
+    } else {
+      characters.sort((a, b) => {
+        const timeA = new Date(a.firstPublishedAt || a.createdAt || 0).getTime();
+        const timeB = new Date(b.firstPublishedAt || b.createdAt || 0).getTime();
+        return timeB - timeA;
+      });
+    }
+  }
+
   async getCharacters(params) {
     const {
       search = '',
@@ -148,8 +175,13 @@ class DatacatService {
       return cached.data;
     }
 
+    const fetchLimit =
+      sort === 'popular' || sort === 'trending'
+        ? Math.min(60, Math.max(limit * 2, 48))
+        : limit;
+
     const q = new URLSearchParams();
-    q.set('limit', String(limit));
+    q.set('limit', String(fetchLimit));
     q.set('offset', String(offset));
     q.set('summary', '1');
     q.set('skipCount', '1');
@@ -157,15 +189,9 @@ class DatacatService {
     if (search.trim()) q.set('search', search.trim());
     if (tagIds.trim()) q.set('tagIds', tagIds.trim());
     if (creators.trim()) q.set('creators', creators.trim());
-    if (sfwOnly) q.set('sfwOnly', '1');
 
-    const sortEndpoints = {
-      popular: '/api/characters/popular-public',
-      trending: '/api/characters/trending-public',
-      latest: '/api/characters/recent-public',
-      recent: '/api/characters/recent-public',
-    };
-    const endpoint = (sortEndpoints[sort] || '/api/characters/recent-public') + `?${q.toString()}`;
+    // Always use /api/characters/recent-public (Datacat unified catalog feed)
+    const endpoint = `/api/characters/recent-public?${q.toString()}`;
 
     const res = await this.request(endpoint);
     if (!res.ok) {
@@ -174,7 +200,7 @@ class DatacatService {
 
     const json = await res.json();
     const rawList = json.characters || json.data || [];
-    const characters = rawList.map((item, idx) => {
+    let characters = rawList.map((item, idx) => {
       const avatarCandidate =
         item.avatarVariantUrls?.card ||
         item.avatarVariantUrls?.hero ||
@@ -189,7 +215,7 @@ class DatacatService {
         id: String(item.characterId || item.id || `char-${idx}`),
         characterId: String(item.characterId || item.id || `char-${idx}`),
         name: item.name || 'Unnamed Character',
-        chatName: item.name || '',
+        chatName: item.chat_name || item.chatName || item.name || '',
         creatorName: cleanCreatorString(item.creator_name || item.creatorName),
         creatorId: item.creator_id || item.creatorId,
         avatarUrl,
@@ -210,8 +236,15 @@ class DatacatService {
       };
     });
 
+    if (sfwOnly) {
+      characters = characters.filter(c => !c.isNsfw);
+    }
+
+    this.sortMappedCharacters(characters, sort);
+    const sliced = characters.slice(0, limit);
+
     const result = {
-      characters,
+      characters: sliced,
       totalCount: Number(json.totalCount || json.count || 214520),
       hasMore: characters.length >= limit,
     };
@@ -281,6 +314,53 @@ class DatacatService {
     this.detailCache.set(id, { data: detailObj, expiresAt: now + 10 * 60 * 1000 });
     return detailObj;
   }
+
+  async getCreatorProfile(creatorId) {
+    const now = Date.now();
+    const cacheKey = `creator:${creatorId}`;
+    const cached = this.detailCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return cached.data;
+    }
+
+    const res = await this.request(`/api/creators/${encodeURIComponent(creatorId)}`);
+    if (!res.ok) {
+      throw new Error(`Creator fetch failed (${res.status})`);
+    }
+
+    const json = await res.json();
+    const c = json.creator || json;
+    const avatarCandidate =
+      c.avatarVariantUrls?.hero ||
+      c.avatarVariantUrls?.card ||
+      c.avatarDisplayUrl ||
+      c.avatar;
+    const avatarUrl = getHighResImageUrl(avatarCandidate);
+
+    const aboutMeHtml =
+      c.creatorProfileAboutOverrideHtml ||
+      c.aboutMeHtml ||
+      c.profileText ||
+      '';
+
+    const profileObj = {
+      creatorId: c.creatorId || creatorId,
+      userName: cleanCreatorString(c.userName || c.creatorOwnerUsername || 'Creator'),
+      avatarUrl,
+      aboutMeHtml,
+      followersCount: Number(c.followersCount || 0),
+      charCount: Number(c.charCount || 0),
+      totalChats: Number(c.totalChats || 0),
+      totalMessages: Number(c.totalMessages || 0),
+      profileCreatedAt: c.profileCreatedAt || null,
+      profileUrl: c.profileUrl || '',
+      creatorVerified: Boolean(c.creatorVerified),
+      topTags: Array.isArray(c.topTags) ? c.topTags : [],
+    };
+
+    this.detailCache.set(cacheKey, { data: profileObj, expiresAt: now + 10 * 60 * 1000 });
+    return profileObj;
+  }
 }
 
 const datacatService = new DatacatService();
@@ -288,8 +368,9 @@ const datacatService = new DatacatService();
 const server = http.createServer(async (req, res) => {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
 
   if (req.method === 'OPTIONS') {
     res.statusCode = 204;
@@ -312,6 +393,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const search = parsedUrl.searchParams.get('search') || '';
       const tagIds = parsedUrl.searchParams.get('tagIds') || '';
+      const creators = parsedUrl.searchParams.get('creators') || '';
       const limit = parseInt(parsedUrl.searchParams.get('limit') || '12', 10);
       const offset = parseInt(parsedUrl.searchParams.get('offset') || '0', 10);
       const sort = parsedUrl.searchParams.get('sort') || 'recent';
@@ -320,6 +402,7 @@ const server = http.createServer(async (req, res) => {
       const result = await datacatService.getCharacters({
         search,
         tagIds,
+        creators,
         limit,
         offset,
         sort,
@@ -353,6 +436,75 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  const creatorMatch = pathname.match(/^\/api\/community\/creators\/([^/]+)$/);
+  if (creatorMatch) {
+    try {
+      const creatorId = decodeURIComponent(creatorMatch[1]);
+      const creator = await datacatService.getCreatorProfile(creatorId);
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ success: true, creator }));
+    } catch (err) {
+      console.error('[DatacatProxy] Creator Detail Error:', err);
+      res.statusCode = 502;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ success: false, error: err.message }));
+    }
+    return;
+  }
+
+  // Transparent CORS relay for custom LLM endpoints on web builds
+  if (pathname === '/llm-proxy') {
+    const targetUrl = req.headers['x-target-url'];
+    if (!targetUrl) {
+      res.statusCode = 400;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: 'Missing x-target-url header' }));
+      return;
+    }
+
+    try {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      const bodyBuffer = Buffer.concat(chunks);
+
+      const forwardHeaders = {};
+      for (const [k, v] of Object.entries(req.headers)) {
+        const lower = k.toLowerCase();
+        if (['host', 'origin', 'referer', 'x-target-url', 'connection', 'content-length'].includes(lower)) continue;
+        if (v !== undefined) forwardHeaders[k] = v;
+      }
+
+      const upstream = await fetch(String(targetUrl), {
+        method: req.method || 'POST',
+        headers: forwardHeaders,
+        body: req.method === 'GET' || req.method === 'HEAD' ? undefined : bodyBuffer,
+      });
+
+      res.statusCode = upstream.status;
+      const ct = upstream.headers.get('content-type') || 'application/json';
+      res.setHeader('Content-Type', ct);
+
+      if (upstream.body && typeof upstream.body.getReader === 'function') {
+        const reader = upstream.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(Buffer.from(value));
+        }
+        res.end();
+      } else {
+        const text = await upstream.text();
+        res.end(text);
+      }
+    } catch (err) {
+      console.error('[DatacatProxy] LLM Proxy Error:', err);
+      res.statusCode = 502;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: err.message || 'Upstream LLM proxy failed' }));
+    }
+    return;
+  }
+
   res.statusCode = 404;
   res.setHeader('Content-Type', 'application/json');
   res.end(JSON.stringify({ success: false, error: 'Not found' }));
@@ -361,3 +513,4 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`[DatacatProxy] NekoChat Community Proxy running at http://localhost:${PORT}`);
 });
+

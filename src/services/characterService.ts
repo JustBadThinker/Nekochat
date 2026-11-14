@@ -44,24 +44,24 @@ export const characterService = {
   },
 
   /**
-   * Retrieves top 5 trending anime companions for the top story tray.
-   * If user has active chats, prioritizes them; otherwise fetches real live trending cards from Chub.
+   * Retrieves real live trending 24h anime companions from community catalog (Datacat / Chub).
    */
-  async getTrending24h(characters: Character[]): Promise<Character[]> {
-    if (characters.length >= 3) {
-      return [...characters]
-        .sort((a, b) => (b.totalChats || 0) - (a.totalChats || 0))
-        .slice(0, 5);
-    }
-
+  async getTrending24h(): Promise<Character[]> {
     try {
-      const liveChub = await communityCatalogService.fetchChubCharacters({
+      // 1. Try real Datacat / JanitorAI trending first
+      const datacatRes = await communityCatalogService.fetchDatacatCharacters({
         sort: 'trending',
-        limit: 5,
+        limit: 8,
       });
-      if (liveChub.characters.length > 0) {
-        return liveChub.characters.map((c): Character => ({
-          id: c.id,
+
+      const candidates =
+        datacatRes.characters && datacatRes.characters.length > 0
+          ? datacatRes.characters
+          : (await communityCatalogService.fetchChubCharacters({ sort: 'trending', limit: 8 })).characters;
+
+      if (candidates && candidates.length > 0) {
+        return candidates.slice(0, 8).map((c): Character => ({
+          id: c.id || c.characterId,
           name: c.name,
           tagline: c.chatName || c.name,
           description: c.shortDescription,
@@ -69,15 +69,17 @@ export const characterService = {
           personality: c.personality || '',
           scenario: c.scenario || '',
           firstMessage: c.firstMessage || '',
-          tags: c.tags.map(t => t.name),
+          tags: Array.isArray(c.tags) ? c.tags.map(t => (typeof t === 'string' ? t : t.name)) : [],
           creator: c.creatorName,
-          totalChats: c.chatCount,
+          totalChats: c.chatCount || 0,
           lastActive: Date.now(),
           isFavorite: false,
         }));
       }
-    } catch {}
+    } catch (err) {
+      console.warn('[CharacterService] Failed to load live trending:', err);
+    }
 
-    return characters.slice(0, 5);
+    return [];
   },
 };
