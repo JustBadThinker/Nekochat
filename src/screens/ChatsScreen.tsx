@@ -22,15 +22,11 @@ import {
   MessageSquare,
   Compass,
   Plus,
-  Sparkles,
   Trash2,
   X,
-  Play,
   Layers,
-  ChevronRight,
 } from 'lucide-react-native';
 import { Character, Persona, Conversation } from '../types';
-import { colors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 import { NekoLogoSvg } from '../components/NekoLogoSvg';
 import { StoryTray } from '../components/StoryTray';
@@ -76,7 +72,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
   useEffect(() => {
     loadAllConversations();
     loadTrayFeed();
-  }, [userPersona]);
+  }, [userPersona, characters]);
 
   const loadTrayFeed = async () => {
     // 1. Always fetch genuine community 24h trending companions
@@ -90,7 +86,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
     // 2. Query algorithmic recommendation engine: if affinity pattern detected (>= 50%), compute Top 3 For You
     try {
       const topMatches = await matchAlgorithmService.getLearnedRecommendations(3, userPersona || undefined);
-      if (topMatches && topMatches.length >= 3) {
+      if (topMatches && topMatches.length > 0) {
         setRecommendations(
           topMatches.map(c => ({
             id: c.id || c.characterId,
@@ -145,17 +141,21 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
     return map;
   }, [conversations]);
 
-  // Compute character list with real session counts and timestamps
+  // Compute character list with real session counts and timestamps, sorted by most recent chat
   const groupedCharacters = useMemo(() => {
-    return characters.map(char => {
-      const charSessions = sessionsByCharId.get(char.id) || [];
-      const latestConv = charSessions[0];
-      return {
-        ...char,
-        totalChats: charSessions.length,
-        lastActive: latestConv ? new Date(latestConv.updatedAt).getTime() : char.lastActive,
-      };
-    });
+    return characters
+      .map(char => {
+        const charSessions = sessionsByCharId.get(char.id) || [];
+        const latestConv = charSessions[0];
+        const convTime = latestConv ? new Date(latestConv.updatedAt).getTime() : 0;
+        const updatedTime = char.updatedAt ? new Date(char.updatedAt).getTime() : 0;
+        return {
+          ...char,
+          totalChats: charSessions.length,
+          lastActive: Math.max(convTime, updatedTime, char.lastActive || 0),
+        };
+      })
+      .sort((a, b) => (b.lastActive || 0) - (a.lastActive || 0));
   }, [characters, sessionsByCharId]);
 
   const handleCardPress = (char: Character) => {
@@ -320,10 +320,21 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
 
                 {/* + Start New Scenario / Chat CTA */}
                 <TouchableOpacity
-                  style={styles.newGroupChatBtn}
-                  onPress={() => {
+                  style={[styles.newGroupChatBtn, { backgroundColor: palette.accent }]}
+                  onPress={async () => {
+                    const targetChar = selectedGroupChar;
                     setSessionsSheetVisible(false);
-                    onSelectCharacter(selectedGroupChar);
+                    try {
+                      const newConv = await storageService.createConversation(
+                        targetChar,
+                        userPersona?.id || 'persona_default',
+                        'prov_gemini'
+                      );
+                      await loadAllConversations();
+                      onSelectCharacter(targetChar, undefined, newConv.id);
+                    } catch {
+                      onSelectCharacter(targetChar);
+                    }
                   }}
                   activeOpacity={0.85}
                 >
@@ -338,7 +349,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
                     <View style={styles.emptySessionsBox}>
                       <Text style={styles.emptySessionsTitle}>No previous sessions yet</Text>
                       <Text style={styles.emptySessionsSub}>
-                        Tap "+ Start New Scenario / Chat" above to begin your first roleplay with {selectedGroupChar.name}.
+                        Tap {'"+ Start New Scenario / Chat"'} above to begin your first roleplay with {selectedGroupChar.name}.
                       </Text>
                     </View>
                   ) : (

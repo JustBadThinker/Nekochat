@@ -220,7 +220,7 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
         {/* Progressive Blur / Gradient Scrim */}
         {Platform.OS !== 'web' && (
           <BlurView
-            intensity={22}
+            intensity={36}
             tint="dark"
             experimentalBlurMethod="dimezisBlurView"
             pointerEvents="none"
@@ -228,8 +228,8 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
           />
         )}
         <LinearGradient
-          colors={['transparent', 'rgba(15, 18, 29, 0.35)', 'rgba(15, 18, 29, 0.78)', palette.bgSurface]}
-          locations={[0, 0.35, 0.75, 1]}
+          colors={['transparent', 'rgba(15, 18, 29, 0.16)', 'rgba(15, 18, 29, 0.52)']}
+          locations={[0, 0.45, 1]}
           style={styles.bannerGradientScrim}
         />
       </View>

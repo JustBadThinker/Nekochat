@@ -3,15 +3,17 @@ import {
   View,
   Image,
   Text,
-  TouchableOpacity,
   StyleSheet,
   Animated,
   Easing,
+  PanResponder,
 } from 'react-native';
 
 const DESK_SPRITE_4X4 = require('../../assets/neko-desk-4x4.png');
+const NEKO_LIFTED_IMG = require('../../assets/neko-lifted.png');
+const NEKO_THROWN_IMG = require('../../assets/neko-thrown.png');
 
-type DeskAction = 'idle' | 'walk' | 'groom' | 'sleep' | 'curious' | 'waiting';
+type DeskAction = 'idle' | 'walk' | 'groom' | 'sleep' | 'curious' | 'waiting' | 'grabbed' | 'thrown';
 
 interface DeskNekoWalkerProps {
   containerWidth: number;
@@ -37,20 +39,132 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
   const [facing, setFacing] = useState<1 | -1>(1);
 
   const maxWalkX = Math.max(24, containerWidth - FRAME_SIZE - 24);
+  const maxWalkXRef = useRef(maxWalkX);
+  maxWalkXRef.current = maxWalkX;
+  const onPressRef = useRef(onPress);
+  onPressRef.current = onPress;
+
   const posX = useRef(new Animated.Value(28)).current;
   const currentXRef = useRef(28);
+  const currentYRef = useRef(0);
   const bounceY = useRef(new Animated.Value(0)).current;
   const walkAnimRef = useRef<Animated.CompositeAnimation | null>(null);
+  const throwRafRef = useRef<number | null>(null);
+  const isGrabbedRef = useRef(false);
+  const dragStartRef = useRef({ x: 28, y: 0 });
 
   useEffect(() => {
-    const id = posX.addListener(({ value }) => {
+    const idX = posX.addListener(({ value }) => {
       currentXRef.current = value;
     });
-    return () => posX.removeListener(id);
-  }, [posX]);
+    const idY = bounceY.addListener(({ value }) => {
+      currentYRef.current = value;
+    });
+    return () => {
+      posX.removeListener(idX);
+      bounceY.removeListener(idY);
+      if (throwRafRef.current !== null) cancelAnimationFrame(throwRafRef.current);
+    };
+  }, [posX, bounceY]);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        if (throwRafRef.current !== null) {
+          cancelAnimationFrame(throwRafRef.current);
+          throwRafRef.current = null;
+        }
+        walkAnimRef.current?.stop();
+        isGrabbedRef.current = true;
+        dragStartRef.current = { x: currentXRef.current, y: currentYRef.current };
+        setAction('grabbed');
+      },
+      onPanResponderMove: (_evt, gesture) => {
+        const minX = 8;
+        const maxX = maxWalkXRef.current;
+        const nextX = Math.max(minX, Math.min(maxX, dragStartRef.current.x + gesture.dx));
+        // Allow lifting above the input border (-110px..0px) so she always stays on/above the border
+        const nextY = Math.max(-110, Math.min(0, dragStartRef.current.y + gesture.dy));
+        if (Math.abs(gesture.dx) > 4) {
+          setFacing(gesture.dx >= 0 ? 1 : -1);
+        }
+        posX.setValue(nextX);
+        bounceY.setValue(nextY);
+      },
+      onPanResponderRelease: (_evt, gesture) => {
+        isGrabbedRef.current = false;
+        // Short tap without dragging -> open the mini-game card
+        if (Math.abs(gesture.dx) < 6 && Math.abs(gesture.dy) < 6) {
+          bounceY.setValue(0);
+          setAction('idle');
+          onPressRef.current();
+          return;
+        }
+
+        // Throw physics: velocity + gravity + edge bounce, landing intact on top border (y = 0)
+        setAction('thrown');
+        let x = currentXRef.current;
+        let y = currentYRef.current;
+        let vx = Math.max(-16, Math.min(16, gesture.vx * 14));
+        let vy = Math.max(-14, Math.min(10, gesture.vy * 14));
+        const gravity = 0.85;
+        const minX = 8;
+        const maxX = maxWalkXRef.current;
+
+        const step = () => {
+          vx *= 0.975;
+          vy += gravity;
+          x += vx;
+          y += vy;
+
+          if (x <= minX) {
+            x = minX;
+            vx = Math.abs(vx) * 0.6;
+            setFacing(1);
+          } else if (x >= maxX) {
+            x = maxX;
+            vx = -Math.abs(vx) * 0.6;
+            setFacing(-1);
+          }
+
+          if (y >= 0) {
+            y = 0;
+            if (Math.abs(vy) > 3.2) {
+              vy = -vy * 0.35;
+              vx *= 0.72;
+            } else {
+              posX.setValue(x);
+              bounceY.setValue(0);
+              throwRafRef.current = null;
+              setAction('idle');
+              return;
+            }
+          }
+
+          posX.setValue(x);
+          bounceY.setValue(y);
+          throwRafRef.current = requestAnimationFrame(step);
+        };
+
+        throwRafRef.current = requestAnimationFrame(step);
+      },
+      onPanResponderTerminate: () => {
+        isGrabbedRef.current = false;
+        Animated.spring(bounceY, {
+          toValue: 0,
+          friction: 5,
+          tension: 160,
+          useNativeDriver: true,
+        }).start(() => setAction('idle'));
+      },
+    })
+  ).current;
 
   // React to user typing or AI waiting
   useEffect(() => {
+    if (isGrabbedRef.current) return;
     if (isTypingUser) {
       walkAnimRef.current?.stop();
       setAction('curious');
@@ -73,7 +187,7 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
 
   // Autonomous behavior loop when neither typing nor waiting
   useEffect(() => {
-    if (action === 'curious' || action === 'waiting') return;
+    if (action === 'curious' || action === 'waiting' || action === 'grabbed' || action === 'thrown') return;
 
     const pickNextBehavior = () => {
       const r = Math.random();
@@ -145,6 +259,10 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
       return;
     }
 
+    if (action === 'grabbed' || action === 'thrown') {
+      return;
+    }
+
     if (action === 'waiting') {
       setFrame({ row: 0, col: 3 });
       const iv = setInterval(() => {
@@ -172,20 +290,21 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
   return (
     <View style={styles.rail} pointerEvents="box-none">
       <Animated.View
+        {...panResponder.panHandlers}
         style={[
           styles.petAnchor,
           {
             transform: [
               { translateX: posX },
               { translateY: bounceY },
+              { rotate: action === 'grabbed' ? '-8deg' : '0deg' },
+              { scale: action === 'grabbed' ? 1.08 : 1 },
             ],
           },
         ]}
       >
-        <TouchableOpacity
-          onPress={onPress}
-          activeOpacity={0.85}
-          accessibilityLabel="Open Neko Fidget Game"
+        <View
+          accessibilityLabel="Drag to lift/throw Neko or tap to open game"
           style={styles.touchTarget}
         >
           {isAiWaiting && (
@@ -196,23 +315,37 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
           <View
             style={[
               styles.spriteViewport,
-              { transform: [{ scaleX: facing }] },
+              { transform: [{ scaleX: action === 'grabbed' ? 1 : facing }] },
             ]}
           >
-            <Image
-              source={DESK_SPRITE_4X4}
-              style={{
-                width: FRAME_SIZE * 4,
-                height: FRAME_SIZE * 4,
-                transform: [
-                  { translateX: -frame.col * FRAME_SIZE },
-                  { translateY: -frame.row * FRAME_SIZE },
-                ],
-              }}
-              resizeMode="stretch"
-            />
+            {action === 'grabbed' ? (
+              <Image
+                source={NEKO_LIFTED_IMG}
+                style={{ width: FRAME_SIZE, height: FRAME_SIZE }}
+                resizeMode="contain"
+              />
+            ) : action === 'thrown' ? (
+              <Image
+                source={NEKO_THROWN_IMG}
+                style={{ width: FRAME_SIZE, height: FRAME_SIZE }}
+                resizeMode="contain"
+              />
+            ) : (
+              <Image
+                source={DESK_SPRITE_4X4}
+                style={{
+                  width: FRAME_SIZE * 4,
+                  height: FRAME_SIZE * 4,
+                  transform: [
+                    { translateX: -frame.col * FRAME_SIZE },
+                    { translateY: -frame.row * FRAME_SIZE },
+                  ],
+                }}
+                resizeMode="stretch"
+              />
+            )}
           </View>
-        </TouchableOpacity>
+        </View>
       </Animated.View>
     </View>
   );

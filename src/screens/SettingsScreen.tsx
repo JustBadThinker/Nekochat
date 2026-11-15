@@ -1048,7 +1048,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   >
                     <View style={{ flex: 1 }}>
                       <Text style={styles.toggleTitle}>Dialogue Only</Text>
-                      <Text style={styles.toggleDesc}>Reads spoken quotes "..." and skips asterisk actions *...*</Text>
+                      <Text style={styles.toggleDesc}>Reads spoken quotes {'"..."'} and skips asterisk actions *...*</Text>
                     </View>
                     <View style={[styles.toggleSwitch, ttsConfig.dialogueOnly && styles.toggleSwitchActive]}>
                       <View style={[styles.toggleThumb, ttsConfig.dialogueOnly && styles.toggleThumbActive]} />
@@ -1549,7 +1549,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               >
                 <View style={{ flex: 1 }}>
                   <Text style={styles.toggleTitle}>Dialogue Only</Text>
-                  <Text style={styles.toggleDesc}>Reads spoken quotes "..." and skips asterisk actions *...*</Text>
+                  <Text style={styles.toggleDesc}>Reads spoken quotes {'"..."'} and skips asterisk actions *...*</Text>
                 </View>
                 <View style={[styles.toggleSwitch, ttsConfig.dialogueOnly && styles.toggleSwitchActive]}>
                   <View style={[styles.toggleThumb, ttsConfig.dialogueOnly && styles.toggleThumbActive]} />

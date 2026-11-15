@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
+  Image,
   TouchableOpacity,
   StyleSheet,
   Animated,
@@ -11,6 +12,16 @@ import {
 import { Brain, ChevronDown, PawPrint, RotateCcw, X } from 'lucide-react-native';
 import { GLASS } from '../theme/glassTheme';
 import { NekoPetSprite, NekoMood } from './NekoPetSprite';
+
+const DINO_SPRITE_4X4 = require('../../assets/neko-desk-4x4.png');
+const NEKO_JUMP_IMG = require('../../assets/neko-jump.png');
+const NEKO_BONK_IMG = require('../../assets/neko-bonk.png');
+const OBS_IMAGES = [
+  require('../../assets/obs-cactus.png'),
+  require('../../assets/obs-cucumber.png'),
+  require('../../assets/obs-yarn.png'),
+];
+const DINO_SPRITE_SIZE = 34;
 
 interface InlineWaitFidgetProps {
   charName: string;
@@ -53,10 +64,35 @@ export const InlineWaitFidget: React.FC<InlineWaitFidgetProps> = ({
   onClose,
 }) => {
   const [showThought, setShowThought] = useState(false);
+  const [gameMode, setGameMode] = useState<'dino' | 'catch'>('dino');
   const [hitLabel, setHitLabel] = useState<string | null>(null);
   const [nekoMood, setNekoMood] = useState<NekoMood>('idle');
   const [targetWidth, setTargetWidth] = useState<number>(() => calcTargetWidth(streak));
   const [targetLeft, setTargetLeft] = useState<number>(() => randomTargetLeft(calcTargetWidth(streak)));
+
+  // Chrome-Dino Neko Runner state
+  const [dinoTrackWidth, setDinoTrackWidth] = useState(220);
+  const [dinoFrameCol, setDinoFrameCol] = useState(0);
+  const [dinoJumping, setDinoJumping] = useState(false);
+  const [dinoGameOver, setDinoGameOver] = useState(false);
+  const [dinoRunScore, setDinoRunScore] = useState(0);
+  const [dinoObstacleIdx, setDinoObstacleIdx] = useState(0);
+  const dinoYAnim = useRef(new Animated.Value(0)).current;
+  const dinoObsXAnim = useRef(new Animated.Value(220)).current;
+  const dinoStateRef = useRef({
+    y: 0,
+    vy: 0,
+    obsX: 220,
+    runScore: 0,
+    gameOver: false,
+    started: false,
+  });
+  const scoreRef = useRef({ score, streak });
+  scoreRef.current = { score, streak };
+  const onScoreChangeRef = useRef(onScoreChange);
+  onScoreChangeRef.current = onScoreChange;
+  const dinoTrackWidthRef = useRef(dinoTrackWidth);
+  dinoTrackWidthRef.current = dinoTrackWidth;
 
   const pulseAnim = useRef(new Animated.Value(0.45)).current;
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -84,6 +120,91 @@ export const InlineWaitFidget: React.FC<InlineWaitFidgetProps> = ({
       }),
     ]).start();
   }, [slideAnim, enterOpacity]);
+
+  const handleDinoTap = () => {
+    const st = dinoStateRef.current;
+    if (st.gameOver) {
+      st.gameOver = false;
+      st.y = 0;
+      st.vy = -7.2;
+      st.obsX = Math.max(180, dinoTrackWidthRef.current + 20);
+      st.runScore = 0;
+      st.started = true;
+      dinoYAnim.setValue(0);
+      dinoObsXAnim.setValue(st.obsX);
+      setDinoGameOver(false);
+      setDinoJumping(true);
+      setDinoRunScore(0);
+      setNekoMood('happy');
+      return;
+    }
+    if (!st.started) {
+      st.started = true;
+    }
+    if (st.y >= -1) {
+      st.vy = -7.2;
+      setDinoJumping(true);
+      setNekoMood('happy');
+    }
+  };
+
+  // Chrome-Dino 60fps runner loop
+  useEffect(() => {
+    if (gameMode !== 'dino') return;
+    let rafId: number;
+    let tickCount = 0;
+
+    const loop = () => {
+      const st = dinoStateRef.current;
+      tickCount += 1;
+      if (tickCount % 6 === 0 && !st.gameOver) {
+        setDinoFrameCol(prev => (prev + 1) % 4);
+      }
+
+      if (!st.gameOver && st.started) {
+        // Jump physics (tuned so peak ~42px stays cleanly inside 76px track)
+        if (st.y < 0 || st.vy < 0) {
+          st.vy += 0.62;
+          st.y += st.vy;
+          if (st.y >= 0) {
+            st.y = 0;
+            st.vy = 0;
+            setDinoJumping(false);
+          }
+          dinoYAnim.setValue(st.y);
+        }
+
+        // Obstacle scroll
+        const speed = 3.2 + Math.min(3.8, st.runScore * 0.12);
+        st.obsX -= speed;
+        if (st.obsX < -24) {
+          st.obsX = Math.max(180, dinoTrackWidthRef.current + 20 + Math.random() * 60);
+          st.runScore += 1;
+          setDinoRunScore(st.runScore);
+          setDinoObstacleIdx(st.runScore % OBS_IMAGES.length);
+          onScoreChangeRef.current(scoreRef.current.score + 1, scoreRef.current.streak + 1);
+        }
+        dinoObsXAnim.setValue(st.obsX);
+
+        // Forgiving collision check (neko sits at x: 16..42, obstacle at obsX..obsX+18)
+        const nekoLeft = 18;
+        const nekoRight = 38;
+        const obsLeft = st.obsX + 3;
+        const obsRight = st.obsX + 19;
+        if (obsRight > nekoLeft && obsLeft < nekoRight && st.y > -17) {
+          st.gameOver = true;
+          setDinoGameOver(true);
+          setDinoJumping(false);
+          setNekoMood('idle');
+        }
+      }
+
+      rafId = requestAnimationFrame(loop);
+    };
+
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
+  }, [gameMode, dinoYAnim, dinoObsXAnim]);
 
   const handleAnimatedClose = () => {
     Animated.parallel([
@@ -264,7 +385,7 @@ export const InlineWaitFidget: React.FC<InlineWaitFidgetProps> = ({
             </View>
           )}
 
-          {(isWaiting || Boolean(liveThought && liveThought.trim())) && (
+          {(isWaiting || isTypingReply) && (
             <TouchableOpacity
               style={[styles.thoughtToggleBtn, showThought && styles.thoughtToggleBtnActive]}
               onPress={() => setShowThought(prev => !prev)}
@@ -281,6 +402,16 @@ export const InlineWaitFidget: React.FC<InlineWaitFidgetProps> = ({
               />
             </TouchableOpacity>
           )}
+
+          <TouchableOpacity
+            style={styles.modeTogglePill}
+            onPress={() => setGameMode(prev => (prev === 'dino' ? 'catch' : 'dino'))}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.modeToggleText}>
+              {gameMode === 'dino' ? '🦖 Dash' : '⚡ Catch'}
+            </Text>
+          </TouchableOpacity>
 
           {score > 0 && (
             <TouchableOpacity
@@ -312,7 +443,7 @@ export const InlineWaitFidget: React.FC<InlineWaitFidgetProps> = ({
       </View>
 
       {/* Collapsible Thinking Process Window */}
-      {showThought && (
+      {(isWaiting || isTypingReply) && showThought && (
         <View style={styles.thoughtWindow}>
           <ScrollView style={{ maxHeight: 88 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
             <Text style={styles.thoughtWindowText}>
@@ -324,7 +455,87 @@ export const InlineWaitFidget: React.FC<InlineWaitFidgetProps> = ({
         </View>
       )}
 
-      {/* Main Pet + Timing Bar Row */}
+      {/* Main Pet + Game Row */}
+      {gameMode === 'dino' ? (
+        <TouchableOpacity
+          style={styles.dinoArena}
+          onPress={handleDinoTap}
+          activeOpacity={0.9}
+          onLayout={e => {
+            const w = e.nativeEvent.layout.width;
+            if (w > 40) setDinoTrackWidth(w);
+          }}
+        >
+          <View style={styles.dinoTopHud}>
+            <Text style={styles.fidgetTitle}>
+              {dinoGameOver
+                ? 'Bonk! Tap to jump again'
+                : dinoStateRef.current.started
+                ? 'Tap anywhere to jump!'
+                : 'Tap to start Neko Dash!'}
+            </Text>
+            <Text style={styles.dinoRunBadge}>Run {dinoRunScore}</Text>
+          </View>
+
+          <View style={styles.dinoGroundTrack}>
+            <Animated.View
+              style={[
+                styles.dinoRunnerWrap,
+                {
+                  transform: [
+                    { translateY: dinoYAnim },
+                    { rotate: dinoJumping && !dinoGameOver ? '-6deg' : '0deg' },
+                  ],
+                },
+              ]}
+            >
+              <View style={styles.dinoSpriteViewport}>
+                {dinoGameOver ? (
+                  <Image
+                    source={NEKO_BONK_IMG}
+                    style={{ width: DINO_SPRITE_SIZE, height: DINO_SPRITE_SIZE }}
+                    resizeMode="contain"
+                  />
+                ) : dinoJumping ? (
+                  <Image
+                    source={NEKO_JUMP_IMG}
+                    style={{ width: DINO_SPRITE_SIZE, height: DINO_SPRITE_SIZE }}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <Image
+                    source={DINO_SPRITE_4X4}
+                    style={{
+                      width: DINO_SPRITE_SIZE * 4,
+                      height: DINO_SPRITE_SIZE * 4,
+                      transform: [
+                        { translateX: -dinoFrameCol * DINO_SPRITE_SIZE },
+                        { translateY: -1 * DINO_SPRITE_SIZE },
+                      ],
+                    }}
+                    resizeMode="stretch"
+                  />
+                )}
+              </View>
+            </Animated.View>
+
+            <Animated.View
+              style={[
+                styles.dinoObstacle,
+                { transform: [{ translateX: dinoObsXAnim }] },
+              ]}
+            >
+              <Image
+                source={OBS_IMAGES[dinoObstacleIdx]}
+                style={styles.dinoObstacleImg}
+                resizeMode="contain"
+              />
+            </Animated.View>
+
+            <View style={styles.dinoGroundLine} />
+          </View>
+        </TouchableOpacity>
+      ) : (
       <View style={styles.petAndBarRow}>
         <NekoPetSprite mood={nekoMood} size={52} onPet={handlePetNeko} />
 
@@ -369,6 +580,7 @@ export const InlineWaitFidget: React.FC<InlineWaitFidgetProps> = ({
           </View>
         </TouchableOpacity>
       </View>
+      )}
     </Animated.View>
   );
 };
@@ -465,6 +677,71 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  modeTogglePill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.14)',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  modeToggleText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#e2e8f0',
+  },
+  dinoArena: {
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.10)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingTop: 6,
+    paddingBottom: 6,
+    overflow: 'hidden',
+  },
+  dinoTopHud: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  dinoRunBadge: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#d4ff00',
+  },
+  dinoGroundTrack: {
+    height: 76,
+    position: 'relative',
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+  },
+  dinoRunnerWrap: {
+    position: 'absolute',
+    left: 14,
+    bottom: 3,
+  },
+  dinoSpriteViewport: {
+    width: DINO_SPRITE_SIZE,
+    height: DINO_SPRITE_SIZE,
+    overflow: 'hidden',
+  },
+  dinoObstacle: {
+    position: 'absolute',
+    left: 0,
+    bottom: 3,
+  },
+  dinoObstacleImg: {
+    width: 26,
+    height: 26,
+  },
+  dinoGroundLine: {
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: 'rgba(212, 255, 0, 0.35)',
+    width: '100%',
   },
   fidgetBox: {
     flex: 1,

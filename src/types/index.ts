@@ -246,6 +246,8 @@ export interface ChatMessage {
   personaId?: string;
   personaName?: string;
   content: string;
+  swipes?: string[];
+  swipeIndex?: number;
   rawTemplate?: string;
   thought?: string;
   imageUrl?: string;

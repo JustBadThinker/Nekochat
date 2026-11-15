@@ -27,9 +27,12 @@ import {
   ActivityIndicator,
   Modal,
   Animated,
+  Switch,
+  Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SmoothSlider } from '../components/SmoothSlider';
 import { ModelDropdown } from '../components/ModelDropdown';
@@ -40,7 +43,6 @@ import {
   ArrowLeft,
   Send,
   Plus,
-  BookOpen,
   MessageCircle,
   Sparkles,
   X,
@@ -52,6 +54,8 @@ import {
   Trash2,
   Layers,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Play,
   RotateCw,
   Volume2,
@@ -59,7 +63,6 @@ import {
   Palette,
   Maximize2,
   Minimize2,
-  ChevronsRight,
   ImagePlus,
   MoreHorizontal,
   UserCheck,
@@ -67,9 +70,7 @@ import {
   Brain,
   Cpu,
   Coins,
-  UserPlus,
   Bookmark,
-  Zap,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { compressImageFile } from '../utils/imageUtils';
@@ -148,7 +149,22 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 
   // Refine / AI Writing Coach State
   const [isRefining, setIsRefining] = useState(false);
+  const [refineMode, setRefineMode] = useState<'refine' | 'write'>('refine');
   const [refinePreview, setRefinePreview] = useState<string | null>(null);
+
+  // Per-chat Custom Prompt / Rules & Header Menu & Scroll-to-Bottom FAB
+  const [customPrompt, setCustomPrompt] = useState('');
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const scrollBottomAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(scrollBottomAnim, {
+      toValue: showScrollBottom ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [showScrollBottom, scrollBottomAnim]);
 
   // TTS Speech State
   const [ttsState, setTtsState] = useState<TtsPlaybackState>(ttsService.getPlaybackState());
@@ -162,7 +178,6 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [imageError, setImageError] = useState<string | null>(null);
 
   // Chat Appearance & Wallpaper State
-  const [showAppearanceModal, setShowAppearanceModal] = useState(false);
   const [appearance, setAppearance] = useState<{
     enableWallpaper: boolean;
     wallpaperUrl: string;
@@ -184,12 +199,32 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [chatMemory, setChatMemory] = useState('');
   const [chatModel, setChatModel] = useState('');
   const [chatTemperature, setChatTemperature] = useState<number>(config?.temperature || 0.7);
+  const [chatMaxTokens, setChatMaxTokens] = useState<number>(config?.maxTokens || 1200);
+  const [promptPresets, setPromptPresets] = useState<{ id: string; name: string; prompt: string; updatedAt: number }[]>([]);
+  const [activePresetId, setActivePresetId] = useState<string | null>(null);
+  const [showNewPresetForm, setShowNewPresetForm] = useState(false);
+  const [newPresetName, setNewPresetName] = useState('');
+  const [newPresetBody, setNewPresetBody] = useState('');
+  const [settingsSubView, setSettingsSubView] = useState<'main' | 'generation' | 'custom_prompt' | 'new_custom_prompt' | 'prefill' | 'forbidden_words'>('main');
+  const [responseLength, setResponseLength] = useState<'standard' | 'shorter'>('standard');
+  const [prefillEnabled, setPrefillEnabled] = useState(false);
+  const [prefillText, setPrefillText] = useState('');
+  const [forbiddenWords, setForbiddenWords] = useState<string[]>([]);
+  const [forbiddenWordInput, setForbiddenWordInput] = useState('');
+  const [memoryReplacesOld, setMemoryReplacesOld] = useState(false);
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+  const [textStreamingEnabled, setTextStreamingEnabled] = useState(true);
+  const [chatFontSize, setChatFontSize] = useState(15);
+  const [expandedColorPicker, setExpandedColorPicker] = useState<'dialogue' | 'narration' | 'bold' | 'code' | null>(null);
+  const [activeImageProvider, setActiveImageProvider] = useState<string>('');
   const [fetchedChatModels, setFetchedChatModels] = useState<{ id: string; name: string }[]>([]);
   const [loadingChatModels, setLoadingChatModels] = useState(false);
   const [syntaxColors, setSyntaxColors] = useState({
     dialogue: '#FFFFFF',
     narration: '#94A3B8',
     thoughts: '#38BDF8',
+    bold: '#FFFFFF',
+    code: '#A78BFA',
   });
   const [memorySavedNotice, setMemorySavedNotice] = useState(false);
   const [isSummarizingMemory, setIsSummarizingMemory] = useState(false);
@@ -202,8 +237,10 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [editingPersonaName, setEditingPersonaName] = useState(persona?.name || 'Ren');
   const [editingPersonaPersonality, setEditingPersonaPersonality] = useState(persona?.personality || persona?.description || '');
 
-  // Expandable Input Box State (Image 1 Parity)
+  // Expandable Input Box State
   const [isInputExpanded, setIsInputExpanded] = useState(false);
+  const [composerInputHeight, setComposerInputHeight] = useState(34);
+  const composerInputRef = useRef<any>(null);
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
 
   const scrollViewRef = useRef<any>(null);
@@ -227,6 +264,43 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     AsyncStorage.getItem('@nekochat:chat_style').then(saved => {
       if (saved === 'novel' || saved === 'bubble') {
         setChatStyle(saved);
+      }
+    });
+    AsyncStorage.getItem('@nekochat:custom_prompt_presets').then(raw => {
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) setPromptPresets(parsed);
+        } catch {}
+      }
+    });
+    imageGenService.loadConfig().then(imgCfg => {
+      if (imgCfg?.provider) {
+        setActiveImageProvider(imgCfg.provider);
+      }
+    }).catch(() => {});
+    AsyncStorage.getItem('@nekochat:customize_prefs').then(raw => {
+      if (raw) {
+        try {
+          const c = JSON.parse(raw);
+          if (typeof c.autoScrollEnabled === 'boolean') setAutoScrollEnabled(c.autoScrollEnabled);
+          if (typeof c.textStreamingEnabled === 'boolean') setTextStreamingEnabled(c.textStreamingEnabled);
+          if (typeof c.chatFontSize === 'number') setChatFontSize(c.chatFontSize);
+        } catch {}
+      }
+    });
+    AsyncStorage.getItem(`@nekochat:chat_settings_${character.id}`).then(raw => {
+      if (raw) {
+        try {
+          const s = JSON.parse(raw);
+          if (s.responseLength === 'standard' || s.responseLength === 'shorter') setResponseLength(s.responseLength);
+          if (typeof s.temperature === 'number') setChatTemperature(s.temperature);
+          if (typeof s.maxTokens === 'number') setChatMaxTokens(s.maxTokens);
+          if (typeof s.prefillEnabled === 'boolean') setPrefillEnabled(s.prefillEnabled);
+          if (typeof s.prefillText === 'string') setPrefillText(s.prefillText);
+          if (Array.isArray(s.forbiddenWords)) setForbiddenWords(s.forbiddenWords);
+          if (typeof s.memoryReplacesOld === 'boolean') setMemoryReplacesOld(s.memoryReplacesOld);
+        } catch {}
       }
     });
     AsyncStorage.getItem('@nekochat:fidget_stats').then(raw => {
@@ -469,6 +543,64 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     setLoadingChatModels(false);
   };
 
+  const persistChatSettings = async (overrides: Partial<{
+    responseLength: 'standard' | 'shorter';
+    temperature: number;
+    maxTokens: number;
+    prefillEnabled: boolean;
+    prefillText: string;
+    forbiddenWords: string[];
+    memoryReplacesOld: boolean;
+  }> = {}) => {
+    const payload = {
+      responseLength: overrides.responseLength ?? responseLength,
+      temperature: overrides.temperature ?? chatTemperature,
+      maxTokens: overrides.maxTokens ?? chatMaxTokens,
+      prefillEnabled: overrides.prefillEnabled ?? prefillEnabled,
+      prefillText: overrides.prefillText ?? prefillText,
+      forbiddenWords: overrides.forbiddenWords ?? forbiddenWords,
+      memoryReplacesOld: overrides.memoryReplacesOld ?? memoryReplacesOld,
+    };
+    await AsyncStorage.setItem(`@nekochat:chat_settings_${character.id}`, JSON.stringify(payload)).catch(() => {});
+  };
+
+  const persistCustomizePrefs = async (overrides: Partial<{
+    autoScrollEnabled: boolean;
+    textStreamingEnabled: boolean;
+    chatFontSize: number;
+  }> = {}) => {
+    const payload = {
+      autoScrollEnabled: overrides.autoScrollEnabled ?? autoScrollEnabled,
+      textStreamingEnabled: overrides.textStreamingEnabled ?? textStreamingEnabled,
+      chatFontSize: overrides.chatFontSize ?? chatFontSize,
+    };
+    await AsyncStorage.setItem('@nekochat:customize_prefs', JSON.stringify(payload)).catch(() => {});
+  };
+
+  const getPromptHistory = (fullHistory: ChatMessage[]) => {
+    if (memoryReplacesOld && chatMemory.trim() && lastCheckpointIndex >= 0 && lastCheckpointIndex < fullHistory.length - 1) {
+      return fullHistory.slice(lastCheckpointIndex + 1);
+    }
+    return fullHistory;
+  };
+
+  const buildExtraContext = () =>
+    [
+      chatMemory.trim() ? `[Permanent Roleplay Memory Notes: ${chatMemory.trim()}]` : '',
+      customPrompt.trim() ? `[Custom Chat Rules & Prompt: ${customPrompt.trim()}]` : '',
+      responseLength === 'shorter'
+        ? '[Response Length: Keep replies concise and shorter (1-2 focused paragraphs).]'
+        : '',
+      forbiddenWords.length > 0
+        ? `[Avoid using these words or phrases: ${forbiddenWords.join(', ')}]`
+        : '',
+      prefillEnabled && prefillText.trim()
+        ? `[Response Prefill: Begin your reply immediately with "${prefillText.trim()}" and continue seamlessly in that voice and format.]`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
   const resolveActiveConfig = async (): Promise<ProviderConfig> => {
     const storedCfg = await storageService.getProviderConfig();
     const baseCfg: ProviderConfig = config?.apiKey ? { ...storedCfg, ...config } : { ...config, ...storedCfg };
@@ -476,15 +608,77 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       chatModel && chatModel.trim() && chatModel !== 'custom'
         ? chatModel.trim()
         : baseCfg.model || baseCfg.defaultModel || 'gpt-4o-mini';
+    const rawTokens = chatMaxTokens === 0 ? baseCfg.maxTokens : (chatMaxTokens ?? baseCfg.maxTokens);
+    const effectiveTokens = responseLength === 'shorter' && rawTokens ? Math.min(rawTokens, 600) : rawTokens;
     return {
       ...baseCfg,
       model: effectiveModel,
       temperature: chatTemperature ?? baseCfg.temperature,
+      maxTokens: effectiveTokens,
     };
   };
 
   const handleSelectTemperature = async (temp: number) => {
     setChatTemperature(temp);
+    persistChatSettings({ temperature: temp });
+  };
+
+  const handleAddForbiddenWord = () => {
+    const w = forbiddenWordInput.trim();
+    if (!w || forbiddenWords.length >= 10) return;
+    if (forbiddenWords.some(existing => existing.toLowerCase() === w.toLowerCase())) {
+      setForbiddenWordInput('');
+      return;
+    }
+    const next = [...forbiddenWords, w];
+    setForbiddenWords(next);
+    setForbiddenWordInput('');
+    persistChatSettings({ forbiddenWords: next });
+  };
+
+  const handleRemoveForbiddenWord = (word: string) => {
+    const next = forbiddenWords.filter(w => w !== word);
+    setForbiddenWords(next);
+    persistChatSettings({ forbiddenWords: next });
+  };
+
+  const handleApplyCustomPrompt = async (text: string, presetId: string | null = null) => {
+    setCustomPrompt(text);
+    setActivePresetId(presetId);
+    if (activeConversationId) {
+      const conv = await storageService.getConversation(activeConversationId);
+      if (conv) {
+        await storageService.updateConversation({ ...conv, customPrompt: text });
+      }
+    }
+  };
+
+  const handleSaveNewPreset = async () => {
+    const trimmedName = newPresetName.trim();
+    const trimmedBody = newPresetBody.trim();
+    if (!trimmedName || !trimmedBody) return;
+    const newPreset = {
+      id: `preset_${Date.now()}`,
+      name: trimmedName,
+      prompt: trimmedBody,
+      updatedAt: Date.now(),
+    };
+    const next = [newPreset, ...promptPresets];
+    setPromptPresets(next);
+    await AsyncStorage.setItem('@nekochat:custom_prompt_presets', JSON.stringify(next));
+    await handleApplyCustomPrompt(trimmedBody, newPreset.id);
+    setNewPresetName('');
+    setNewPresetBody('');
+    setShowNewPresetForm(false);
+  };
+
+  const handleDeletePreset = async (id: string) => {
+    const next = promptPresets.filter(p => p.id !== id);
+    setPromptPresets(next);
+    await AsyncStorage.setItem('@nekochat:custom_prompt_presets', JSON.stringify(next));
+    if (activePresetId === id) {
+      setActivePresetId(null);
+    }
   };
 
   const handleUpdateSyntaxColors = async (updates: Partial<typeof syntaxColors>) => {
@@ -565,6 +759,10 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         };
         input.click();
       } else {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) {
+          return;
+        }
         const result = await ImagePicker.launchImageLibraryAsync({
           mediaTypes: ['images'],
           allowsEditing: true,
@@ -597,6 +795,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         : convs[0];
       setActiveConversationId(activeConv.id);
       setActiveScenarioId(activeConv.scenarioId || null);
+      setCustomPrompt(activeConv.customPrompt || '');
       setMessages(activeConv.messages || []);
     } else {
       // Create first conversation
@@ -610,6 +809,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       setConversations([newConv]);
       setActiveConversationId(newConv.id);
       setActiveScenarioId(newConv.scenarioId || null);
+      setCustomPrompt(newConv.customPrompt || '');
       setMessages(newConv.messages || []);
     }
   };
@@ -618,6 +818,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const handleStartNewSession = async (scenario?: CharacterScenario) => {
     setShowSessionModal(false);
     setShowScenarioModal(false);
+    setShowHeaderMenu(false);
     const newConv = await storageService.createConversation(
       character,
       persona.id,
@@ -629,6 +830,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     setConversations(updated);
     setActiveConversationId(newConv.id);
     setActiveScenarioId(newConv.scenarioId || null);
+    setCustomPrompt(newConv.customPrompt || '');
     setMessages(newConv.messages || []);
     setGreetingIndex(0);
   };
@@ -637,13 +839,14 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     setShowSessionModal(false);
     setActiveConversationId(conv.id);
     setActiveScenarioId(conv.scenarioId || null);
+    setCustomPrompt(conv.customPrompt || '');
     setMessages(conv.messages || []);
   };
 
   // --- Alternate Greetings Cycler ---
-  const handleCycleGreeting = async () => {
+  const handleStepGreeting = async (dir: -1 | 1) => {
     if (messages.length > 1 || allGreetings.length <= 1) return;
-    const nextIdx = (greetingIndex + 1) % allGreetings.length;
+    const nextIdx = (greetingIndex + dir + allGreetings.length) % allGreetings.length;
     setGreetingIndex(nextIdx);
     const updatedFirst: ChatMessage = {
       ...messages[0],
@@ -661,12 +864,91 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     }
   };
 
+  const handleCycleGreeting = () => handleStepGreeting(1);
+
+  // --- Branch from Here (Timeline Forking) ---
+  const handleBranchFromMessage = async (msgIndex: number) => {
+    if (isStreaming || msgIndex < 0 || msgIndex >= messages.length) return;
+    setSelectedMessageId(null);
+    const branchedMessages = messages.slice(0, msgIndex + 1).map(m => ({ ...m }));
+    const newConv = await storageService.createConversation(
+      character,
+      persona.id,
+      config.id || 'prov_gemini',
+      activeScenarioId || undefined,
+      `Branch @ turn ${msgIndex + 1}`
+    );
+    const branchedConv: Conversation = {
+      ...newConv,
+      messages: branchedMessages,
+      customPrompt: customPrompt || newConv.customPrompt,
+    };
+    await storageService.updateConversation(branchedConv);
+    setConversations(prev => [branchedConv, ...prev]);
+    setActiveConversationId(branchedConv.id);
+    setMessages(branchedMessages);
+  };
+
+  // --- Non-Destructive Reply Alternatives (< 1 / N >) ---
+  const handleSwipeAlternative = async (dir: -1 | 1) => {
+    if (isStreaming || messages.length === 0) return;
+    const lastIdx = messages.length - 1;
+    const lastMsg = messages[lastIdx];
+    if (!lastMsg || lastMsg.role !== 'assistant' || lastIdx === 0) return;
+
+    const swipes = lastMsg.swipes && lastMsg.swipes.length > 0 ? lastMsg.swipes : [lastMsg.content];
+    const curIdx = typeof lastMsg.swipeIndex === 'number' ? lastMsg.swipeIndex : swipes.length - 1;
+
+    if (dir === -1) {
+      if (curIdx <= 0) return;
+      const nextIdx = curIdx - 1;
+      const updated = [...messages];
+      updated[lastIdx] = {
+        ...lastMsg,
+        content: swipes[nextIdx],
+        swipes,
+        swipeIndex: nextIdx,
+      };
+      setMessages(updated);
+      await persistMessagesList(updated);
+      return;
+    }
+
+    // dir === 1
+    if (curIdx < swipes.length - 1) {
+      const nextIdx = curIdx + 1;
+      const updated = [...messages];
+      updated[lastIdx] = {
+        ...lastMsg,
+        content: swipes[nextIdx],
+        swipes,
+        swipeIndex: nextIdx,
+      };
+      setMessages(updated);
+      await persistMessagesList(updated);
+      return;
+    }
+
+    // At the last alternative -> generate a new one without erasing previous alternatives
+    const trimmed = messages.slice(0, lastIdx);
+    if (trimmed.length === 0) return;
+    const lastTurn = trimmed[trimmed.length - 1];
+    const promptText = lastTurn.role === 'user' ? lastTurn.content : '[Continue the opening scene in character.]';
+    setMessages(trimmed);
+    await persistMessagesList(trimmed);
+    await triggerAiStream(trimmed, promptText, swipes);
+  };
+
   // --- Sending & Streaming ---
   const handleSend = async () => {
     const text = inputText.trim();
     if (!text || isStreaming) return;
 
     setInputText('');
+    setComposerInputHeight(34);
+    if (Platform.OS === 'web' && composerInputRef.current) {
+      (composerInputRef.current as any).style.height = '34px';
+    }
     setShowActionDeck(false);
 
     const userMsg: ChatMessage = {
@@ -703,7 +985,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     }
   };
 
-  const triggerAiStream = async (historyWithUser: ChatMessage[], userMessage: string) => {
+  const triggerAiStream = async (
+    historyWithUser: ChatMessage[],
+    userMessage: string,
+    existingSwipes?: string[]
+  ) => {
     setIsStreaming(true);
     let incomingAssistantText = '';
 
@@ -722,31 +1008,38 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     setMessages(withPlaceholder);
 
     const activeConfig = await resolveActiveConfig();
-    const effectiveChar: Character = chatMemory.trim()
+    const extraContext = buildExtraContext();
+    const effectiveChar: Character = extraContext
       ? {
           ...character,
-          scenario: `${character.scenario || ''}\n[Permanent Roleplay Memory Notes: ${chatMemory.trim()}]`,
+          scenario: `${character.scenario || ''}\n${extraContext}`.trim(),
         }
       : character;
 
     await aiProviderService.streamChat(
       effectiveChar,
-      historyWithUser,
+      getPromptHistory(historyWithUser),
       userMessage,
       persona,
       activeConfig,
       {
         onChunk: chunk => {
           incomingAssistantText += chunk;
-          setMessages(prev =>
-            prev.map(m =>
-              m.id === assistantPlaceholderId ? { ...m, content: incomingAssistantText } : m
-            )
-          );
-          scrollViewRef.current?.scrollToEnd({ animated: false });
+          if (textStreamingEnabled) {
+            setMessages(prev =>
+              prev.map(m =>
+                m.id === assistantPlaceholderId ? { ...m, content: incomingAssistantText } : m
+              )
+            );
+            if (autoScrollEnabled) {
+              scrollViewRef.current?.scrollToEnd({ animated: false });
+            }
+          }
         },
         onError: err => {
           setIsStreaming(false);
+          setIsContinuingWait(false);
+          setRevealState(null);
           setMessages(prev =>
             prev.map(m =>
               m.id === assistantPlaceholderId
@@ -757,12 +1050,19 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         },
         onComplete: async (fullText, tokenCount, thought) => {
           setIsStreaming(false);
+          const finalText = fullText || incomingAssistantText || ' [Generation paused]';
+          const nextSwipes =
+            existingSwipes && existingSwipes.length > 0
+              ? [...existingSwipes, finalText]
+              : [finalText];
           const finalMsg: ChatMessage = {
             id: assistantPlaceholderId,
             conversationId: activeConversationId || undefined,
             characterId: character.id,
             role: 'assistant',
-            content: fullText,
+            content: finalText,
+            swipes: nextSwipes,
+            swipeIndex: nextSwipes.length - 1,
             thought,
             tokenCount,
             timestamp: Date.now(),
@@ -814,7 +1114,17 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     if (targetIdx < 0) return;
 
     if (regenerateAfter) {
+      if (isStreaming) {
+        aiProviderService.abortGeneration();
+        setIsStreaming(false);
+        setIsContinuingWait(false);
+        setRevealState(null);
+      }
       setEditingMessageId(null);
+      const updated = [...messages];
+      updated[targetIdx] = { ...updated[targetIdx], content: editText.trim() };
+      setMessages(updated);
+      await persistMessagesList(updated);
       await handleRegenerate(targetIdx, editText.trim());
     } else {
       const updated = [...messages];
@@ -885,16 +1195,17 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     let continuedText = lastMsg.content;
 
     const activeConfig = await resolveActiveConfig();
-    const effectiveChar: Character = chatMemory.trim()
+    const extraContext = buildExtraContext();
+    const effectiveChar: Character = extraContext
       ? {
           ...character,
-          scenario: `${character.scenario || ''}\n[Permanent Roleplay Memory Notes: ${chatMemory.trim()}]`,
+          scenario: `${character.scenario || ''}\n${extraContext}`.trim(),
         }
       : character;
 
     await aiProviderService.streamChat(
       effectiveChar,
-      messages,
+      getPromptHistory(messages),
       '',
       persona,
       activeConfig,
@@ -902,14 +1213,19 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         onChunk: chunk => {
           setIsContinuingWait(false);
           continuedText += chunk;
-          setMessages(prev =>
-            prev.map((m, idx) => (idx === lastIdx ? { ...m, content: continuedText } : m))
-          );
-          scrollViewRef.current?.scrollToEnd({ animated: false });
+          if (textStreamingEnabled) {
+            setMessages(prev =>
+              prev.map((m, idx) => (idx === lastIdx ? { ...m, content: continuedText } : m))
+            );
+            if (autoScrollEnabled) {
+              scrollViewRef.current?.scrollToEnd({ animated: false });
+            }
+          }
         },
         onError: err => {
           setIsContinuingWait(false);
           setIsStreaming(false);
+          setRevealState(null);
           setMessages(prev =>
             prev.map((m, idx) =>
               idx === lastIdx ? { ...m, content: `${m.content}\n\n⚠️ Error continuing: ${err.message}` } : m
@@ -939,24 +1255,45 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     );
   };
 
-  // AI Writing Coach (Refine)
-  const handleRefine = async () => {
-    if (!inputText.trim()) return;
+  // AI Writing Coach (Refine Draft OR Write for Me from Scratch)
+  const handleRefine = async (forceMode?: 'refine' | 'write') => {
+    const hasDraft = inputText.trim().length > 0;
+    const mode: 'refine' | 'write' = forceMode || (hasDraft ? 'refine' : 'write');
+    if (mode === 'refine' && !hasDraft) return;
+
+    setRefineMode(mode);
     setIsRefining(true);
     setShowActionDeck(false);
 
-    const activeConfig = await resolveActiveConfig();
-    const lastBot = messages.filter(m => m.role === 'assistant').pop()?.content || '';
-    const polished = await aiProviderService.refineMessage(
-      inputText,
-      character,
-      lastBot,
-      persona,
-      activeConfig
-    );
-
-    setRefinePreview(polished);
-    setIsRefining(false);
+    try {
+      const activeConfig = await resolveActiveConfig();
+      const recentContext = messages
+        .slice(-6)
+        .map(m => `${m.role === 'user' ? persona.name : chatCharName}: ${m.content}`)
+        .join('\n\n');
+      const scratchContext = [
+        chatMemory.trim() ? `[Saved Memory:\n${chatMemory.trim()}]` : '',
+        recentContext ? `[Recent Messages:\n${recentContext}]` : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+      const lastBot =
+        mode === 'write'
+          ? scratchContext || messages.filter(m => m.role === 'assistant').pop()?.content || ''
+          : messages.filter(m => m.role === 'assistant').pop()?.content || '';
+      const polished = await aiProviderService.refineMessage(
+        mode === 'write' ? '' : inputText,
+        character,
+        lastBot,
+        persona,
+        activeConfig
+      );
+      if (polished && polished.trim()) {
+        setRefinePreview(polished);
+      }
+    } finally {
+      setIsRefining(false);
+    }
   };
 
   // Scene Depiction Functions
@@ -1025,8 +1362,9 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 
   const stripThinkTags = (text: string) =>
     (text || '')
-      .replace(/<(?:think|thought|reasoning)>[\s\S]*?<\/(?:think|thought|reasoning)>/gi, '')
-      .replace(/<(?:think|thought|reasoning)>[\s\S]*$/gi, '')
+      .replace(/<(?:think|thought|thinking|reasoning|reflection|scratchpad)>[\s\S]*?<\/(?:think|thought|thinking|reasoning|reflection|scratchpad)>/gi, '')
+      .replace(/<(?:think|thought|thinking|reasoning|reflection|scratchpad)>[\s\S]*$/gi, '')
+      .replace(/\[(?:think|thinking|thought)\][\s\S]*?\[\/(?:think|thinking|thought)\]/gi, '')
       .trim();
 
   useEffect(() => {
@@ -1054,26 +1392,51 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     return () => clearInterval(timer);
   }, [revealState, messages, isStreaming]);
 
-  const renderFormattedText = (text: string, isUser: boolean, isNovel: boolean) => {
-    if (isUser) {
+  const renderBoldInline = (str: string, baseStyle: any, keyPrefix: string) => {
+    const boldParts = str.split(/(\*\*[\s\S]+?\*\*)/g);
+    if (boldParts.length === 1) {
       return (
-        <Text style={isNovel ? styles.novelUserText : styles.bubbleUserText}>
-          {text}
+        <Text key={keyPrefix} style={baseStyle}>
+          {str}
         </Text>
       );
     }
+    return (
+      <Text key={keyPrefix} style={baseStyle}>
+        {boldParts.map((bp, bi) => {
+          if (bp.startsWith('**') && bp.endsWith('**') && bp.length > 4) {
+            return (
+              <Text key={`${keyPrefix}-b-${bi}`} style={[baseStyle, { color: syntaxColors.bold, fontWeight: '800' }]}>
+                {bp.slice(2, -2)}
+              </Text>
+            );
+          }
+          return bp || null;
+        })}
+      </Text>
+    );
+  };
 
-    const regex = /(\*\*[\s\S]*?(?:\*\*|$)|"[^"]*"|“[^”]*”|「[^」]*」|\*[^*\n]+?(?:\*|$)|`[^`]*?`)/g;
+  const renderFormattedText = (text: string, isUser: boolean, isNovel: boolean) => {
+    const regex = /(\*\*[\s\S]*?(?:\*\*|$)|"[^"]*"|“[^”]*”|「[^」]*」|\*(?!\*)[^*\n]+?(?:\*|$)|`[^`]*?`)/g;
     const parts = text.split(regex);
+    const baseTextColor = isUser ? '#FFFFFF' : isNovel ? '#e2e8f0' : colors.textPrimary;
+    const baseStyle = isUser
+      ? isNovel
+        ? styles.novelUserText
+        : styles.bubbleUserText
+      : isNovel
+      ? styles.novelBotText
+      : styles.bubbleBotText;
 
     return (
-      <Text style={[isNovel ? styles.novelBotText : styles.bubbleBotText, { color: syntaxColors.dialogue }]}>
+      <Text style={[baseStyle, { color: baseTextColor, fontSize: chatFontSize, lineHeight: Math.round(chatFontSize * 1.48) }]}>
         {parts.map((part, index) => {
           if (!part) return null;
           if (part.startsWith('**')) {
             const inner = part.endsWith('**') && part.length > 4 ? part.slice(2, -2) : part.slice(2);
             return (
-              <Text key={index} style={{ color: syntaxColors.dialogue, fontWeight: '700' }}>
+              <Text key={index} style={{ color: isUser ? '#FFFFFF' : syntaxColors.bold, fontWeight: '800' }}>
                 {inner}
               </Text>
             );
@@ -1083,29 +1446,35 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             (part.startsWith('“') && part.endsWith('”')) ||
             (part.startsWith('「') && part.endsWith('」'))
           ) {
-            return (
-              <Text key={index} style={{ color: syntaxColors.dialogue, fontWeight: '500' }}>
-                {part}
-              </Text>
+            return renderBoldInline(
+              part,
+              { color: isUser ? '#FFFFFF' : syntaxColors.dialogue, fontWeight: '500' },
+              `dlg-${index}`
             );
           }
           if (part.startsWith('*')) {
             const inner = part.endsWith('*') && part.length > 2 ? part.slice(1, -1) : part.slice(1);
-            return (
-              <Text key={index} style={{ color: syntaxColors.narration, fontStyle: 'italic' }}>
-                {inner}
-              </Text>
+            return renderBoldInline(
+              inner,
+              { color: syntaxColors.narration, fontStyle: 'italic' },
+              `nar-${index}`
             );
           }
           if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
             return (
-              <Text key={index} style={{ color: syntaxColors.thoughts, fontStyle: 'italic' }}>
+              <Text
+                key={index}
+                style={{
+                  color: syntaxColors.code,
+                  fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+                }}
+              >
                 {part.slice(1, -1)}
               </Text>
             );
           }
           return (
-            <Text key={index} style={{ color: isNovel ? '#e2e8f0' : colors.textPrimary }}>
+            <Text key={index} style={{ color: baseTextColor }}>
               {part}
             </Text>
           );
@@ -1118,10 +1487,10 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     if (!text) return '';
     const activeUserName = persona?.name?.trim() || 'User';
     return text
-      .replace(/\{\{user\}\}/gi, activeUserName)
-      .replace(/<user>/gi, activeUserName)
-      .replace(/\{\{char\}\}/gi, chatCharName)
-      .replace(/<char>/gi, chatCharName);
+      .replace(/\{\{\s*user\s*\}\}/gi, activeUserName)
+      .replace(/<\s*user\s*>/gi, activeUserName)
+      .replace(/\{\{\s*char\s*\}\}/gi, chatCharName)
+      .replace(/<\s*char\s*>/gi, chatCharName);
   };
 
   const renderMessageContent = (rawContent: string, isUser: boolean, isNovel: boolean) => {
@@ -1233,29 +1602,33 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       >
       {/* ── Background Wallpaper, Gaussian Blur & Dark Overlay (Blueprint Section D) ── */}
       {appearance.enableWallpaper && (
-        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="none">
           <Image
             source={{ uri: appearance.wallpaperUrl || character.coverUrl || character.avatar }}
             style={[
               StyleSheet.absoluteFill,
               Platform.OS === 'web' && appearance.blurRadius > 0
-                ? ({ filter: `blur(${appearance.blurRadius}px)` } as any)
+                ? ({
+                    filter: `blur(${appearance.blurRadius}px)`,
+                    transform: [{ scale: 1.08 }],
+                  } as any)
                 : {},
             ]}
             resizeMode="cover"
-            blurRadius={
-              Platform.OS === 'web'
-                ? undefined
-                : appearance.blurRadius > 0
-                ? Math.min(25, Math.max(1, Math.round(appearance.blurRadius * 2)))
-                : 0
-            }
           />
+          {Platform.OS !== 'web' && appearance.blurRadius > 0 && (
+            <BlurView
+              intensity={Math.min(100, Math.max(8, Math.round(appearance.blurRadius * 4)))}
+              tint="dark"
+              experimentalBlurMethod="dimezisBlurView"
+              style={StyleSheet.absoluteFill}
+            />
+          )}
           <LinearGradient
             colors={[
-              'rgba(12, 14, 20, 0.72)',
-              `rgba(12, 14, 20, ${Math.max(0.58, appearance.overlayOpacity)})`,
-              `rgba(12, 14, 20, ${Math.max(0.78, appearance.overlayOpacity)})`,
+              `rgba(12, 14, 20, ${Math.max(0.28, appearance.overlayOpacity * 0.85)})`,
+              `rgba(12, 14, 20, ${Math.max(0.22, appearance.overlayOpacity * 0.72)})`,
+              `rgba(12, 14, 20, ${Math.max(0.48, appearance.overlayOpacity)})`,
             ]}
             locations={[0, 0.45, 1]}
             style={StyleSheet.absoluteFill}
@@ -1286,16 +1659,100 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           </View>
         </TouchableOpacity>
 
-        {/* 3-Dot Chat Control & Context Button (JanitorAI / SillyTavern Style) */}
+        {/* 3-Dot Chat Control & Menu Button */}
         <TouchableOpacity
           style={styles.headerMoreBtn}
-          onPress={() => setShowChatControlModal(true)}
+          onPress={() => setShowHeaderMenu(prev => !prev)}
           activeOpacity={0.8}
-          accessibilityLabel="Open Chat Control Menu"
+          accessibilityLabel="Open Chat Menu"
         >
-          <MoreHorizontal size={20} color="#d4ff00" />
+          <MoreHorizontal size={20} color={palette.accent} />
         </TouchableOpacity>
       </View>
+
+      {/* Bento-OLED Header Dropdown Menu */}
+      {showHeaderMenu && (
+        <TouchableOpacity
+          style={styles.headerMenuBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowHeaderMenu(false)}
+        >
+          <View
+            style={[
+              styles.headerMenuCard,
+              {
+                backgroundColor: palette.bgSurface,
+                borderColor: `rgba(${palette.accentRgb}, 0.28)`,
+              },
+            ]}
+          >
+            {[
+              {
+                label: 'Settings',
+                Icon: Cpu,
+                onPress: () => {
+                  setShowHeaderMenu(false);
+                  setChatControlTab('model');
+                  setShowChatControlModal(true);
+                },
+              },
+              {
+                label: 'Chat Memory & Rules',
+                Icon: Brain,
+                onPress: () => {
+                  setShowHeaderMenu(false);
+                  setChatControlTab('memory');
+                  setShowChatControlModal(true);
+                },
+              },
+              {
+                label: 'Customize',
+                Icon: Palette,
+                onPress: () => {
+                  setShowHeaderMenu(false);
+                  setChatControlTab('syntax');
+                  setSettingsSubView('main');
+                  setShowChatControlModal(true);
+                },
+              },
+              {
+                label: 'Saved Sessions',
+                Icon: Layers,
+                onPress: () => {
+                  setShowHeaderMenu(false);
+                  setShowSessionModal(true);
+                },
+              },
+              {
+                label: 'New Chat',
+                Icon: Plus,
+                onPress: () => {
+                  setShowHeaderMenu(false);
+                  handleStartNewSession();
+                },
+              },
+              {
+                label: 'All Chats',
+                Icon: ArrowLeft,
+                onPress: () => {
+                  setShowHeaderMenu(false);
+                  onBack();
+                },
+              },
+            ].map((item, idx) => (
+              <TouchableOpacity
+                key={item.label}
+                style={[styles.headerMenuItem, idx > 0 && styles.headerMenuItemBorder]}
+                onPress={item.onPress}
+                activeOpacity={0.75}
+              >
+                <item.Icon size={16} color={palette.accent} style={{ marginRight: 12 }} />
+                <Text style={styles.headerMenuItemText}>{item.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      )}
 
       {/* Scenario & Alternate Greeting Sub-Header */}
       {character.scenarios && character.scenarios.length > 0 && (
@@ -1330,7 +1787,17 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       <ScrollView
         ref={scrollViewRef}
         contentContainerStyle={styles.scrollContent}
-        onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+        scrollEventThrottle={32}
+        onScroll={e => {
+          const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+          const distFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+          setShowScrollBottom(distFromBottom > 140);
+        }}
+        onContentSizeChange={() => {
+          if (!showScrollBottom) {
+            scrollViewRef.current?.scrollToEnd({ animated: true });
+          }
+        }}
       >
         {messages.map((msg, idx) => {
           const isUser = msg.role === 'user';
@@ -1473,23 +1940,64 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                   </View>
                 )}
 
-                {/* Always-visible quick Regenerate & Continue bar on the latest assistant reply */}
-                {isLastAssistant && !isStreaming && !isSelected && idx > 0 && (
-                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                {/* Inline Alternate Greeting Switcher (< 1 / N >) on opening turn */}
+                {idx === 0 && messages.length === 1 && allGreetings.length > 1 && !isStreaming && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
                     <TouchableOpacity
                       style={styles.bubbleActionBtn}
-                      onPress={() => handleRegenerate(idx)}
+                      onPress={() => handleStepGreeting(-1)}
                       activeOpacity={0.8}
                     >
-                      <RotateCcw size={12} color="#D4FF00" style={{ marginRight: 4 }} />
-                      <Text style={styles.bubbleActionText}>Regenerate</Text>
+                      <ChevronLeft size={13} color={palette.accent} />
                     </TouchableOpacity>
+                    <Text style={{ color: '#94a3b8', fontSize: 11.5, fontWeight: '600' }}>
+                      {greetingIndex + 1} / {allGreetings.length}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.bubbleActionBtn}
+                      onPress={() => handleStepGreeting(1)}
+                      activeOpacity={0.8}
+                    >
+                      <ChevronRight size={13} color={palette.accent} />
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* Always-visible quick < 1 / N > Alternatives & Continue bar on the latest assistant reply */}
+                {isLastAssistant && !isStreaming && !isSelected && idx > 0 && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
+                    {(() => {
+                      const swipes = msg.swipes && msg.swipes.length > 0 ? msg.swipes : [msg.content];
+                      const curIdx = typeof msg.swipeIndex === 'number' ? msg.swipeIndex : swipes.length - 1;
+                      return (
+                        <>
+                          <TouchableOpacity
+                            style={[styles.bubbleActionBtn, curIdx <= 0 && { opacity: 0.4 }]}
+                            onPress={() => handleSwipeAlternative(-1)}
+                            disabled={curIdx <= 0}
+                            activeOpacity={0.8}
+                          >
+                            <ChevronLeft size={13} color={palette.accent} />
+                          </TouchableOpacity>
+                          <Text style={{ color: '#94a3b8', fontSize: 11.5, fontWeight: '600' }}>
+                            {curIdx + 1} / {swipes.length}
+                          </Text>
+                          <TouchableOpacity
+                            style={styles.bubbleActionBtn}
+                            onPress={() => handleSwipeAlternative(1)}
+                            activeOpacity={0.8}
+                          >
+                            <ChevronRight size={13} color={palette.accent} />
+                          </TouchableOpacity>
+                        </>
+                      );
+                    })()}
                     <TouchableOpacity
                       style={styles.bubbleActionBtn}
                       onPress={handleContinue}
                       activeOpacity={0.8}
                     >
-                      <Play size={12} color="#D4FF00" style={{ marginRight: 4 }} />
+                      <Play size={12} color={palette.accent} style={{ marginRight: 4 }} />
                       <Text style={styles.bubbleActionText}>Continue</Text>
                     </TouchableOpacity>
                   </View>
@@ -1499,10 +2007,14 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                 {isSelected && (
                   <View style={styles.bubbleActionRow}>
                     <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleCopyMessage(msg)}>
-                      <Copy size={13} color="#D4FF00" style={{ marginRight: 4 }} />
+                      <Copy size={13} color={palette.accent} style={{ marginRight: 4 }} />
                       <Text style={styles.bubbleActionText}>
                         {copiedId === msg.id ? 'Copied!' : 'Copy'}
                       </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleBranchFromMessage(idx)}>
+                      <Layers size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                      <Text style={styles.bubbleActionText}>Branch</Text>
                     </TouchableOpacity>
                     {isUser ? (
                       <>
@@ -1621,23 +2133,64 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                   </View>
                 )}
 
-                {/* Always-visible quick Regenerate & Continue bar on the latest assistant bubble */}
-                {isLastAssistant && !isStreaming && !isSelected && idx > 0 && (
-                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 6, alignSelf: 'flex-start' }}>
+                {/* Inline Alternate Greeting Switcher (< 1 / N >) on opening bubble */}
+                {idx === 0 && messages.length === 1 && allGreetings.length > 1 && !isStreaming && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, alignSelf: 'flex-start' }}>
                     <TouchableOpacity
                       style={styles.bubbleActionBtn}
-                      onPress={() => handleRegenerate(idx)}
+                      onPress={() => handleStepGreeting(-1)}
                       activeOpacity={0.8}
                     >
-                      <RotateCcw size={12} color="#D4FF00" style={{ marginRight: 4 }} />
-                      <Text style={styles.bubbleActionText}>Regenerate</Text>
+                      <ChevronLeft size={13} color={palette.accent} />
                     </TouchableOpacity>
+                    <Text style={{ color: '#94a3b8', fontSize: 11.5, fontWeight: '600' }}>
+                      {greetingIndex + 1} / {allGreetings.length}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.bubbleActionBtn}
+                      onPress={() => handleStepGreeting(1)}
+                      activeOpacity={0.8}
+                    >
+                      <ChevronRight size={13} color={palette.accent} />
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* Always-visible quick < 1 / N > Alternatives & Continue bar on the latest assistant bubble */}
+                {isLastAssistant && !isStreaming && !isSelected && idx > 0 && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, alignSelf: 'flex-start' }}>
+                    {(() => {
+                      const swipes = msg.swipes && msg.swipes.length > 0 ? msg.swipes : [msg.content];
+                      const curIdx = typeof msg.swipeIndex === 'number' ? msg.swipeIndex : swipes.length - 1;
+                      return (
+                        <>
+                          <TouchableOpacity
+                            style={[styles.bubbleActionBtn, curIdx <= 0 && { opacity: 0.4 }]}
+                            onPress={() => handleSwipeAlternative(-1)}
+                            disabled={curIdx <= 0}
+                            activeOpacity={0.8}
+                          >
+                            <ChevronLeft size={13} color={palette.accent} />
+                          </TouchableOpacity>
+                          <Text style={{ color: '#94a3b8', fontSize: 11.5, fontWeight: '600' }}>
+                            {curIdx + 1} / {swipes.length}
+                          </Text>
+                          <TouchableOpacity
+                            style={styles.bubbleActionBtn}
+                            onPress={() => handleSwipeAlternative(1)}
+                            activeOpacity={0.8}
+                          >
+                            <ChevronRight size={13} color={palette.accent} />
+                          </TouchableOpacity>
+                        </>
+                      );
+                    })()}
                     <TouchableOpacity
                       style={styles.bubbleActionBtn}
                       onPress={handleContinue}
                       activeOpacity={0.8}
                     >
-                      <Play size={12} color="#D4FF00" style={{ marginRight: 4 }} />
+                      <Play size={12} color={palette.accent} style={{ marginRight: 4 }} />
                       <Text style={styles.bubbleActionText}>Continue</Text>
                     </TouchableOpacity>
                   </View>
@@ -1647,10 +2200,14 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                 {isSelected && (
                   <View style={[styles.bubbleActionRow, isUser ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
                     <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleCopyMessage(msg)}>
-                      <Copy size={13} color="#D4FF00" style={{ marginRight: 4 }} />
+                      <Copy size={13} color={palette.accent} style={{ marginRight: 4 }} />
                       <Text style={styles.bubbleActionText}>
                         {copiedId === msg.id ? 'Copied!' : 'Copy'}
                       </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleBranchFromMessage(idx)}>
+                      <Layers size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                      <Text style={styles.bubbleActionText}>Branch</Text>
                     </TouchableOpacity>
                     {isUser ? (
                       <>
@@ -1711,17 +2268,77 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         )}
       </ScrollView>
 
+      {/* Animated Quick Scroll-to-Bottom Button */}
+      <Animated.View
+        pointerEvents={showScrollBottom ? 'auto' : 'none'}
+        style={[
+          styles.scrollBottomFabWrap,
+          {
+            opacity: scrollBottomAnim,
+            transform: [
+              {
+                scale: scrollBottomAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.8, 1],
+                }),
+              },
+              {
+                translateY: scrollBottomAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [12, 0],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <TouchableOpacity
+          style={[
+            styles.scrollBottomFab,
+            {
+              backgroundColor: palette.bgSurface,
+              borderColor: `rgba(${palette.accentRgb}, 0.45)`,
+            },
+          ]}
+          onPress={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+          activeOpacity={0.85}
+          accessibilityLabel="Scroll to latest message"
+        >
+          <ChevronDown size={18} color={palette.accent} />
+        </TouchableOpacity>
+      </Animated.View>
+
+      {/* Animated Refining / Write-for-Me Indicator */}
+      {isRefining && (
+        <View
+          style={[
+            styles.refiningBanner,
+            {
+              backgroundColor: palette.bgSurface,
+              borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+            },
+          ]}
+        >
+          <NekoPulseLoader
+            size={24}
+            label={refineMode === 'write' ? 'Writing roleplay draft for you...' : 'Polishing your draft...'}
+          />
+        </View>
+      )}
+
       {/* Refine / AI Writing Coach Preview Card */}
       {refinePreview && (
-        <View style={styles.refineCard}>
+        <View style={[styles.refineCard, { borderColor: `rgba(${palette.accentRgb}, 0.4)` }]}>
           <View style={styles.refineHeader}>
-            <Sparkles size={14} color={colors.lime} style={{ marginRight: 6 }} />
-            <Text style={styles.refineTitle}>Polished by AI Coach</Text>
+            <Sparkles size={14} color={palette.accent} style={{ marginRight: 6 }} />
+            <Text style={[styles.refineTitle, { color: palette.accent }]}>
+              {refineMode === 'write' ? 'Written by AI Coach' : 'Polished by AI Coach'}
+            </Text>
           </View>
-          <Text style={styles.refineBody}>"{refinePreview}"</Text>
+          <Text style={styles.refineBody}>{`"${refinePreview}"`}</Text>
           <View style={styles.refineActionRow}>
             <TouchableOpacity
-              style={styles.refineActionUse}
+              style={[styles.refineActionUse, { backgroundColor: palette.accent }]}
               onPress={() => {
                 setInputText(refinePreview);
                 setRefinePreview(null);
@@ -1813,176 +2430,165 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                 },
               ]}
             >
-              {/* 1. Continue Character Reply */}
-              <TouchableOpacity
-                style={styles.actionDeckItem}
-                onPress={() => {
-                  setShowActionDeck(false);
-                  handleContinue();
-                }}
-                disabled={isStreaming}
-              >
-                <ChevronsRight size={17} color="#d4ff00" style={{ marginRight: 10 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.actionDeckTitle}>Continue Character Reply</Text>
-                  <Text style={styles.actionDeckSub}>Let {chatCharName} write the next sentence</Text>
-                </View>
-              </TouchableOpacity>
+              {/* Compact 4-Tile Quick Action Grid inside + */}
+              <View style={styles.actionDeckGrid}>
+                {/* 1. OOC */}
+                <TouchableOpacity
+                  style={[
+                    styles.actionGridTile,
+                    inputText.trim().toLowerCase().startsWith('[ooc]') && {
+                      borderColor: `rgba(${palette.accentRgb}, 0.55)`,
+                      backgroundColor: `rgba(${palette.accentRgb}, 0.1)`,
+                    },
+                  ]}
+                  onPress={() => {
+                    setInputText(prev =>
+                      prev.trim().toLowerCase().startsWith('[ooc]')
+                        ? prev.replace(/^\[ooc\]\s*/i, '')
+                        : `[ooc] ${prev}`
+                    );
+                    setShowActionDeck(false);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.actionGridIconBox, { backgroundColor: `rgba(${palette.accentRgb}, 0.14)` }]}>
+                    <MessageCircle size={16} color={palette.accent} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.actionGridTitle}>OOC</Text>
+                    <Text style={styles.actionGridSub} numberOfLines={1}>
+                      {inputText.trim().toLowerCase().startsWith('[ooc]') ? 'Active in draft' : 'Note to AI'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
 
-              {/* 1B. Regenerate Last Reply */}
-              <TouchableOpacity
-                style={styles.actionDeckItem}
-                onPress={() => {
-                  setShowActionDeck(false);
-                  handleRegenerate();
-                }}
-                disabled={isStreaming}
-              >
-                <RotateCcw size={16} color="#d4ff00" style={{ marginRight: 10 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.actionDeckTitle}>Regenerate Response</Text>
-                  <Text style={styles.actionDeckSub}>Roll a fresh AI reply for the last turn</Text>
-                </View>
-              </TouchableOpacity>
+                {/* 2. Refine Text */}
+                <TouchableOpacity
+                  style={[
+                    styles.actionGridTile,
+                    (!inputText.trim() || isRefining) && { opacity: 0.55 },
+                  ]}
+                  onPress={() => handleRefine('refine')}
+                  disabled={!inputText.trim() || isRefining}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.actionGridIconBox, { backgroundColor: `rgba(${palette.accentRgb}, 0.14)` }]}>
+                    <Sparkles size={16} color={palette.accent} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.actionGridTitle}>
+                      {isRefining && refineMode === 'refine' ? 'Refining...' : 'Refine Text'}
+                    </Text>
+                    <Text style={styles.actionGridSub} numberOfLines={1}>
+                      {inputText.trim() ? 'Polish your draft' : 'Type draft first'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
 
-              {/* 1C. Warden Story Checkpoints & Memory */}
-              <TouchableOpacity
-                style={styles.actionDeckItem}
-                onPress={() => {
-                  setShowActionDeck(false);
-                  setChatControlTab('memory');
-                  setShowChatControlModal(true);
-                }}
-              >
-                <Brain size={17} color="#d4ff00" style={{ marginRight: 10 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.actionDeckTitle}>Story Checkpoints & Memory</Text>
-                  <Text style={styles.actionDeckSub}>Create, summarize or view &lt;memory&gt; points</Text>
-                </View>
-              </TouchableOpacity>
+                {/* 3. Write from Scratch */}
+                <TouchableOpacity
+                  style={[styles.actionGridTile, isRefining && { opacity: 0.55 }]}
+                  onPress={() => handleRefine('write')}
+                  disabled={isRefining}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.actionGridIconBox, { backgroundColor: `rgba(${palette.accentRgb}, 0.14)` }]}>
+                    <Edit2 size={15} color={palette.accent} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.actionGridTitle}>
+                      {isRefining && refineMode === 'write' ? 'Writing...' : 'Write from Scratch'}
+                    </Text>
+                    <Text style={styles.actionGridSub} numberOfLines={1}>Uses chat & memory</Text>
+                  </View>
+                </TouchableOpacity>
 
-              {/* 2. Reading Style: Novel vs Bubble */}
-              <TouchableOpacity
-                style={styles.actionDeckItem}
-                onPress={handleToggleChatStyle}
-              >
-                {chatStyle === 'novel' ? (
-                  <BookOpen size={17} color="#d4ff00" style={{ marginRight: 10 }} />
-                ) : (
-                  <MessageCircle size={17} color="#d4ff00" style={{ marginRight: 10 }} />
-                )}
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.actionDeckTitle}>
-                    Reading Style: {chatStyle === 'novel' ? 'Novel Mode' : 'Bubble Mode'}
-                  </Text>
-                  <Text style={styles.actionDeckSub}>Tap to switch to {chatStyle === 'novel' ? 'Message Bubbles' : 'Novel Prose'}</Text>
-                </View>
-                <View style={styles.modeIndicatorBadge}>
-                  <Text style={styles.modeIndicatorText}>{chatStyle.toUpperCase()}</Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* 3. Wallpaper & Appearance */}
-              <TouchableOpacity
-                style={styles.actionDeckItem}
-                onPress={() => {
-                  setShowActionDeck(false);
-                  setShowAppearanceModal(true);
-                }}
-              >
-                <Palette size={17} color="#d4ff00" style={{ marginRight: 10 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.actionDeckTitle}>Wallpaper & Appearance</Text>
-                  <Text style={styles.actionDeckSub}>Upload custom wallpaper, adjust blur & scrim</Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* 4. Chat Sessions & Branching */}
-              <TouchableOpacity
-                style={styles.actionDeckItem}
-                onPress={() => {
-                  setShowActionDeck(false);
-                  setShowSessionModal(true);
-                }}
-              >
-                <Layers size={17} color="#d4ff00" style={{ marginRight: 10 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.actionDeckTitle}>Saved Scenarios & Sessions</Text>
-                  <Text style={styles.actionDeckSub}>Switch roleplay branches or start fresh</Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* 5. Depict Scene Art */}
-              <TouchableOpacity
-                style={styles.actionDeckItem}
-                onPress={() => {
-                  setShowActionDeck(false);
-                  handleOpenSceneDepict();
-                }}
-              >
-                <ImageIcon size={17} color="#d4ff00" style={{ marginRight: 10 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.actionDeckTitle}>Depict Scene Illustration</Text>
-                  <Text style={styles.actionDeckSub}>Generate AI visual of current scene</Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* 6. Refine / Polish Draft */}
-              <TouchableOpacity
-                style={styles.actionDeckItem}
-                onPress={() => {
-                  setShowActionDeck(false);
-                  handleRefine();
-                }}
-                disabled={isRefining}
-              >
-                <Sparkles size={17} color="#d4ff00" style={{ marginRight: 10 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.actionDeckTitle}>
-                    {isRefining ? 'Polishing...' : 'Refine & Polish Draft'}
-                  </Text>
-                  <Text style={styles.actionDeckSub}>AI roleplay style enhancer</Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* 7. [ooc] Out of Character */}
-              <TouchableOpacity
-                style={styles.actionDeckItem}
-                onPress={() => {
-                  setInputText(prev => (prev.startsWith('[ooc]') ? prev : `[ooc] ${prev}`));
-                  setShowActionDeck(false);
-                }}
-              >
-                <Text style={styles.actionDeckOoc}>[ooc]</Text>
-                <View style={{ flex: 1, marginLeft: 6 }}>
-                  <Text style={styles.actionDeckTitle}>Out of Character Note</Text>
-                  <Text style={styles.actionDeckSub}>Direct instruction to AI director</Text>
-                </View>
-              </TouchableOpacity>
+                {/* 4. Image Generation */}
+                <TouchableOpacity
+                  style={styles.actionGridTile}
+                  onPress={() => {
+                    setShowActionDeck(false);
+                    handleOpenSceneDepict();
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.actionGridIconBox, { backgroundColor: `rgba(${palette.accentRgb}, 0.14)` }]}>
+                    <ImageIcon size={16} color={palette.accent} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.actionGridTitle}>Image Generation</Text>
+                    <Text style={[styles.actionGridSub, { opacity: 0.72 }]} numberOfLines={1}>
+                      {activeImageProvider ? `Provider: ${activeImageProvider}` : 'No provider set'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
             </Animated.View>
           )}
 
-          {/* Unified Expandable Composer Container (Matching Image 1) */}
-          <View style={[styles.unifiedComposerCard, isInputExpanded && styles.unifiedComposerCardExpanded]}>
+          {/* Unified Expandable Composer Container */}
+          <View
+            style={[
+              styles.unifiedComposerCard,
+              { shadowColor: palette.accent },
+              isInputExpanded && [styles.unifiedComposerCardExpanded, { borderColor: palette.accent }],
+            ]}
+          >
             <TextInput
-              style={[styles.unifiedTextInput, isInputExpanded && styles.unifiedTextInputExpanded]}
+              ref={composerInputRef}
+              style={[
+                styles.unifiedTextInput,
+                !isInputExpanded && { height: inputText ? composerInputHeight : 34 },
+                isInputExpanded && styles.unifiedTextInputExpanded,
+              ]}
               placeholder='Type your roleplay action or dialogue (*actions in asterisks*, "dialogue")...'
               placeholderTextColor="rgba(255, 255, 255, 0.4)"
               value={inputText}
-              onChangeText={setInputText}
+              numberOfLines={Platform.OS === 'web' ? 1 : undefined}
+              onChangeText={txt => {
+                setInputText(txt);
+                if (!txt) {
+                  setComposerInputHeight(34);
+                  if (Platform.OS === 'web' && composerInputRef.current) {
+                    (composerInputRef.current as any).style.height = '34px';
+                  }
+                  return;
+                }
+                if (Platform.OS === 'web' && composerInputRef.current && !isInputExpanded) {
+                  const el = composerInputRef.current as any;
+                  requestAnimationFrame(() => {
+                    el.style.height = '34px';
+                    const nextH = Math.max(34, Math.min(200, el.scrollHeight));
+                    el.style.height = `${nextH}px`;
+                    setComposerInputHeight(nextH);
+                  });
+                }
+              }}
+              onContentSizeChange={e => {
+                if (Platform.OS === 'web') return;
+                if (!inputText) {
+                  setComposerInputHeight(34);
+                  return;
+                }
+                const h = e.nativeEvent.contentSize?.height || 34;
+                setComposerInputHeight(Math.max(34, Math.min(200, Math.ceil(h))));
+              }}
+              scrollEnabled={isInputExpanded || composerInputHeight >= 200}
               multiline
               textAlignVertical="top"
             />
 
-            {/* Bottom Inner Control Dock */}
+            {/* Bottom Inner Control Dock (Clean Image-2 style: + | [Avatar Name v] ... [Expand] [Send]) */}
             <View style={styles.composerControlRow}>
-              {/* Left Controls: + (Action Deck) and Persona Avatar */}
-              <View style={styles.composerLeftControls}>
+              <View style={[styles.composerLeftControls, { flex: 1, gap: 8 }]}>
                 <TouchableOpacity
-                  style={[styles.composerActionBtn, showActionDeck && styles.composerActionBtnActive]}
+                  style={[
+                    styles.composerActionBtn,
+                    showActionDeck && [styles.composerActionBtnActive, { backgroundColor: palette.accent }],
+                  ]}
                   onPress={() => setShowActionDeck(prev => !prev)}
                   activeOpacity={0.8}
-                  accessibilityLabel="Action Deck"
+                  accessibilityLabel="More chat tools"
                 >
                   <Animated.View
                     style={{
@@ -1996,12 +2602,25 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                       ],
                     }}
                   >
-                    <Plus size={18} color={showActionDeck ? '#0c0e14' : '#d4ff00'} />
+                    <Plus size={18} color={showActionDeck ? '#0c0e14' : palette.accent} />
                   </Animated.View>
                 </TouchableOpacity>
 
+                {/* Persona Selector Pill (Avatar + Name + Chevron) */}
                 <TouchableOpacity
-                  style={styles.personaAvatarBtn}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                    paddingLeft: 4,
+                    paddingRight: 10,
+                    paddingVertical: 4,
+                    borderRadius: 12,
+                    backgroundColor: 'rgba(255, 255, 255, 0.055)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                    maxWidth: '72%',
+                  }}
                   onPress={() => {
                     setEditingPersonaName(persona.name);
                     setEditingPersonaPersonality(persona.personality || persona.description || '');
@@ -2011,14 +2630,33 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                   accessibilityLabel="Switch or edit active persona"
                 >
                   {persona.avatar ? (
-                    <Image source={{ uri: persona.avatar }} style={styles.personaAvatarImg} />
+                    <Image
+                      source={{ uri: persona.avatar }}
+                      style={{ width: 24, height: 24, borderRadius: 7 }}
+                    />
                   ) : (
-                    <View style={styles.personaAvatarPlaceholder}>
-                      <Text style={styles.personaAvatarInitial}>
+                    <View
+                      style={{
+                        width: 24,
+                        height: 24,
+                        borderRadius: 7,
+                        backgroundColor: `rgba(${palette.accentRgb}, 0.22)`,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '800' }}>
                         {persona.name.charAt(0).toUpperCase()}
                       </Text>
                     </View>
                   )}
+                  <Text
+                    style={{ color: '#e2e8f0', fontSize: 12.5, fontWeight: '600', flexShrink: 1 }}
+                    numberOfLines={1}
+                  >
+                    {persona.name}
+                  </Text>
+                  <ChevronDown size={14} color="#94a3b8" />
                 </TouchableOpacity>
               </View>
 
@@ -2040,7 +2678,12 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                 {isStreaming ? (
                   <TouchableOpacity
                     style={styles.stopBtn}
-                    onPress={() => aiProviderService.abortGeneration()}
+                    onPress={() => {
+                      aiProviderService.abortGeneration();
+                      setIsStreaming(false);
+                      setIsContinuingWait(false);
+                      setRevealState(null);
+                    }}
                     activeOpacity={0.8}
                     accessibilityLabel="Stop response"
                   >
@@ -2048,7 +2691,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                   </TouchableOpacity>
                 ) : (
                   <TouchableOpacity
-                    style={[styles.sendBtnLime, !inputText.trim() && styles.sendBtnDisabled]}
+                    style={[
+                      styles.sendBtnLime,
+                      { backgroundColor: palette.accent },
+                      !inputText.trim() && styles.sendBtnDisabled,
+                    ]}
                     onPress={handleSend}
                     disabled={!inputText.trim()}
                     activeOpacity={0.8}
@@ -2276,125 +2923,6 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             </ScrollView>
       </BottomSheetModal>
 
-      {/* ================= MODAL: CHAT WALLPAPER & APPEARANCE (Blueprint Section D) ================= */}
-      <BottomSheetModal
-        visible={showAppearanceModal}
-        onClose={() => setShowAppearanceModal(false)}
-      >
-            <View style={styles.appearanceHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Palette size={18} color="#d4ff00" />
-                <Text style={styles.modalTitle}>Chat Wallpaper & Effects</Text>
-              </View>
-              <TouchableOpacity onPress={() => setShowAppearanceModal(false)}>
-                <X size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={{ maxHeight: 440 }} showsVerticalScrollIndicator={false}>
-              {/* Toggle Wallpaper */}
-              <View style={styles.appearanceRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.appearanceLabel}>Character Wallpaper</Text>
-                  <Text style={styles.appearanceSub}>Display background art behind messages</Text>
-                </View>
-                <TouchableOpacity
-                  style={[styles.togglePill, appearance.enableWallpaper && styles.togglePillActive]}
-                  onPress={() => saveChatAppearance({ enableWallpaper: !appearance.enableWallpaper })}
-                  activeOpacity={0.8}
-                >
-                  <Animated.View
-                    style={[
-                      styles.toggleThumb,
-                      {
-                        transform: [
-                          {
-                            translateX: wallpaperToggleAnim.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [0, 20],
-                            }),
-                          },
-                        ],
-                      },
-                    ]}
-                  />
-                </TouchableOpacity>
-              </View>
-
-              {/* Wallpaper Picker & URL Input */}
-              {appearance.enableWallpaper && (
-                <View style={{ marginBottom: 16 }}>
-                  <Text style={styles.appearanceSectionTitle}>UPLOAD CUSTOM WALLPAPER</Text>
-                  
-                  {/* Upload from Device / Gallery Button */}
-                  <TouchableOpacity
-                    style={styles.uploadWallpaperBtn}
-                    onPress={handlePickWallpaper}
-                    activeOpacity={0.8}
-                  >
-                    <ImagePlus size={16} color="#0c0e14" style={{ marginRight: 6 }} />
-                    <Text style={styles.uploadWallpaperText}>Upload / Pick from Gallery</Text>
-                  </TouchableOpacity>
-
-                  <Text style={[styles.appearanceSectionTitle, { marginTop: 14 }]}>OR IMAGE URL</Text>
-                  <TextInput
-                    style={styles.appearanceInput}
-                    placeholder="Paste image URL (https://...)"
-                    placeholderTextColor="#6b7280"
-                    value={appearance.wallpaperUrl}
-                    onChangeText={v => saveChatAppearance({ wallpaperUrl: v })}
-                  />
-                  <TouchableOpacity
-                    style={styles.resetWallpaperBtn}
-                    onPress={() => saveChatAppearance({ wallpaperUrl: character.coverUrl || character.avatar || '' })}
-                    activeOpacity={0.7}
-                  >
-                    <RotateCcw size={12} color="#d4ff00" style={{ marginRight: 4 }} />
-                    <Text style={styles.resetWallpaperText}>Reset to Default Character Art</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* Darkness Overlay Opacity */}
-              <View style={{ marginBottom: 18 }}>
-                <Text style={styles.appearanceSectionTitle}>
-                  DARKNESS OVERLAY ({(appearance.overlayOpacity * 100).toFixed(0)}%)
-                </Text>
-                <Text style={styles.appearanceSub}>Darkens wallpaper for crisp message readability</Text>
-                <SmoothSlider
-                  value={Math.round(appearance.overlayOpacity * 100)}
-                  min={0}
-                  max={98}
-                  step={1}
-                  onValueChange={val => saveChatAppearance({ overlayOpacity: val / 100 })}
-                  minLabel="0% Clear"
-                  maxLabel="98% Pitch"
-                />
-              </View>
-
-              {/* Blur Intensity */}
-              <View style={{ marginBottom: 16 }}>
-                <Text style={styles.appearanceSectionTitle}>
-                  BLUR EFFECT ({appearance.blurRadius}px)
-                </Text>
-                <Text style={styles.appearanceSub}>Softens background details for aesthetic focus</Text>
-                <SmoothSlider
-                  value={appearance.blurRadius}
-                  min={0}
-                  max={24}
-                  step={1}
-                  onValueChange={val => saveChatAppearance({ blurRadius: val })}
-                  minLabel="0px Sharp"
-                  maxLabel="24px Cinematic"
-                />
-              </View>
-            </ScrollView>
-
-            <TouchableOpacity style={styles.appearanceDoneBtn} onPress={() => setShowAppearanceModal(false)}>
-              <Text style={styles.appearanceDoneText}>Apply & Close</Text>
-            </TouchableOpacity>
-      </BottomSheetModal>
-
       {/* ================= MODAL: QUICK PERSONA SWITCHER & PERSONALITY EDITOR ================= */}
       <BottomSheetModal
         visible={showPersonaModal}
@@ -2602,7 +3130,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       >
             <View style={styles.appearanceHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <MoreHorizontal size={18} color="#d4ff00" />
+                <MoreHorizontal size={18} color={palette.accent} />
                 <Text style={styles.modalTitle}>Chat Control & Context</Text>
               </View>
               <TouchableOpacity onPress={() => setShowChatControlModal(false)}>
@@ -2610,27 +3138,30 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               </TouchableOpacity>
             </View>
 
-            {/* Sub-Tabs: [ 🧠 Memory ] | [ ⚡ AI Model ] | [ 🎨 Text Colors ] */}
+            {/* Sub-Tabs: [ ⚙️ Settings ] | [ 🧠 Memory ] | [ 🎨 Customize ] */}
             <View style={{ flexDirection: 'row', gap: 6, marginHorizontal: 20, marginBottom: 14, marginTop: 4 }}>
               {[
+                { id: 'model', label: '⚙️ Settings' },
                 { id: 'memory', label: '🧠 Memory' },
-                { id: 'model', label: '⚡ AI Model' },
-                { id: 'syntax', label: '🎨 Text Colors' },
+                { id: 'syntax', label: '🎨 Customize' },
               ].map(tb => (
                 <TouchableOpacity
                   key={tb.id}
                   style={[
                     styles.sliderPill,
-                    chatControlTab === tb.id && styles.sliderPillActive,
+                    chatControlTab === tb.id && [styles.sliderPillActive, { borderColor: palette.accent, backgroundColor: `rgba(${palette.accentRgb}, 0.16)` }],
                     { flex: 1, paddingVertical: 8, alignItems: 'center', justifyContent: 'center' },
                   ]}
-                  onPress={() => setChatControlTab(tb.id as any)}
+                  onPress={() => {
+                    setChatControlTab(tb.id as any);
+                    setSettingsSubView('main');
+                  }}
                   activeOpacity={0.8}
                 >
                   <Text
                     style={[
                       styles.sliderPillText,
-                      chatControlTab === tb.id && styles.sliderPillTextActive,
+                      chatControlTab === tb.id && [styles.sliderPillTextActive, { color: palette.accent }],
                       { fontSize: 11.5, fontWeight: '700' },
                     ]}
                   >
@@ -2642,274 +3173,1102 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 
             <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
               <Animated.View style={{ opacity: chatControlTabAnim }}>
-              {/* TAB 1: Chat Memory & Warden Checkpoints */}
+              {/* TAB 2: Memory (Summary of this chat) */}
               {chatControlTab === 'memory' && (
                 <View style={{ paddingHorizontal: 20 }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                    <Text style={styles.personaEditorLabel}>PERSISTENT MEMORY & CHECKPOINTS</Text>
-                    <View style={styles.checkpointTagBadge}>
-                      <Text style={styles.checkpointTagBadgeText}>&lt;memory&gt; standard</Text>
-                    </View>
-                  </View>
-                  <Text style={{ color: '#9ca3af', fontSize: 11.5, lineHeight: 16, marginBottom: 10 }}>
-                    Warden AI checkpoints inside &lt;memory&gt; tags are permanently injected into this companion's context window.
-                  </Text>
-
-                  {/* Dual Summarizers: Incremental Update & Full Story Rescan */}
-                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-                    <TouchableOpacity
-                      style={[
-                        styles.sliderPill,
-                        { flex: 1, paddingVertical: 8, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-                      ]}
-                      onPress={handleIncrementalCheckpoint}
-                      disabled={isSummarizingMemory}
-                      activeOpacity={0.8}
-                    >
-                      {isSummarizingMemory ? (
-                        <ActivityIndicator size="small" color="#d4ff00" />
-                      ) : (
-                        <Zap size={14} color="#d4ff00" />
-                      )}
-                      <Text style={[styles.sliderPillText, { color: '#d4ff00', fontSize: 11, fontWeight: '700' }]}>
-                        Update to Latest
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.sliderPill,
-                        { flex: 1, paddingVertical: 8, paddingHorizontal: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-                      ]}
-                      onPress={handleFullRescanMemory}
-                      disabled={isSummarizingMemory}
-                      activeOpacity={0.8}
-                    >
-                      <RotateCw size={13} color="#FFFFFF" />
-                      <Text style={[styles.sliderPillText, { color: '#FFFFFF', fontSize: 11, fontWeight: '700' }]}>
-                        Full Story Rescan
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <Text style={{ color: '#9ca3af', fontSize: 10.5, marginBottom: 6 }}>
-                    {!hasValidMemory(chatMemory)
-                      ? `No checkpoints saved yet • (${messages.length} messages ready to summarize)`
-                      : lastCheckpointIndex >= 0
-                      ? `Checkpoint indexed up to turn #${lastCheckpointIndex + 1}${
-                          messages.length - 1 > lastCheckpointIndex
-                            ? ` • (${messages.length - 1 - lastCheckpointIndex} new turns ready to summarize)`
-                            : ' • (All current messages synced)'
-                        }`
-                      : `Checkpoints active • (${messages.length} total messages)`}
-                  </Text>
-
-                  <TextInput
-                    style={[
-                      styles.personaPersonalityInput,
-                      {
-                        minHeight: 140,
-                        fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-                        fontSize: 12,
-                        lineHeight: 17,
-                        borderWidth: 1,
-                        borderColor: 'rgba(212, 255, 0, 0.25)',
-                      },
-                    ]}
-                    value={chatMemory}
-                    onChangeText={text => {
-                      setChatMemory(text);
-                      AsyncStorage.setItem(`@nekochat:chat_memory_${character.id}`, text);
-                    }}
-                    placeholder={`<memory>\n[Checkpoint #1 - The Meeting]\n- Met during the rainstorm.\n- Sloane shared her umbrella.\n- Agreed to travel north together.\n</memory>`}
-                    placeholderTextColor="rgba(255, 255, 255, 0.35)"
-                    multiline
-                    numberOfLines={7}
-                    textAlignVertical="top"
-                  />
-
-                  {memoryNoticeText ? (
-                    <Text
-                      style={{
-                        color: memoryNoticeText.startsWith('⚠️') ? '#f87171' : '#d4ff00',
-                        fontSize: 11.5,
-                        fontWeight: '700',
-                        marginTop: 4,
-                        marginBottom: 4,
-                      }}
-                    >
-                      {memoryNoticeText}
+                  <View style={styles.settingsBentoCard}>
+                    <Text style={{ color: '#f8fafc', fontSize: 15, fontWeight: '700', marginBottom: 10 }}>
+                      Summary of this chat
                     </Text>
-                  ) : null}
-                </View>
-              )}
 
-              {/* TAB 2: Per-Chat Model & Temperature Override */}
-              {chatControlTab === 'model' && (
-                <View style={{ paddingHorizontal: 20 }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <Text style={styles.personaEditorLabel}>ACTIVE AI ENGINE MODEL</Text>
-                    <TouchableOpacity
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                      onPress={handleFetchChatModels}
-                      disabled={loadingChatModels}
-                    >
-                      <RotateCw size={12} color="#d4ff00" />
-                      <Text style={{ color: '#d4ff00', fontSize: 11, fontWeight: '700' }}>
-                        {loadingChatModels ? 'Loading...' : 'Fetch Endpoint Models'}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.settingsCardTitle}>Memory replaces old messages</Text>
+                        <Text style={styles.settingsHelperText}>
+                          When on, messages already covered by your saved Memory are left out of the prompt to free up context. Off keeps the classic behavior: Memory is added on top and nothing is removed.
+                        </Text>
+                      </View>
+                      <Switch
+                        value={memoryReplacesOld}
+                        onValueChange={val => {
+                          setMemoryReplacesOld(val);
+                          persistChatSettings({ memoryReplacesOld: val });
+                        }}
+                        trackColor={{ false: 'rgba(255,255,255,0.15)', true: palette.accent }}
+                        thumbColor="#ffffff"
+                      />
+                    </View>
+
+                    <View style={[styles.settingsHairline, { marginVertical: 12 }]} />
+
+                    <Text style={[styles.settingsHelperText, { marginTop: 0, marginBottom: 6 }]}>
+                      Enter a summary for your chat. This will be included into the prompt as long-term memory.
+                    </Text>
+
+                    {(() => {
+                      const msgsSince =
+                        lastCheckpointIndex >= 0
+                          ? Math.max(0, messages.length - 1 - lastCheckpointIndex)
+                          : messages.length;
+                      const tokensSince = messages
+                        .slice(lastCheckpointIndex >= 0 ? lastCheckpointIndex + 1 : 0)
+                        .reduce((acc, m) => acc + Math.ceil((m.content?.length || 0) / 4), 0);
+                      return (
+                        <Text style={{ color: '#94a3b8', fontSize: 11.5, marginBottom: 10 }}>
+                          {hasValidMemory(chatMemory)
+                            ? `You have updated the chat summary around ~${msgsSince} messages (~${tokensSince} tokens) ago.`
+                            : `No summary saved yet · ${messages.length} messages (~${tokensSince} tokens) in chat.`}
+                        </Text>
+                      );
+                    })()}
+
+                    <TextInput
+                      style={[
+                        styles.personaPersonalityInput,
+                        {
+                          minHeight: 165,
+                          fontSize: 12.5,
+                          lineHeight: 18,
+                          marginBottom: 6,
+                        },
+                      ]}
+                      value={chatMemory}
+                      onChangeText={text => {
+                        setChatMemory(text);
+                        AsyncStorage.setItem(`@nekochat:chat_memory_${character.id}`, text);
+                      }}
+                      placeholder="Write or auto-generate key plot points, character states, and relationship notes..."
+                      placeholderTextColor="rgba(255, 255, 255, 0.35)"
+                      multiline
+                      numberOfLines={8}
+                      textAlignVertical="top"
+                    />
+
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                      <Text style={{ color: '#64748b', fontSize: 11.5 }}>
+                        ~{Math.ceil(chatMemory.length / 4)} tokens
                       </Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <ModelDropdown
-                    selectedModel={chatModel}
-                    defaultModelLabel={config?.model || 'Configured in Settings'}
-                    options={(fetchedChatModels.length > 0
-                      ? fetchedChatModels.map(m => ({ id: m.id, label: m.name || m.id }))
-                      : ['gpt-4o', 'gpt-4o-mini', 'claude-3-5-sonnet', 'gemini-2.5-flash', 'deepseek-chat'].map(id => ({
-                          id,
-                          label: id,
-                        }))
-                    )}
-                    onSelect={handleSelectModel}
-                  />
-
-                  <Text style={styles.personaEditorLabel}>OR ENTER CUSTOM MODEL ID FOR THIS CHAT</Text>
-                  <TextInput
-                    style={[styles.personaNameInput, { marginBottom: 14 }]}
-                    value={chatModel}
-                    onChangeText={v => handleSelectModel(v)}
-                    placeholder={config?.model || 'e.g. deepseek-chat, gpt-4o, anthropic/claude-3.5-sonnet'}
-                    placeholderTextColor="rgba(255,255,255,0.35)"
-                    autoCapitalize="none"
-                  />
-
-                  <Text style={styles.personaEditorLabel}>TEMPERATURE / CREATIVITY</Text>
-                  <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14 }}>
-                    {[
-                      { val: 0.3, label: '0.3 Strict' },
-                      { val: 0.7, label: '0.7 RP' },
-                      { val: 1.0, label: '1.0 Creative' },
-                      { val: 1.3, label: '1.3 Wild' },
-                    ].map(t => (
                       <TouchableOpacity
-                        key={t.val}
-                        style={[
-                          styles.sliderPill,
-                          chatTemperature === t.val && styles.sliderPillActive,
-                          { flex: 1, paddingVertical: 8, alignItems: 'center' },
-                        ]}
-                        onPress={() => handleSelectTemperature(t.val)}
+                        onPress={() => {
+                          if (!chatMemory.trim()) return;
+                          if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                            navigator.clipboard.writeText(chatMemory);
+                            setMemoryNoticeText('Copied summary to clipboard.');
+                          } else {
+                            Share.share({ message: chatMemory }).catch(() => {});
+                          }
+                        }}
+                        hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
+                      >
+                        <Text style={{ color: '#cbd5e1', fontSize: 12, fontWeight: '600' }}>Copy</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={{ gap: 8 }}>
+                      <TouchableOpacity
+                        style={{
+                          paddingVertical: 10,
+                          paddingHorizontal: 14,
+                          borderRadius: 12,
+                          borderWidth: 1,
+                          borderColor: 'rgba(255,255,255,0.14)',
+                          backgroundColor: 'rgba(255,255,255,0.04)',
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 8,
+                        }}
+                        onPress={handleIncrementalCheckpoint}
+                        disabled={isSummarizingMemory}
                         activeOpacity={0.8}
                       >
-                        <Text style={[styles.sliderPillText, chatTemperature === t.val && styles.sliderPillTextActive, { fontSize: 10.5 }]}>
-                          {t.label}
+                        {isSummarizingMemory && <ActivityIndicator size="small" color={palette.accent} />}
+                        <Text style={{ color: '#f8fafc', fontSize: 12.5, fontWeight: '600' }}>
+                          Auto summary (since last updated)
                         </Text>
                       </TouchableOpacity>
-                    ))}
+
+                      <TouchableOpacity
+                        style={{
+                          paddingVertical: 10,
+                          paddingHorizontal: 14,
+                          borderRadius: 12,
+                          borderWidth: 1,
+                          borderColor: 'rgba(255,255,255,0.14)',
+                          backgroundColor: 'rgba(255,255,255,0.04)',
+                          alignItems: 'center',
+                        }}
+                        onPress={handleFullRescanMemory}
+                        disabled={isSummarizingMemory}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={{ color: '#f8fafc', fontSize: 12.5, fontWeight: '600' }}>
+                          Auto summary (as far as possible)
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {memoryNoticeText ? (
+                      <Text
+                        style={{
+                          color: memoryNoticeText.startsWith('⚠️') ? '#f87171' : palette.accent,
+                          fontSize: 11.5,
+                          fontWeight: '600',
+                          marginTop: 10,
+                        }}
+                      >
+                        {memoryNoticeText}
+                      </Text>
+                    ) : null}
                   </View>
                 </View>
               )}
 
-              {/* TAB 3: Text & Syntax Customization */}
-              {chatControlTab === 'syntax' && (
+              {/* TAB 1 (Settings): Calm Bento Cards + Drill-Down Sub-Views */}
+              {chatControlTab === 'model' && (
                 <View style={{ paddingHorizontal: 20 }}>
-                  <Text style={styles.personaEditorLabel}>SPOKEN DIALOGUE COLOR (Quotes "...")</Text>
-                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-                    {['#FFFFFF', '#d4ff00', '#38bdf8', '#fb7185', '#facc15'].map(col => (
+                  {/* ── MAIN SETTINGS VIEW (Image 1) ── */}
+                  {settingsSubView === 'main' && (
+                    <View style={{ gap: 10 }}>
+                      {/* Provider / Model Card */}
+                      <View style={styles.settingsBentoCard}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <Text style={styles.settingsCardTitle}>Model</Text>
+                          <TouchableOpacity
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                            onPress={handleFetchChatModels}
+                            disabled={loadingChatModels}
+                          >
+                            <RotateCw size={12} color={palette.accent} />
+                            <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '600' }}>
+                              {loadingChatModels ? 'Refreshing...' : 'Refresh'}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                        <ModelDropdown
+                          selectedModel={chatModel}
+                          defaultModelLabel={config?.model || 'Configured in Settings'}
+                          options={(fetchedChatModels.length > 0
+                            ? fetchedChatModels.map(m => ({ id: m.id, label: m.name || m.id }))
+                            : ['gpt-4o', 'gpt-4o-mini', 'claude-3-5-sonnet', 'gemini-2.5-flash', 'deepseek-chat'].map(id => ({
+                                id,
+                                label: id,
+                              }))
+                          )}
+                          onSelect={handleSelectModel}
+                        />
+                      </View>
+
+                      {/* Response Length Segmented Toggle */}
+                      <View style={styles.settingsBentoCard}>
+                        <Text style={[styles.settingsCardTitle, { marginBottom: 8 }]}>Response length</Text>
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            backgroundColor: 'rgba(255,255,255,0.04)',
+                            borderRadius: 12,
+                            padding: 3,
+                            borderWidth: 1,
+                            borderColor: 'rgba(255,255,255,0.07)',
+                          }}
+                        >
+                          {(['standard', 'shorter'] as const).map(len => {
+                            const active = responseLength === len;
+                            return (
+                              <TouchableOpacity
+                                key={len}
+                                style={{
+                                  flex: 1,
+                                  paddingVertical: 8,
+                                  borderRadius: 9,
+                                  alignItems: 'center',
+                                  backgroundColor: active ? `rgba(${palette.accentRgb}, 0.16)` : 'transparent',
+                                  borderWidth: active ? 1 : 0,
+                                  borderColor: active ? `rgba(${palette.accentRgb}, 0.45)` : 'transparent',
+                                }}
+                                onPress={() => {
+                                  setResponseLength(len);
+                                  persistChatSettings({ responseLength: len });
+                                }}
+                                activeOpacity={0.8}
+                              >
+                                <Text
+                                  style={{
+                                    color: active ? palette.accent : '#94a3b8',
+                                    fontSize: 12.5,
+                                    fontWeight: active ? '700' : '600',
+                                  }}
+                                >
+                                  {len === 'standard' ? 'Standard' : 'Shorter'}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+
+                      {/* Generation Controls Drill-Down Row */}
                       <TouchableOpacity
-                        key={col}
-                        style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 16,
-                          backgroundColor: col,
-                          borderWidth: syntaxColors.dialogue === col ? 3 : 1,
-                          borderColor: syntaxColors.dialogue === col ? '#FFFFFF' : 'rgba(255,255,255,0.2)',
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                        }}
-                        onPress={() => handleUpdateSyntaxColors({ dialogue: col })}
+                        style={[styles.settingsBentoCard, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+                        onPress={() => setSettingsSubView('generation')}
+                        activeOpacity={0.75}
+                      >
+                        <View>
+                          <Text style={styles.settingsCardTitle}>Generation controls</Text>
+                          <Text style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>
+                            Temperature {chatTemperature.toFixed(1)} · Max tokens {chatMaxTokens === 0 ? 'Auto' : chatMaxTokens}
+                          </Text>
+                        </View>
+                        <ChevronRight size={17} color="#64748b" />
+                      </TouchableOpacity>
+
+                      {/* Instructions Bento Group */}
+                      <View style={[styles.settingsBentoCard, { paddingVertical: 6 }]}>
+                        <Text style={[styles.settingsCardTitle, { paddingTop: 6, paddingBottom: 6 }]}>Instructions</Text>
+
+                        <TouchableOpacity
+                          style={styles.settingsDrillRow}
+                          onPress={() => setSettingsSubView('custom_prompt')}
+                          activeOpacity={0.75}
+                        >
+                          <Text style={styles.settingsRowLabel}>Custom prompt</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '55%' }}>
+                            <Text style={styles.settingsRowValue} numberOfLines={1}>
+                              {promptPresets.find(p => p.id === activePresetId || (customPrompt.trim() && p.prompt.trim() === customPrompt.trim()))?.name ||
+                                (customPrompt.trim() ? 'Custom' : 'None')}
+                            </Text>
+                            <ChevronRight size={15} color="#64748b" />
+                          </View>
+                        </TouchableOpacity>
+
+                        <View style={styles.settingsHairline} />
+
+                        <TouchableOpacity
+                          style={styles.settingsDrillRow}
+                          onPress={() => setSettingsSubView('prefill')}
+                          activeOpacity={0.75}
+                        >
+                          <Text style={styles.settingsRowLabel}>Prefill</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={styles.settingsRowValue}>
+                              {prefillEnabled && prefillText.trim() ? 'On' : 'Off'}
+                            </Text>
+                            <ChevronRight size={15} color="#64748b" />
+                          </View>
+                        </TouchableOpacity>
+
+                        <View style={styles.settingsHairline} />
+
+                        <TouchableOpacity
+                          style={styles.settingsDrillRow}
+                          onPress={() => setSettingsSubView('forbidden_words')}
+                          activeOpacity={0.75}
+                        >
+                          <Text style={styles.settingsRowLabel}>Forbidden words</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={styles.settingsRowValue}>{forbiddenWords.length}/10</Text>
+                            <ChevronRight size={15} color="#64748b" />
+                          </View>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* ── SUB-VIEW: GENERATION CONTROLS (Image 2) ── */}
+                  {settingsSubView === 'generation' && (
+                    <View>
+                      <TouchableOpacity
+                        style={styles.settingsSubHeader}
+                        onPress={() => setSettingsSubView('main')}
+                        activeOpacity={0.75}
+                      >
+                        <ChevronLeft size={18} color="#f8fafc" />
+                        <Text style={styles.settingsSubHeaderTitle}>Generation controls</Text>
+                      </TouchableOpacity>
+
+                      <View style={styles.settingsBentoCard}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <Text style={styles.settingsCardTitle}>Temperature</Text>
+                          <View style={styles.settingsValueBadge}>
+                            <Text style={styles.settingsValueBadgeText}>{chatTemperature.toFixed(1)}</Text>
+                          </View>
+                        </View>
+                        <SmoothSlider
+                          value={Math.round(chatTemperature * 10)}
+                          min={0}
+                          max={20}
+                          step={1}
+                          onValueChange={val => handleSelectTemperature(Number((val / 10).toFixed(1)))}
+                          minLabel="0.0 Focused"
+                          maxLabel="2.0 Creative"
+                        />
+                        <Text style={styles.settingsHelperText}>
+                          Controls how varied replies are. Lower is more focused; higher is more creative.
+                        </Text>
+
+                        <View style={[styles.settingsHairline, { marginVertical: 14 }]} />
+
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <Text style={styles.settingsCardTitle}>Max tokens</Text>
+                          <View style={styles.settingsValueBadge}>
+                            <Text style={styles.settingsValueBadgeText}>{chatMaxTokens}</Text>
+                          </View>
+                        </View>
+                        <SmoothSlider
+                          value={chatMaxTokens}
+                          min={0}
+                          max={4096}
+                          step={100}
+                          onValueChange={val => {
+                            setChatMaxTokens(val);
+                            persistChatSettings({ maxTokens: val });
+                          }}
+                          minLabel="0 Auto"
+                          maxLabel="4096"
+                        />
+                        <Text style={styles.settingsHelperText}>
+                          Limits how long replies can be. 0 lets the model choose the length.
+                        </Text>
+
+                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 }}>
+                          <TouchableOpacity
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4, paddingHorizontal: 8 }}
+                            onPress={() => {
+                              setChatTemperature(0.7);
+                              setChatMaxTokens(1200);
+                              persistChatSettings({ temperature: 0.7, maxTokens: 1200 });
+                            }}
+                          >
+                            <RotateCcw size={13} color="#94a3b8" />
+                            <Text style={{ color: '#94a3b8', fontSize: 12, fontWeight: '600' }}>Reset</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* ── SUB-VIEW: CUSTOM PROMPT LIST (Image 3) ── */}
+                  {settingsSubView === 'custom_prompt' && (
+                    <View>
+                      <TouchableOpacity
+                        style={styles.settingsSubHeader}
+                        onPress={() => setSettingsSubView('main')}
+                        activeOpacity={0.75}
+                      >
+                        <ChevronLeft size={18} color="#f8fafc" />
+                        <Text style={styles.settingsSubHeaderTitle}>Custom prompt</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.settingsBentoCard,
+                          {
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            marginBottom: 12,
+                            borderColor: !customPrompt.trim() ? palette.accent : 'rgba(255,255,255,0.08)',
+                            backgroundColor: !customPrompt.trim() ? `rgba(${palette.accentRgb}, 0.1)` : 'rgba(255,255,255,0.035)',
+                          },
+                        ]}
+                        onPress={() => handleApplyCustomPrompt('', null)}
                         activeOpacity={0.8}
                       >
-                        {syntaxColors.dialogue === col && <Check size={14} color="#000000" />}
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.settingsCardTitle}>None</Text>
+                          <Text style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 2 }}>
+                            {"Use NekoChat's default instructions."}
+                          </Text>
+                        </View>
+                        {!customPrompt.trim() && <Check size={16} color={palette.accent} />}
                       </TouchableOpacity>
-                    ))}
+
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <Text style={{ color: '#94a3b8', fontSize: 12.5, fontWeight: '600' }}>Prompts</Text>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setNewPresetName('');
+                            setNewPresetBody('');
+                            setSettingsSubView('new_custom_prompt');
+                          }}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 4,
+                            paddingHorizontal: 10,
+                            paddingVertical: 5,
+                            borderRadius: 10,
+                            borderWidth: 1,
+                            borderColor: 'rgba(255,255,255,0.14)',
+                            backgroundColor: 'rgba(255,255,255,0.05)',
+                          }}
+                        >
+                          <Plus size={13} color="#f8fafc" />
+                          <Text style={{ color: '#f8fafc', fontSize: 12, fontWeight: '600' }}>New</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {promptPresets.length > 0 && (
+                        <View style={[styles.settingsBentoCard, { paddingVertical: 4, marginBottom: 10 }]}>
+                          {promptPresets.map((preset, idx) => {
+                            const isSelected = activePresetId === preset.id || customPrompt.trim() === preset.prompt.trim();
+                            const estTokens = Math.max(1, Math.ceil(preset.prompt.length / 4));
+                            const dateStr = new Date(preset.updatedAt).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric',
+                            });
+                            return (
+                              <React.Fragment key={preset.id}>
+                                {idx > 0 && <View style={styles.settingsHairline} />}
+                                <TouchableOpacity
+                                  style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    paddingVertical: 10,
+                                    gap: 8,
+                                  }}
+                                  onPress={() => handleApplyCustomPrompt(preset.prompt, preset.id)}
+                                  activeOpacity={0.8}
+                                >
+                                  <View style={{ flex: 1 }}>
+                                    <Text style={{ color: '#f8fafc', fontSize: 13.5, fontWeight: '700' }} numberOfLines={1}>
+                                      {preset.name}
+                                    </Text>
+                                    <Text style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 2 }} numberOfLines={1}>
+                                      {preset.prompt}
+                                    </Text>
+                                    <Text style={{ color: '#64748b', fontSize: 10.5, marginTop: 2 }}>
+                                      ~{estTokens} tokens · {dateStr}
+                                    </Text>
+                                  </View>
+                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                    {isSelected && <Check size={16} color={palette.accent} />}
+                                    <TouchableOpacity
+                                      onPress={() => handleDeletePreset(preset.id)}
+                                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                    >
+                                      <Trash2 size={14} color="#64748b" />
+                                    </TouchableOpacity>
+                                  </View>
+                                </TouchableOpacity>
+                              </React.Fragment>
+                            );
+                          })}
+                        </View>
+                      )}
+
+                      <Text style={styles.settingsHelperText}>
+                        Your top-level system prompt for each reply. Sent before persona, scenario, and memory. Use {'{{char}}'} / {'{{user}}'} for names.
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* ── SUB-VIEW: NEW CUSTOM PROMPT (Image 4) ── */}
+                  {settingsSubView === 'new_custom_prompt' && (
+                    <View>
+                      <TouchableOpacity
+                        style={styles.settingsSubHeader}
+                        onPress={() => setSettingsSubView('custom_prompt')}
+                        activeOpacity={0.75}
+                      >
+                        <ChevronLeft size={18} color="#f8fafc" />
+                        <Text style={styles.settingsSubHeaderTitle}>New custom prompt</Text>
+                      </TouchableOpacity>
+
+                      <Text style={{ color: '#e2e8f0', fontSize: 12.5, fontWeight: '600', marginBottom: 6 }}>Name</Text>
+                      <TextInput
+                        style={[styles.personaNameInput, { marginBottom: 12 }]}
+                        value={newPresetName}
+                        onChangeText={setNewPresetName}
+                        placeholder="Name this prompt"
+                        placeholderTextColor="rgba(255,255,255,0.35)"
+                      />
+
+                      <Text style={{ color: '#e2e8f0', fontSize: 12.5, fontWeight: '600', marginBottom: 6 }}>Custom prompt</Text>
+                      <TextInput
+                        style={[styles.personaPersonalityInput, { minHeight: 150, marginBottom: 10 }]}
+                        value={newPresetBody}
+                        onChangeText={setNewPresetBody}
+                        placeholder="Write the instructions the model should follow..."
+                        placeholderTextColor="rgba(255,255,255,0.35)"
+                        multiline
+                        textAlignVertical="top"
+                      />
+
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ color: '#64748b', fontSize: 11.5 }}>
+                          ~{Math.ceil(newPresetBody.length / 4)} tokens
+                        </Text>
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                          <TouchableOpacity
+                            style={{
+                              paddingHorizontal: 14,
+                              paddingVertical: 8,
+                              borderRadius: 10,
+                              borderWidth: 1,
+                              borderColor: 'rgba(255,255,255,0.14)',
+                            }}
+                            onPress={() => setSettingsSubView('custom_prompt')}
+                          >
+                            <Text style={{ color: '#cbd5e1', fontSize: 12.5, fontWeight: '600' }}>Cancel</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={{
+                              paddingHorizontal: 16,
+                              paddingVertical: 8,
+                              borderRadius: 10,
+                              backgroundColor: newPresetName.trim() && newPresetBody.trim() ? palette.accent : 'rgba(255,255,255,0.1)',
+                            }}
+                            onPress={async () => {
+                              await handleSaveNewPreset();
+                              setSettingsSubView('custom_prompt');
+                            }}
+                            disabled={!newPresetName.trim() || !newPresetBody.trim()}
+                          >
+                            <Text
+                              style={{
+                                color: newPresetName.trim() && newPresetBody.trim() ? '#0c0e14' : '#64748b',
+                                fontSize: 12.5,
+                                fontWeight: '700',
+                              }}
+                            >
+                              Save
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* ── SUB-VIEW: PREFILL (Image 5) ── */}
+                  {settingsSubView === 'prefill' && (
+                    <View>
+                      <TouchableOpacity
+                        style={styles.settingsSubHeader}
+                        onPress={() => setSettingsSubView('main')}
+                        activeOpacity={0.75}
+                      >
+                        <ChevronLeft size={18} color="#f8fafc" />
+                        <Text style={styles.settingsSubHeaderTitle}>Prefill</Text>
+                      </TouchableOpacity>
+
+                      <View style={styles.settingsBentoCard}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                          <Text style={styles.settingsCardTitle}>Enable response prefill</Text>
+                          <Switch
+                            value={prefillEnabled}
+                            onValueChange={val => {
+                              setPrefillEnabled(val);
+                              persistChatSettings({ prefillEnabled: val });
+                            }}
+                            trackColor={{ false: 'rgba(255,255,255,0.15)', true: palette.accent }}
+                            thumbColor="#ffffff"
+                          />
+                        </View>
+
+                        <View style={[styles.settingsHairline, { marginBottom: 12 }]} />
+
+                        <Text style={{ color: '#cbd5e1', fontSize: 12, fontWeight: '600', marginBottom: 6 }}>Prefill</Text>
+                        <TextInput
+                          style={[styles.personaPersonalityInput, { minHeight: 110, marginBottom: 10 }]}
+                          value={prefillText}
+                          onChangeText={txt => {
+                            setPrefillText(txt);
+                            persistChatSettings({ prefillText: txt });
+                          }}
+                          placeholder="Start the assistant's response with..."
+                          placeholderTextColor="rgba(255,255,255,0.35)"
+                          multiline
+                          textAlignVertical="top"
+                        />
+
+                        <Text style={styles.settingsHelperText}>
+                          {"Puts words in the AI's mouth: your text is slipped in as the start of its reply, right after your latest message, and it continues in that voice and format. Applies to every reply while on."}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* ── SUB-VIEW: FORBIDDEN WORDS (Image 6) ── */}
+                  {settingsSubView === 'forbidden_words' && (
+                    <View>
+                      <TouchableOpacity
+                        style={styles.settingsSubHeader}
+                        onPress={() => setSettingsSubView('main')}
+                        activeOpacity={0.75}
+                      >
+                        <ChevronLeft size={18} color="#f8fafc" />
+                        <Text style={styles.settingsSubHeaderTitle}>Forbidden words</Text>
+                      </TouchableOpacity>
+
+                      <View style={styles.settingsBentoCard}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                          <Text style={styles.settingsCardTitle}>Forbidden words</Text>
+                          <Text style={{ color: '#94a3b8', fontSize: 12.5, fontWeight: '600' }}>{forbiddenWords.length}/10</Text>
+                        </View>
+
+                        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+                          <TextInput
+                            style={[styles.personaNameInput, { flex: 1, marginBottom: 0 }]}
+                            value={forbiddenWordInput}
+                            onChangeText={setForbiddenWordInput}
+                            onSubmitEditing={handleAddForbiddenWord}
+                            returnKeyType="done"
+                            placeholder="Type a word and press Enter..."
+                            placeholderTextColor="rgba(255,255,255,0.35)"
+                            editable={forbiddenWords.length < 10}
+                          />
+                          {forbiddenWordInput.trim().length > 0 && (
+                            <TouchableOpacity
+                              style={{
+                                paddingHorizontal: 14,
+                                borderRadius: 10,
+                                backgroundColor: palette.accent,
+                                justifyContent: 'center',
+                              }}
+                              onPress={handleAddForbiddenWord}
+                            >
+                              <Text style={{ color: '#0c0e14', fontSize: 12, fontWeight: '700' }}>Add</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+
+                        {forbiddenWords.length > 0 && (
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                            {forbiddenWords.map(word => (
+                              <TouchableOpacity
+                                key={word}
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  gap: 5,
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 5,
+                                  borderRadius: 999,
+                                  backgroundColor: `rgba(${palette.accentRgb}, 0.14)`,
+                                  borderWidth: 1,
+                                  borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+                                }}
+                                onPress={() => handleRemoveForbiddenWord(word)}
+                                activeOpacity={0.75}
+                              >
+                                <Text style={{ color: '#f8fafc', fontSize: 12 }}>{word}</Text>
+                                <X size={12} color="#94a3b8" />
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        )}
+
+                        <Text style={styles.settingsHelperText}>
+                          Sent as a note with your latest message telling the AI to avoid these words and phrases. It steers strongly but is best-effort — not a hard filter.
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* TAB 3 (Customize): Options, Background Image & Text Settings */}
+              {chatControlTab === 'syntax' && (
+                <View style={{ paddingHorizontal: 20, gap: 12 }}>
+                  {/* ── CARD 1: OPTIONS ── */}
+                  <View style={styles.settingsBentoCard}>
+                    <Text style={{ color: '#f8fafc', fontSize: 15, fontWeight: '700', marginBottom: 10 }}>
+                      Options
+                    </Text>
+
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.settingsCardTitle}>Enable autoscroll</Text>
+                        <Text style={styles.settingsHelperText}>
+                          {"When off, the chat won't follow replies as they're being generated."}
+                        </Text>
+                      </View>
+                      <Switch
+                        value={autoScrollEnabled}
+                        onValueChange={val => {
+                          setAutoScrollEnabled(val);
+                          persistCustomizePrefs({ autoScrollEnabled: val });
+                        }}
+                        trackColor={{ false: 'rgba(255,255,255,0.15)', true: palette.accent }}
+                        thumbColor="#ffffff"
+                      />
+                    </View>
+
+                    <View style={[styles.settingsHairline, { marginVertical: 12 }]} />
+
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.settingsCardTitle}>Text streaming</Text>
+                        <Text style={styles.settingsHelperText}>
+                          Determines if text comes all at once or bit-by-bit. Turning this off may improve performance.
+                        </Text>
+                      </View>
+                      <Switch
+                        value={textStreamingEnabled}
+                        onValueChange={val => {
+                          setTextStreamingEnabled(val);
+                          persistCustomizePrefs({ textStreamingEnabled: val });
+                        }}
+                        trackColor={{ false: 'rgba(255,255,255,0.15)', true: palette.accent }}
+                        thumbColor="#ffffff"
+                      />
+                    </View>
+
+                    <View style={[styles.settingsHairline, { marginVertical: 12 }]} />
+
+                    <Text style={[styles.settingsCardTitle, { marginBottom: 8 }]}>Reading layout</Text>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        backgroundColor: 'rgba(255,255,255,0.04)',
+                        borderRadius: 12,
+                        padding: 3,
+                        borderWidth: 1,
+                        borderColor: 'rgba(255,255,255,0.07)',
+                      }}
+                    >
+                      {(['bubble', 'novel'] as const).map(mode => {
+                        const active = chatStyle === mode;
+                        return (
+                          <TouchableOpacity
+                            key={mode}
+                            style={{
+                              flex: 1,
+                              paddingVertical: 8,
+                              borderRadius: 9,
+                              alignItems: 'center',
+                              backgroundColor: active ? `rgba(${palette.accentRgb}, 0.16)` : 'transparent',
+                              borderWidth: active ? 1 : 0,
+                              borderColor: active ? `rgba(${palette.accentRgb}, 0.45)` : 'transparent',
+                            }}
+                            onPress={() => {
+                              setChatStyle(mode);
+                              AsyncStorage.setItem('@nekochat:chat_style', mode);
+                            }}
+                            activeOpacity={0.8}
+                          >
+                            <Text
+                              style={{
+                                color: active ? palette.accent : '#94a3b8',
+                                fontSize: 12.5,
+                                fontWeight: active ? '700' : '600',
+                              }}
+                            >
+                              {mode === 'bubble' ? 'Chat Bubbles' : 'Novel View'}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
                   </View>
 
-                  <Text style={styles.personaEditorLabel}>ACTION / NARRATION COLOR (*asterisks*)</Text>
-                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-                    {['#94A3B8', '#cbd5e1', '#a3e635', '#64748b', '#e2e8f0'].map(col => (
+                  {/* ── CARD 2: BACKGROUND IMAGE ── */}
+                  <View style={styles.settingsBentoCard}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                      <Text style={{ color: '#f8fafc', fontSize: 15, fontWeight: '700' }}>
+                        Background image
+                      </Text>
+                      {appearance.wallpaperUrl ? (
+                        <TouchableOpacity
+                          style={{
+                            width: 26,
+                            height: 26,
+                            borderRadius: 13,
+                            backgroundColor: `rgba(${palette.accentRgb}, 0.2)`,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                          onPress={() => saveChatAppearance({ enableWallpaper: false, wallpaperUrl: '' })}
+                        >
+                          <X size={14} color={palette.accent} />
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
+
+                    {appearance.wallpaperUrl ? (
                       <TouchableOpacity
-                        key={col}
+                        onPress={handlePickWallpaper}
+                        activeOpacity={0.85}
+                        style={{ alignItems: 'center', marginBottom: 12 }}
+                      >
+                        <Image
+                          source={{ uri: appearance.wallpaperUrl }}
+                          style={{
+                            width: 110,
+                            height: 150,
+                            borderRadius: 12,
+                            borderWidth: 1,
+                            borderColor: 'rgba(255,255,255,0.14)',
+                          }}
+                          resizeMode="cover"
+                        />
+                        <Text style={{ color: '#94a3b8', fontSize: 11, marginTop: 5 }}>Tap image to change</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
                         style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 16,
-                          backgroundColor: col,
-                          borderWidth: syntaxColors.narration === col ? 3 : 1,
-                          borderColor: syntaxColors.narration === col ? '#FFFFFF' : 'rgba(255,255,255,0.2)',
-                          justifyContent: 'center',
+                          paddingVertical: 14,
+                          borderRadius: 12,
+                          borderWidth: 1,
+                          borderStyle: 'dashed',
+                          borderColor: 'rgba(255,255,255,0.16)',
+                          backgroundColor: 'rgba(255,255,255,0.03)',
+                          flexDirection: 'row',
                           alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 8,
+                          marginBottom: 12,
                         }}
-                        onPress={() => handleUpdateSyntaxColors({ narration: col })}
+                        onPress={handlePickWallpaper}
                         activeOpacity={0.8}
                       >
-                        {syntaxColors.narration === col && <Check size={14} color="#000000" />}
+                        <ImagePlus size={16} color={palette.accent} />
+                        <Text style={{ color: '#e2e8f0', fontSize: 12.5, fontWeight: '600' }}>
+                          Choose background image
+                        </Text>
                       </TouchableOpacity>
-                    ))}
-                  </View>
+                    )}
 
-                  <Text style={styles.personaEditorLabel}>INNER THOUGHTS COLOR (`backticks`)</Text>
-                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-                    {['#38BDF8', '#c084fc', '#facc15', '#34d399', '#f472b6'].map(col => (
-                      <TouchableOpacity
-                        key={col}
-                        style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 16,
-                          backgroundColor: col,
-                          borderWidth: syntaxColors.thoughts === col ? 3 : 1,
-                          borderColor: syntaxColors.thoughts === col ? '#FFFFFF' : 'rgba(255,255,255,0.2)',
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                        }}
-                        onPress={() => handleUpdateSyntaxColors({ thoughts: col })}
-                        activeOpacity={0.8}
-                      >
-                        {syntaxColors.thoughts === col && <Check size={14} color="#000000" />}
-                      </TouchableOpacity>
-                    ))}
-                  </View>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                      <Text style={styles.settingsRowLabel}>Background darkness</Text>
+                      <View style={styles.settingsValueBadge}>
+                        <Text style={styles.settingsValueBadgeText}>
+                          {Math.round(appearance.overlayOpacity * 100)}%
+                        </Text>
+                      </View>
+                    </View>
+                    <SmoothSlider
+                      value={Math.round(appearance.overlayOpacity * 100)}
+                      min={0}
+                      max={98}
+                      step={1}
+                      onValueChange={val => saveChatAppearance({ overlayOpacity: val / 100 })}
+                      minLabel="0%"
+                      maxLabel="98%"
+                    />
 
-                  <Text style={[styles.personaEditorLabel, { marginTop: 6 }]}>READING VIEW LAYOUT</Text>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 2 }}>
+                      <Text style={styles.settingsRowLabel}>Background blur</Text>
+                      <View style={styles.settingsValueBadge}>
+                        <Text style={styles.settingsValueBadgeText}>{appearance.blurRadius}px</Text>
+                      </View>
+                    </View>
+                    <SmoothSlider
+                      value={appearance.blurRadius}
+                      min={0}
+                      max={24}
+                      step={1}
+                      onValueChange={val => saveChatAppearance({ blurRadius: val })}
+                      minLabel="0px"
+                      maxLabel="24px"
+                    />
+
+                    <View style={[styles.settingsHairline, { marginVertical: 12 }]} />
+
+                    <Text style={{ color: '#94a3b8', fontSize: 11.5, marginBottom: 6 }}>Or paste image URL</Text>
+                    <TextInput
+                      style={[styles.personaNameInput, { marginBottom: 8 }]}
+                      placeholder="https://..."
+                      placeholderTextColor="rgba(255,255,255,0.35)"
+                      value={appearance.wallpaperUrl}
+                      onChangeText={v => saveChatAppearance({ enableWallpaper: !!v.trim(), wallpaperUrl: v })}
+                      autoCapitalize="none"
+                    />
                     <TouchableOpacity
-                      style={[styles.sliderPill, chatStyle === 'bubble' && styles.sliderPillActive, { flex: 1, paddingVertical: 8, alignItems: 'center' }]}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', paddingVertical: 2 }}
+                      onPress={() => saveChatAppearance({ enableWallpaper: true, wallpaperUrl: character.coverUrl || character.avatar || '' })}
+                      activeOpacity={0.75}
+                    >
+                      <RotateCcw size={12} color={palette.accent} />
+                      <Text style={{ color: palette.accent, fontSize: 12, fontWeight: '600' }}>Reset to default character art</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* ── CARD 3: TEXT SETTINGS ── */}
+                  <View style={styles.settingsBentoCard}>
+                    <Text style={{ color: '#f8fafc', fontSize: 15, fontWeight: '700', marginBottom: 10 }}>
+                      Text settings
+                    </Text>
+
+                    {/* Live Preview Box */}
+                    <View
+                      style={{
+                        backgroundColor: 'rgba(10, 12, 18, 0.72)',
+                        borderRadius: 12,
+                        padding: 12,
+                        borderWidth: 1,
+                        borderColor: 'rgba(255,255,255,0.09)',
+                        marginBottom: 12,
+                      }}
+                    >
+                      <Text style={{ color: '#64748b', fontSize: 10, fontWeight: '700', letterSpacing: 0.8, marginBottom: 5 }}>
+                        PREVIEW
+                      </Text>
+                      <Text style={{ color: '#e2e8f0', fontSize: chatFontSize, lineHeight: Math.round(chatFontSize * 1.45) }}>
+                        This is regular text.{' '}
+                        <Text style={{ color: syntaxColors.narration, fontStyle: 'italic' }}>This is italic text.</Text>{' '}
+                        <Text style={{ fontWeight: '800', color: syntaxColors.bold }}>This is bold text.</Text>{' '}
+                        <Text style={{ color: syntaxColors.code, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }}>
+                          code
+                        </Text>{' '}
+                        <Text style={{ color: syntaxColors.dialogue }}>{'"dialogue"'}</Text>
+                      </Text>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                      <Text style={styles.settingsRowLabel}>Font size</Text>
+                      <View style={styles.settingsValueBadge}>
+                        <Text style={styles.settingsValueBadgeText}>{chatFontSize}px</Text>
+                      </View>
+                    </View>
+                    <SmoothSlider
+                      value={chatFontSize}
+                      min={12}
+                      max={20}
+                      step={1}
+                      onValueChange={val => {
+                        setChatFontSize(val);
+                        persistCustomizePrefs({ chatFontSize: val });
+                      }}
+                      minLabel="12px"
+                      maxLabel="20px"
+                    />
+
+                    <TouchableOpacity
+                      style={{
+                        alignSelf: 'flex-start',
+                        marginTop: 10,
+                        marginBottom: 12,
+                        paddingHorizontal: 12,
+                        paddingVertical: 7,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: 'rgba(255,255,255,0.14)',
+                        backgroundColor: 'rgba(255,255,255,0.04)',
+                      }}
                       onPress={() => {
-                        setChatStyle('bubble');
-                        AsyncStorage.setItem('@nekochat:chat_style', 'bubble');
+                        setChatFontSize(15);
+                        persistCustomizePrefs({ chatFontSize: 15 });
+                        handleUpdateSyntaxColors({
+                          dialogue: '#FFFFFF',
+                          narration: '#94A3B8',
+                          thoughts: '#38BDF8',
+                          bold: '#FFFFFF',
+                          code: '#A78BFA',
+                        });
                       }}
                       activeOpacity={0.8}
                     >
-                      <Text style={[styles.sliderPillText, chatStyle === 'bubble' && styles.sliderPillTextActive]}>
-                        💬 Chat Bubbles
-                      </Text>
+                      <Text style={{ color: '#e2e8f0', fontSize: 12, fontWeight: '600' }}>Reset text settings</Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity
-                      style={[styles.sliderPill, chatStyle === 'novel' && styles.sliderPillActive, { flex: 1, paddingVertical: 8, alignItems: 'center' }]}
-                      onPress={() => {
-                        setChatStyle('novel');
-                        AsyncStorage.setItem('@nekochat:chat_style', 'novel');
-                      }}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={[styles.sliderPillText, chatStyle === 'novel' && styles.sliderPillTextActive]}>
-                        📖 Novel View
-                      </Text>
-                    </TouchableOpacity>
+                    {/* Expandable Color Rows */}
+                    {([
+                      {
+                        key: 'dialogue' as const,
+                        label: 'Dialogue color',
+                        color: syntaxColors.dialogue,
+                        swatches: ['#FFFFFF', '#d4ff00', '#38bdf8', '#fb7185', '#facc15', '#c084fc'],
+                      },
+                      {
+                        key: 'narration' as const,
+                        label: 'Italic text color',
+                        color: syntaxColors.narration,
+                        swatches: ['#94A3B8', '#cbd5e1', '#a3e635', '#64748b', '#e2e8f0', '#38bdf8'],
+                      },
+                      {
+                        key: 'bold' as const,
+                        label: 'Bold text color',
+                        color: syntaxColors.bold,
+                        swatches: ['#FFFFFF', '#d4ff00', '#38bdf8', '#facc15', '#fb7185', '#cbd5e1'],
+                      },
+                      {
+                        key: 'code' as const,
+                        label: 'Code color',
+                        color: syntaxColors.code,
+                        swatches: ['#A78BFA', '#38BDF8', '#34d399', '#facc15', '#f472b6', '#e2e8f0'],
+                      },
+                    ]).map(item => {
+                      const isOpen = expandedColorPicker === item.key;
+                      return (
+                        <View
+                          key={item.key}
+                          style={{
+                            borderRadius: 12,
+                            backgroundColor: 'rgba(255,255,255,0.03)',
+                            borderWidth: 1,
+                            borderColor: 'rgba(255,255,255,0.08)',
+                            marginBottom: 8,
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <TouchableOpacity
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              paddingHorizontal: 12,
+                              paddingVertical: 10,
+                            }}
+                            onPress={() => setExpandedColorPicker(isOpen ? null : item.key)}
+                            activeOpacity={0.8}
+                          >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                              <View
+                                style={{
+                                  width: 20,
+                                  height: 20,
+                                  borderRadius: 6,
+                                  backgroundColor: item.color,
+                                  borderWidth: 1,
+                                  borderColor: 'rgba(255,255,255,0.25)',
+                                }}
+                              />
+                              <Text style={{ color: '#e2e8f0', fontSize: 13, fontWeight: '600' }}>{item.label}</Text>
+                            </View>
+                            <ChevronDown
+                              size={15}
+                              color="#94a3b8"
+                              style={{ transform: [{ rotate: isOpen ? '180deg' : '0deg' }] }}
+                            />
+                          </TouchableOpacity>
+                          {isOpen && (
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                gap: 10,
+                                paddingHorizontal: 12,
+                                paddingBottom: 12,
+                                paddingTop: 2,
+                              }}
+                            >
+                              {item.swatches.map(col => (
+                                <TouchableOpacity
+                                  key={col}
+                                  style={{
+                                    width: 30,
+                                    height: 30,
+                                    borderRadius: 15,
+                                    backgroundColor: col,
+                                    borderWidth: item.color === col ? 2.5 : 1,
+                                    borderColor: item.color === col ? '#FFFFFF' : 'rgba(255,255,255,0.2)',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  }}
+                                  onPress={() => handleUpdateSyntaxColors({ [item.key]: col })}
+                                  activeOpacity={0.8}
+                                >
+                                  {item.color === col && <Check size={13} color="#000000" />}
+                                </TouchableOpacity>
+                              ))}
+                            </View>
+                          )}
+                        </View>
+                      );
+                    })}
                   </View>
                 </View>
               )}
@@ -2917,14 +4276,14 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             </ScrollView>
 
             <TouchableOpacity
-              style={styles.appearanceDoneBtn}
+              style={[styles.appearanceDoneBtn, { backgroundColor: palette.accent }]}
               onPress={() => {
                 AsyncStorage.setItem(`@nekochat:chat_memory_${character.id}`, chatMemory);
                 setShowChatControlModal(false);
               }}
               activeOpacity={0.8}
             >
-              <Text style={styles.appearanceDoneText}>Apply & Close</Text>
+              <Text style={[styles.appearanceDoneText, { color: '#0c0e14' }]}>Apply & Close</Text>
             </TouchableOpacity>
       </BottomSheetModal>
     </SafeAreaView>
@@ -3411,8 +4770,8 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     lineHeight: 20,
-    minHeight: 52,
-    maxHeight: 160,
+    minHeight: 34,
+    maxHeight: 200,
     paddingVertical: 4,
     paddingHorizontal: 2,
     textAlignVertical: 'top',
@@ -4264,5 +5623,196 @@ const styles = StyleSheet.create({
     color: '#d4ff00',
     fontSize: 11,
     fontWeight: '700',
+  },
+  headerMenuBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 999,
+  },
+  headerMenuCard: {
+    position: 'absolute',
+    top: 56,
+    right: 14,
+    width: 210,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingVertical: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.45,
+    shadowRadius: 18,
+    elevation: 14,
+  },
+  headerMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  headerMenuItemBorder: {
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.06)',
+  },
+  headerMenuItemText: {
+    color: '#FFFFFF',
+    fontSize: 13.5,
+    fontWeight: '600',
+  },
+  scrollBottomFabWrap: {
+    position: 'absolute',
+    right: 16,
+    bottom: 116,
+    zIndex: 40,
+  },
+  scrollBottomFab: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  refiningBanner: {
+    marginHorizontal: 14,
+    marginBottom: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  toolbarPillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    minHeight: 30,
+  },
+  toolbarPillText: {
+    color: '#cbd5e1',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  toolbarIconBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255, 255, 255, 0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionDeckGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  actionGridTile: {
+    width: '48.5%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 11,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.045)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  actionGridIconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionGridTitle: {
+    color: '#f8fafc',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  actionGridSub: {
+    color: '#94a3b8',
+    fontSize: 10.5,
+    marginTop: 1,
+  },
+  settingsBentoCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.035)',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  settingsCardTitle: {
+    color: '#f8fafc',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  settingsDrillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 11,
+  },
+  settingsRowLabel: {
+    color: '#e2e8f0',
+    fontSize: 13.5,
+    fontWeight: '500',
+  },
+  settingsRowValue: {
+    color: '#94a3b8',
+    fontSize: 13,
+  },
+  settingsHairline: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.07)',
+  },
+  settingsSubHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+    paddingVertical: 2,
+  },
+  settingsSubHeaderTitle: {
+    color: '#f8fafc',
+    fontSize: 15.5,
+    fontWeight: '700',
+  },
+  settingsValueBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    minWidth: 52,
+    alignItems: 'center',
+  },
+  settingsValueBadgeText: {
+    color: '#f8fafc',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  settingsHelperText: {
+    color: '#94a3b8',
+    fontSize: 11.5,
+    lineHeight: 16,
+    marginTop: 4,
   },
 });

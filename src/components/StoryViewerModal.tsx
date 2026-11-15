@@ -11,13 +11,15 @@ import {
   Image,
   TouchableOpacity,
   StyleSheet,
-  useWindowDimensions,
   Modal,
   TouchableWithoutFeedback,
 } from 'react-native';
 import { X, Heart, MessageCircle } from 'lucide-react-native';
 import { Character } from '../types';
 import { GLASS } from '../theme/glassTheme';
+import { useTheme } from '../theme/ThemeContext';
+import { storageService } from '../services/storageService';
+import { matchAlgorithmService } from '../services/matchAlgorithmService';
 
 interface StoryViewerModalProps {
   visible: boolean;
@@ -36,17 +38,54 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   onStartChat,
   onToggleFavorite,
 }) => {
+  const { palette } = useTheme();
   const [currentIndex, setCurrentIndex] = useState(initialIndex || 0);
   const [showFullDesc, setShowFullDesc] = useState(false);
+  const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setCurrentIndex(initialIndex || 0);
     setShowFullDesc(false);
+    if (visible) {
+      storageService.getCommunityFavorites().then(favs => {
+        setLikedIds(new Set(favs.map(f => f.id)));
+      }).catch(() => {});
+    }
   }, [initialIndex, visible]);
 
   if (!visible || characters.length === 0) return null;
 
   const currentCharacter = characters[currentIndex] || characters[0];
+  const isLiked = Boolean(currentCharacter.isFavorite || likedIds.has(currentCharacter.id));
+
+  const handleLikeStory = async () => {
+    const nextLiked = !isLiked;
+    setLikedIds(prev => {
+      const copy = new Set(prev);
+      if (nextLiked) copy.add(currentCharacter.id);
+      else copy.delete(currentCharacter.id);
+      return copy;
+    });
+    try {
+      await storageService.toggleCommunityFavorite({
+        id: currentCharacter.id,
+        characterId: currentCharacter.id,
+        name: currentCharacter.name,
+        chatName: currentCharacter.chatName || currentCharacter.name,
+        creatorName: currentCharacter.creator || 'community',
+        avatarUrl: currentCharacter.avatar,
+        shortDescription: currentCharacter.description || '',
+        isNsfw: currentCharacter.contentRating === 'NSFW',
+        totalTokens: currentCharacter.totalTokens || 850,
+        chatCount: currentCharacter.chatCount || 0,
+        messageCount: 0,
+        favoritesCount: currentCharacter.likeCount || 0,
+        tags: (currentCharacter.tags || []).map((t, i) => ({ id: i, name: String(t), slug: String(t).toLowerCase() })),
+      } as any);
+      matchAlgorithmService.recordUserLike(currentCharacter as any, nextLiked);
+    } catch {}
+    onToggleFavorite(currentCharacter);
+  };
 
   const handleNext = () => {
     setShowFullDesc(false);
@@ -131,19 +170,19 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
             {/* Action CTA Buttons */}
             <View style={styles.actionRow}>
               <TouchableOpacity
-                style={styles.likeBtn}
-                onPress={() => onToggleFavorite(currentCharacter)}
+                style={[styles.likeBtn, isLiked && { borderColor: '#FF6B6B', backgroundColor: 'rgba(255, 107, 107, 0.16)' }]}
+                onPress={handleLikeStory}
                 activeOpacity={0.7}
               >
                 <Heart
                   size={20}
-                  color={currentCharacter.isFavorite ? '#FF6B6B' : '#FFFFFF'}
-                  fill={currentCharacter.isFavorite ? '#FF6B6B' : 'transparent'}
+                  color={isLiked ? '#FF6B6B' : '#FFFFFF'}
+                  fill={isLiked ? '#FF6B6B' : 'transparent'}
                 />
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.chatCTA}
+                style={[styles.chatCTA, { backgroundColor: palette.accent }]}
                 onPress={() => {
                   onClose();
                   onStartChat(currentCharacter);

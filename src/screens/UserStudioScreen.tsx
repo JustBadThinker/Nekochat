@@ -21,7 +21,9 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import * as ImagePicker from 'expo-image-picker';
 import { GLASS } from '../theme/glassTheme';
+import { useTheme } from '../theme/ThemeContext';
 import { BottomSheetModal } from '../components/BottomSheetModal';
 import {
   Sparkles,
@@ -177,8 +179,8 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
     loadData();
   }, []);
 
-  // --- Image Upload Handler (HTML File Input for Web) ---
-  const handleTriggerUpload = (target: 'char' | 'persona') => {
+  // --- Image Upload Handler (Web File Input + Native Expo ImagePicker) ---
+  const handleTriggerUpload = async (target: 'char' | 'persona') => {
     setUploadTarget(target);
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       const input = document.createElement('input');
@@ -203,6 +205,37 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
         }
       };
       input.click();
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission Needed', 'Please allow photo library access to upload an image.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+        base64: true,
+      });
+      if (!result.canceled && result.assets?.[0]) {
+        const asset = result.assets[0];
+        const uri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+        if (target === 'char') {
+          setCharAvatar(uri);
+        } else {
+          setPersonaAvatar(uri);
+        }
+      }
+    } catch (err) {
+      console.warn('Image picker error:', err);
+      Alert.alert('Upload Error', 'Could not pick image from library.');
+    } finally {
+      setIsUploading(false);
     }
   };
 

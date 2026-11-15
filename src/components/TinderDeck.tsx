@@ -22,7 +22,6 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
-  ArrowLeft,
   X,
   Star,
   MessageCircle,
@@ -32,7 +31,6 @@ import {
   Check,
   Flame,
   Info,
-  Layers,
   Zap,
 } from 'lucide-react-native';
 import {
@@ -201,20 +199,20 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
 
   const isAnimatingRef = useRef(false);
 
-  const handleNext = () => {
+  useEffect(() => {
     position.stopAnimation();
     position.setValue({ x: 0, y: 0 });
     isAnimatingRef.current = false;
+  }, [currentIndex]);
+
+  const handleNext = () => {
     setCurrentIndex(prev => prev + 1);
   };
 
   const handleRewind = () => {
     if (history.length === 0) return;
-    position.stopAnimation();
-    isAnimatingRef.current = false;
     const lastItem = history[history.length - 1];
     setHistory(prev => prev.slice(0, -1));
-    position.setValue({ x: 0, y: 0 });
     setCurrentIndex(lastItem.index);
   };
 
@@ -456,7 +454,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
           <View style={styles.emptyIconCircle}>
             <Sparkles size={28} color="#d4ff00" />
           </View>
-          <Text style={styles.emptyTitle}>You've Caught Up!</Text>
+          <Text style={styles.emptyTitle}>{"You've Caught Up!"}</Text>
           <Text style={styles.emptyDesc}>
             You have reviewed all available anime companions. Tap below to restart discovery or browse the grid catalog.
           </Text>
@@ -532,6 +530,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
             {/* Solid opaque background prevents alpha-channel PNGs from bleeding through */}
             <View style={styles.cardSolidBackdrop} />
             <Image
+              key={`next-img-${nextCharacter.id || nextCharacter.characterId || 'next'}`}
               source={{ uri: nextAvatarUri }}
               style={styles.cardCover}
               resizeMode="cover"
@@ -555,6 +554,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
 
         {/* Current Active Top Card (Interactive Swipeable with zIndex: 10) */}
         <Animated.View
+          key={`top-${charId}`}
           {...panResponder.panHandlers}
           style={[
             styles.cardWrapper,
@@ -571,6 +571,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
           {/* Solid opaque black backdrop ensures NO card underneath ever shines through */}
           <View style={styles.cardSolidBackdrop} />
           <Image
+            key={`img-${charId}`}
             source={{ uri: avatarUri }}
             style={styles.cardCover}
             resizeMode="cover"

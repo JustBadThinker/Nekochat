@@ -15,7 +15,6 @@ import { characterService } from './src/services/characterService';
 import { communityCatalogService } from './src/services/communityCatalogService';
 import { CapsuleDock, TabScreen } from './src/components/CapsuleDock';
 import { SplashScreen } from './src/components/SplashScreen';
-import { NekoPulseLoader } from './src/components/NekoPulseLoader';
 import { ChatsScreen } from './src/screens/ChatsScreen';
 import { DiscoverScreen } from './src/screens/DiscoverScreen';
 import { ChatRoomScreen } from './src/screens/ChatRoomScreen';
@@ -240,17 +239,10 @@ export default function App() {
       .catch(() => {});
   };
 
-  if (showSplash) {
-    return <SplashScreen onFinish={() => setShowSplash(false)} />;
-  }
+  const appReady = !loading && Boolean(config && settings && activePersona);
 
-  if (loading || !config || !settings || !activePersona) {
-    return (
-      <View style={styles.loadingContainer}>
-        <StatusBar style="light" />
-        <NekoPulseLoader size={54} label="Starting NekoChat..." />
-      </View>
-    );
+  if (showSplash || loading || !config || !settings || !activePersona) {
+    return <SplashScreen isReady={appReady} onFinish={() => setShowSplash(false)} />;
   }
 
   // Active theme background tokens
@@ -416,8 +408,10 @@ export default function App() {
           </ScrollView>
         </View>
 
-        {/* Minimalist Floating Capsule Dock (Warden AI Monochrome Style) */}
-        <CapsuleDock activeTab={activeTab} onTabChange={handleTabChange} />
+        {/* Minimalist Floating Capsule Dock (hidden in Discover Match/For You modes) */}
+        {!(activeTab === 'discover' && isDiscoverMatchMode) && (
+          <CapsuleDock activeTab={activeTab} onTabChange={handleTabChange} />
+        )}
       </SafeAreaView>
     </View>
     </ThemeProvider>

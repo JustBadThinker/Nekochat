@@ -813,6 +813,8 @@ export const aiProviderService = {
         `- Stay in character as ${chatCharName}.\n` +
         `- Actions, body language, and expressions in *italics*.\n` +
         `- Spoken dialogue in "double quotes".\n` +
+        `- Strong emphasis, key sounds, or dramatic moments in **bold**.\n` +
+        `- System readouts, notes, or \`inline code\` in \`backticks\`.\n` +
         `- Do not speak or act on behalf of ${userName}.`
       );
     }
@@ -923,6 +925,7 @@ export const aiProviderService = {
     } catch (err: any) {
       if (signal?.aborted || err?.name === 'AbortError') {
         callbacks.onChunk(' [Generation paused]');
+        callbacks.onComplete('', 0);
         return;
       }
       callbacks.onError(err instanceof Error ? err : new Error(String(err?.message || err)));
@@ -940,14 +943,18 @@ export const aiProviderService = {
     persona: Persona,
     config: ProviderConfig
   ): Promise<string> {
+    const hasDraft = draft.trim().length > 0;
     const prompt =
       `You are an elite creative writing coach assisting a roleplayer.\n` +
       `Current Roleplay Partner: ${character.name} (${character.tagline || ''})\n` +
-      `Current Scene Situation: ${lastBotMessage.slice(-300)}\n` +
+      `Current Scene Situation: ${lastBotMessage.slice(-400)}\n` +
       `User Playing As: ${persona.name} (${persona.description || persona.personality || ''})\n\n` +
-      `User's rough draft: "${draft}"\n\n` +
-      `TASK: Polish and enrich this draft into an immersive, literary roleplay reply that fits the user's persona and current tension. ` +
-      `Include expressive actions in *italics* and spoken dialogue in "quotes". Keep it natural, not overly pretentious. Output ONLY the polished reply with no introductory text.`;
+      (hasDraft
+        ? `User's rough draft: "${draft}"\n\n` +
+          `TASK: Polish and enrich this draft into an immersive, literary roleplay reply that fits the user's persona and current tension. ` +
+          `Include expressive actions in *italics* and spoken dialogue in "quotes". Keep it natural, not overly pretentious. Output ONLY the polished reply with no introductory text.`
+        : `TASK: Write an immersive, in-character roleplay reply from ${persona.name}'s perspective responding naturally to the current scene situation. ` +
+          `Include expressive actions in *italics* and spoken dialogue in "quotes". Keep it 1-2 engaging paragraphs. Output ONLY the reply with no introductory text.`);
 
     const route = resolveProviderRoute(config);
 

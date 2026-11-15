@@ -3,19 +3,21 @@
  * Features glowing breathing cat icon with pulsing neon accents.
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import { colors } from '../theme/colors';
 import { NekoLogoSvg } from './NekoLogoSvg';
 
 interface SplashScreenProps {
   onFinish?: () => void;
+  isReady?: boolean;
 }
 
-export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
+export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish, isReady = true }) => {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const glowAnim = useRef(new Animated.Value(0.4)).current;
   const fadeAnim = useRef(new Animated.Value(1)).current;
+  const [minDelayDone, setMinDelayDone] = useState(false);
 
   useEffect(() => {
     // Breathing cat animation
@@ -48,18 +50,20 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
       ])
     ).start();
 
-    // Fade out after 1.8 seconds if onFinish provided
-    if (onFinish) {
-      const timer = setTimeout(() => {
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 400,
-          useNativeDriver: true,
-        }).start(() => onFinish());
-      }, 1600);
-      return () => clearTimeout(timer);
-    }
+    const timer = setTimeout(() => {
+      setMinDelayDone(true);
+    }, 1600);
+    return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!minDelayDone || !isReady || !onFinish) return;
+    Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: 400,
+      useNativeDriver: true,
+    }).start(() => onFinish());
+  }, [minDelayDone, isReady, onFinish, fadeAnim]);
 
   return (
     <Animated.View style={[styles.container, { opacity: fadeAnim, backgroundColor: colors.bgDark }]}>

@@ -4,15 +4,11 @@
  */
 
 import React, { useRef, useEffect } from 'react';
-import { View, Text, Image, TouchableOpacity, StyleSheet, Dimensions, Animated, Platform } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet, Animated, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MessageSquare, Heart } from 'lucide-react-native';
 import { Character } from '../types';
 import { GLASS } from '../theme/glassTheme';
-
-const { width: windowWidth } = Dimensions.get('window');
-const effectiveWidth = Math.min(windowWidth, 480);
-const CARD_WIDTH = (effectiveWidth - 48) / 2;
 
 interface BentoChatCardProps {
   character: Character;

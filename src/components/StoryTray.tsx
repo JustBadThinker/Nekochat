@@ -9,6 +9,7 @@ import React from 'react';
 import { View, Text, ScrollView, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import { Flame, Zap } from 'lucide-react-native';
 import { Character } from '../types';
+import { useTheme } from '../theme/ThemeContext';
 
 export interface StoryTrayProps {
   recommendations?: Character[];
@@ -21,7 +22,9 @@ export const StoryTray: React.FC<StoryTrayProps> = ({
   trendingCharacters = [],
   onOpenStory,
 }) => {
-  const hasRecommendations = recommendations && recommendations.length >= 3;
+  const { palette } = useTheme();
+  const topRecs = (recommendations || []).slice(0, 3);
+  const hasRecommendations = topRecs.length > 0;
   const hasTrending = trendingCharacters && trendingCharacters.length > 0;
 
   if (!hasRecommendations && !hasTrending) {
@@ -33,27 +36,38 @@ export const StoryTray: React.FC<StoryTrayProps> = ({
       <View style={styles.headerRow}>
         <View style={styles.headerTitleContainer}>
           {hasRecommendations ? (
-            <Zap size={15} color="#d4ff00" style={{ marginRight: 6 }} />
+            <Zap size={15} color={palette.accent} style={{ marginRight: 6 }} />
           ) : (
-            <Flame size={15} color="#d4ff00" style={{ marginRight: 6 }} />
+            <Flame size={15} color={palette.accent} style={{ marginRight: 6 }} />
           )}
           <Text style={styles.headerTitle}>
             {hasRecommendations ? 'For You & Trending' : 'Trending 24h'}
           </Text>
         </View>
-        <Text style={styles.headerBadge}>
+        <Text
+          style={[
+            styles.headerBadge,
+            {
+              color: palette.accent,
+              backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
+              borderColor: `rgba(${palette.accentRgb}, 0.25)`,
+            },
+          ]}
+        >
           {hasRecommendations ? '⚡ FYP + 24h Feed' : 'Live Community'}
         </Text>
       </View>
 
       <ScrollView
         horizontal
+        nestedScrollEnabled={true}
+        directionalLockEnabled={true}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
         {/* 1. Algorithmic Top 3 For You (Rendered at front if affinity >= 50%) */}
         {hasRecommendations &&
-          recommendations.slice(0, 3).map((char, index) => (
+          topRecs.map((char, index) => (
             <TouchableOpacity
               key={`rec_${char.id}`}
               style={styles.storyItem}
@@ -84,7 +98,7 @@ export const StoryTray: React.FC<StoryTrayProps> = ({
 
         {/* 3. Community Trending 24h Feed */}
         {trendingCharacters.map((char, index) => {
-          const actualIndex = hasRecommendations ? index + 3 : index;
+          const actualIndex = topRecs.length + index;
           return (
             <TouchableOpacity
               key={`trend_${char.id}`}
@@ -96,7 +110,7 @@ export const StoryTray: React.FC<StoryTrayProps> = ({
                 style={[
                   styles.avatarRing,
                   {
-                    borderColor: index === 0 ? '#d4ff00' : 'rgba(255, 255, 255, 0.35)',
+                    borderColor: index === 0 ? palette.accent : 'rgba(255, 255, 255, 0.35)',
                   },
                 ]}
               >

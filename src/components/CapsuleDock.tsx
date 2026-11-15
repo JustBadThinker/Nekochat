@@ -63,10 +63,24 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({ activeTab, onTabChange
       ]}
       pointerEvents="box-none"
     >
-      <View style={[styles.dockCapsule, { backgroundColor: palette.dockBg }]}>
+      <View
+        style={[
+          styles.dockCapsule,
+          {
+            backgroundColor: 'rgba(14, 17, 26, 0.46)',
+            borderColor: `rgba(${palette.accentRgb}, 0.25)`,
+          },
+          Platform.OS === 'web'
+            ? ({
+                backdropFilter: 'blur(20px) saturate(160%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+              } as any)
+            : {},
+        ]}
+      >
         {Platform.OS !== 'web' && (
           <BlurView
-            intensity={36}
+            intensity={48}
             tint="dark"
             experimentalBlurMethod="dimezisBlurView"
             style={StyleSheet.absoluteFill}

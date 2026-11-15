@@ -58,7 +58,7 @@ export interface CommunityCreatorProfile {
   profileCreatedAt?: string | null;
   profileUrl?: string;
   creatorVerified?: boolean;
-  topTags?: Array<{ id?: number; name?: string; slug?: string } | string>;
+  topTags?: ({ id?: number; name?: string; slug?: string } | string)[];
 }
 
 class CommunityCatalogService {
@@ -400,7 +400,7 @@ class CommunityCatalogService {
           .replace(/\s+/g, ' ')
           .trim();
 
-        const avatarCandidate = node?.avatar_url || node?.max_res_url;
+        const avatarCandidate = node?.max_res_url || node?.avatar_url;
         const avatarUrl = getHighResImageUrl(avatarCandidate);
 
         return {
@@ -540,7 +540,7 @@ class CommunityCatalogService {
         if (directRes.characters && directRes.characters.length > 0) {
           return directRes;
         }
-      } catch (_directErr) {
+      } catch {
         // Direct fallback failed
       }
       return {
@@ -582,7 +582,7 @@ class CommunityCatalogService {
             .replace(/<[^>]*>/g, ' ')
             .replace(/\s+/g, ' ')
             .trim();
-          const avatarUrl = getHighResImageUrl(node.avatar_url || node.max_res_url);
+          const avatarUrl = getHighResImageUrl(node.max_res_url || node.avatar_url);
 
           return {
             id: String(node.id || fullPath),
