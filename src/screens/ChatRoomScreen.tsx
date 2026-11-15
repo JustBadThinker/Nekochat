@@ -13,7 +13,7 @@
  * - Novel Mode & Bubble Mode layout
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef , useMemo } from 'react';
 import {
   View,
   Text,
@@ -95,6 +95,7 @@ import { tokenPriceService } from '../services/tokenPriceService';
 import { NekoPulseLoader } from '../components/NekoPulseLoader';
 import { InlineWaitFidget } from '../components/InlineWaitFidget';
 import { DeskNekoWalker } from '../components/DeskNekoWalker';
+import { ThemePalette } from '../theme/colors';
 
 interface ChatRoomScreenProps {
   character: Character;
@@ -116,6 +117,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   initialConversationId,
 }) => {
   const { palette } = useTheme();
+  const styles = useMemo(() => createStyles(palette), [palette]);
   // Session & Message State
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -1510,7 +1512,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           <View style={styles.checkpointCardContainer}>
             <View style={styles.checkpointCardHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Brain size={14} color="#d4ff00" />
+                <Brain size={14} color={palette.accent} />
                 <Text style={styles.checkpointCardTitle}>STORY CHECKPOINT</Text>
               </View>
               <View style={styles.checkpointTagBadge}>
@@ -1543,7 +1545,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                 onPress={() => handlePinCheckpointFromMessage(memMatch[0])}
                 activeOpacity={0.8}
               >
-                <Bookmark size={11} color="#0c0e14" />
+                <Bookmark size={11} color={palette.bgDark} />
                 <Text style={styles.checkpointPinBtnText}>Pin to Memory</Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -1557,7 +1559,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                 }}
                 activeOpacity={0.8}
               >
-                <Copy size={11} color="#d4ff00" />
+                <Copy size={11} color={palette.accent} />
                 <Text style={styles.checkpointCopyBtnText}>Copy</Text>
               </TouchableOpacity>
             </View>
@@ -1765,11 +1767,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             style={styles.scenarioPill}
             onPress={() => setShowScenarioModal(true)}
           >
-            <Play size={12} color="#D4FF00" style={{ marginRight: 5 }} />
+            <Play size={12} color={palette.accent} style={{ marginRight: 5 }} />
             <Text style={styles.scenarioPillText} numberOfLines={1}>
               {currentScenario ? currentScenario.title : 'Select Scenario'}
             </Text>
-            <ChevronDown size={14} color="#D4FF00" style={{ marginLeft: 4 }} />
+            <ChevronDown size={14} color={palette.accent} style={{ marginLeft: 4 }} />
           </TouchableOpacity>
         </View>
       )}
@@ -1781,7 +1783,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             Greeting {greetingIndex + 1} of {allGreetings.length}
           </Text>
           <TouchableOpacity style={styles.greetingCycleBtn} onPress={handleCycleGreeting}>
-            <RotateCw size={12} color="#D4FF00" style={{ marginRight: 4 }} />
+            <RotateCw size={12} color={palette.accent} style={{ marginRight: 4 }} />
             <Text style={styles.greetingCycleBtnText}>Cycle Next</Text>
           </TouchableOpacity>
         </View>
@@ -1919,7 +1921,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                       onPress={() => ttsService.speak(msg.content, msg.id)}
                     >
                       {isSpeakingThis ? (
-                        <Square size={13} color="#D4FF00" />
+                        <Square size={13} color={palette.accent} />
                       ) : (
                         <Volume2 size={13} color="rgba(255, 255, 255, 0.4)" />
                       )}
@@ -2027,7 +2029,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                           <Text style={styles.bubbleActionText}>Edit</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleRegenerate(idx)}>
-                          <RotateCcw size={13} color="#D4FF00" style={{ marginRight: 4 }} />
+                          <RotateCcw size={13} color={palette.accent} style={{ marginRight: 4 }} />
                           <Text style={styles.bubbleActionText}>Regenerate</Text>
                         </TouchableOpacity>
                       </>
@@ -2039,12 +2041,12 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         >
                           {isSpeakingThis ? (
                             <>
-                              <Square size={13} color="#D4FF00" style={{ marginRight: 4 }} />
-                              <Text style={[styles.bubbleActionText, { color: '#D4FF00' }]}>Stop Voice</Text>
+                              <Square size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                              <Text style={[styles.bubbleActionText, { color: palette.accent }]}>Stop Voice</Text>
                             </>
                           ) : (
                             <>
-                              <Volume2 size={13} color="#D4FF00" style={{ marginRight: 4 }} />
+                              <Volume2 size={13} color={palette.accent} style={{ marginRight: 4 }} />
                               <Text style={styles.bubbleActionText}>Voice</Text>
                             </>
                           )}
@@ -2055,7 +2057,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         </TouchableOpacity>
                         {isLastAssistant && (
                           <TouchableOpacity style={styles.bubbleActionBtn} onPress={handleContinue}>
-                            <Play size={13} color="#D4FF00" style={{ marginRight: 4 }} />
+                            <Play size={13} color={palette.accent} style={{ marginRight: 4 }} />
                             <Text style={styles.bubbleActionText}>Continue</Text>
                           </TouchableOpacity>
                         )}
@@ -2119,7 +2121,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         onPress={() => ttsService.speak(msg.content, msg.id)}
                       >
                         {isSpeakingThis ? (
-                          <Square size={12} color="#D4FF00" />
+                          <Square size={12} color={palette.accent} />
                         ) : (
                           <Volume2 size={12} color="rgba(255, 255, 255, 0.35)" />
                         )}
@@ -2220,7 +2222,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                           <Text style={styles.bubbleActionText}>Edit</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleRegenerate(idx)}>
-                          <RotateCcw size={13} color="#D4FF00" style={{ marginRight: 4 }} />
+                          <RotateCcw size={13} color={palette.accent} style={{ marginRight: 4 }} />
                           <Text style={styles.bubbleActionText}>Regenerate</Text>
                         </TouchableOpacity>
                       </>
@@ -2232,12 +2234,12 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         >
                           {isSpeakingThis ? (
                             <>
-                              <Square size={13} color="#D4FF00" style={{ marginRight: 4 }} />
-                              <Text style={[styles.bubbleActionText, { color: '#D4FF00' }]}>Stop Voice</Text>
+                              <Square size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                              <Text style={[styles.bubbleActionText, { color: palette.accent }]}>Stop Voice</Text>
                             </>
                           ) : (
                             <>
-                              <Volume2 size={13} color="#D4FF00" style={{ marginRight: 4 }} />
+                              <Volume2 size={13} color={palette.accent} style={{ marginRight: 4 }} />
                               <Text style={styles.bubbleActionText}>Voice</Text>
                             </>
                           )}
@@ -2248,7 +2250,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         </TouchableOpacity>
                         {isLastAssistant && (
                           <TouchableOpacity style={styles.bubbleActionBtn} onPress={handleContinue}>
-                            <Play size={13} color="#D4FF00" style={{ marginRight: 4 }} />
+                            <Play size={13} color={palette.accent} style={{ marginRight: 4 }} />
                             <Text style={styles.bubbleActionText}>Continue</Text>
                           </TouchableOpacity>
                         )}
@@ -2606,7 +2608,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                       ],
                     }}
                   >
-                    <Plus size={18} color={showActionDeck ? '#0c0e14' : palette.accent} />
+                    <Plus size={18} color={showActionDeck ? palette.bgDark : palette.accent} />
                   </Animated.View>
                 </TouchableOpacity>
 
@@ -2705,7 +2707,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                     activeOpacity={0.8}
                     accessibilityLabel="Send message"
                   >
-                    <Send size={16} color="#0c0e14" />
+                    <Send size={16} color={palette.bgDark} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -2934,7 +2936,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       >
             <View style={styles.appearanceHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Smile size={18} color="#d4ff00" />
+                <Smile size={18} color={palette.accent} />
                 <Text style={styles.modalTitle}>User Persona & Personality</Text>
               </View>
               <TouchableOpacity onPress={() => setShowPersonaModal(false)}>
@@ -2997,7 +2999,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                           {p.personality || p.description || 'Roleplay companion'}
                         </Text>
                       </View>
-                      {isCur && <UserCheck size={16} color="#d4ff00" />}
+                      {isCur && <UserCheck size={16} color={palette.accent} />}
                     </TouchableOpacity>
                   );
                 })}
@@ -3037,7 +3039,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                 </View>
                 {Boolean(character.totalTokens && character.totalTokens > 0) && (
                   <View style={styles.tokenBadge}>
-                    <Coins size={11} color="#d4ff00" style={{ marginRight: 3 }} />
+                    <Coins size={11} color={palette.accent} style={{ marginRight: 3 }} />
                     <Text style={styles.tokenText}>{character.totalTokens} tokens</Text>
                   </View>
                 )}
@@ -3131,6 +3133,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       <BottomSheetModal
         visible={showChatControlModal}
         onClose={() => setShowChatControlModal(false)}
+        fullScreen
       >
             <View style={styles.appearanceHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -3733,7 +3736,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                           >
                             <Text
                               style={{
-                                color: newPresetName.trim() && newPresetBody.trim() ? '#0c0e14' : '#64748b',
+                                color: newPresetName.trim() && newPresetBody.trim() ? palette.bgDark : '#64748b',
                                 fontSize: 12.5,
                                 fontWeight: '700',
                               }}
@@ -3834,7 +3837,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                               }}
                               onPress={handleAddForbiddenWord}
                             >
-                              <Text style={{ color: '#0c0e14', fontSize: 12, fontWeight: '700' }}>Add</Text>
+                              <Text style={{ color: palette.bgDark, fontSize: 12, fontWeight: '700' }}>Add</Text>
                             </TouchableOpacity>
                           )}
                         </View>
@@ -4175,7 +4178,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         key: 'dialogue' as const,
                         label: 'Dialogue color',
                         color: syntaxColors.dialogue,
-                        swatches: ['#FFFFFF', '#d4ff00', '#38bdf8', '#fb7185', '#facc15', '#c084fc'],
+                        swatches: ['#FFFFFF', palette.accent, '#38bdf8', '#fb7185', '#facc15', '#c084fc'],
                       },
                       {
                         key: 'narration' as const,
@@ -4187,7 +4190,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         key: 'bold' as const,
                         label: 'Bold text color',
                         color: syntaxColors.bold,
-                        swatches: ['#FFFFFF', '#d4ff00', '#38bdf8', '#facc15', '#fb7185', '#cbd5e1'],
+                        swatches: ['#FFFFFF', palette.accent, '#38bdf8', '#facc15', '#fb7185', '#cbd5e1'],
                       },
                       {
                         key: 'code' as const,
@@ -4287,14 +4290,14 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               }}
               activeOpacity={0.8}
             >
-              <Text style={[styles.appearanceDoneText, { color: '#0c0e14' }]}>Apply & Close</Text>
+              <Text style={[styles.appearanceDoneText, { color: palette.bgDark }]}>Apply & Close</Text>
             </TouchableOpacity>
       </BottomSheetModal>
     </SafeAreaView>
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.bgDark,
@@ -4339,18 +4342,18 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: 'rgba(212, 255, 0, 0.1)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.1)`,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.25)',
+    borderColor: `rgba(${palette.accentRgb}, 0.25)`,
     justifyContent: 'center',
     alignItems: 'center',
   },
   headerSessionBtn: {
     padding: 8,
-    backgroundColor: 'rgba(212, 255, 0, 0.1)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.1)`,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.25)',
+    borderColor: `rgba(${palette.accentRgb}, 0.25)`,
   },
   styleSwitcher: {
     padding: 8,
@@ -4371,15 +4374,15 @@ const styles = StyleSheet.create({
   scenarioPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(212, 255, 0, 0.08)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.2)',
+    borderColor: `rgba(${palette.accentRgb}, 0.2)`,
   },
   scenarioPillText: {
-    color: '#D4FF00',
+    color: palette.accent,
     fontSize: 11,
     fontWeight: '600',
     maxWidth: 240,
@@ -4388,11 +4391,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(212, 255, 0, 0.06)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.06)`,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(212, 255, 0, 0.15)',
+    borderBottomColor: `rgba(${palette.accentRgb}, 0.15)`,
   },
   greetingCyclerText: {
     color: 'rgba(255, 255, 255, 0.7)',
@@ -4401,13 +4404,13 @@ const styles = StyleSheet.create({
   greetingCycleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(212, 255, 0, 0.15)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 10,
   },
   greetingCycleBtnText: {
-    color: '#D4FF00',
+    color: palette.accent,
     fontSize: 11,
     fontWeight: '700',
   },
@@ -4505,7 +4508,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   novelRowSelected: {
-    backgroundColor: 'rgba(212, 255, 0, 0.05)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.05)`,
   },
   novelSpeaker: {
     color: colors.lime,
@@ -4520,7 +4523,7 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.35)',
+    borderColor: `rgba(${palette.accentRgb}, 0.35)`,
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   novelAvatarFallback: {
@@ -4528,13 +4531,13 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.35)',
-    backgroundColor: 'rgba(212, 255, 0, 0.14)',
+    borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+    backgroundColor: `rgba(${palette.accentRgb}, 0.14)`,
     alignItems: 'center',
     justifyContent: 'center',
   },
   novelAvatarFallbackText: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 12,
     fontWeight: '800',
   },
@@ -4635,7 +4638,7 @@ const styles = StyleSheet.create({
   refineCard: {
     backgroundColor: 'rgba(28, 34, 50, 0.95)',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(212, 255, 0, 0.3)',
+    borderTopColor: `rgba(${palette.accentRgb}, 0.3)`,
     padding: 14,
   },
   refineHeader: {
@@ -4729,21 +4732,21 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   modeIndicatorBadge: {
-    backgroundColor: 'rgba(212, 255, 0, 0.15)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
     borderWidth: 1,
-    borderColor: '#d4ff00',
+    borderColor: palette.accent,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
   modeIndicatorText: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 10,
     fontWeight: '800',
     textTransform: 'uppercase',
   },
   actionDeckOoc: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontWeight: '700',
     fontSize: 13,
     marginRight: 8,
@@ -4760,13 +4763,13 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     ...GLASS.backdropStrong,
     ...GLASS.shadow,
-    shadowColor: '#d4ff00',
+    shadowColor: palette.accent,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 8,
   },
   unifiedComposerCardExpanded: {
-    borderColor: '#d4ff00',
+    borderColor: palette.accent,
     minHeight: 280,
     ...(Platform.OS === 'web' ? { height: 280 } : {}),
   },
@@ -4810,8 +4813,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   composerActionBtnActive: {
-    backgroundColor: '#d4ff00',
-    borderColor: '#d4ff00',
+    backgroundColor: palette.accent,
+    borderColor: palette.accent,
   },
   personaAvatarBtn: {
     width: 32,
@@ -4819,8 +4822,8 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
     borderWidth: 1.5,
-    borderColor: '#d4ff00',
-    backgroundColor: '#12151e',
+    borderColor: palette.accent,
+    backgroundColor: palette.bgSurface,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -4836,7 +4839,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   personaAvatarInitial: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 13,
     fontWeight: '800',
   },
@@ -4863,9 +4866,9 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 10,
-    backgroundColor: 'rgba(212, 255, 0, 0.15)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.35)',
+    borderColor: `rgba(${palette.accentRgb}, 0.35)`,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -4873,10 +4876,10 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#d4ff00',
+    shadowColor: palette.accent,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.5,
     shadowRadius: 6,
@@ -4976,9 +4979,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   sessionItemActive: {
-    backgroundColor: 'rgba(212, 255, 0, 0.08)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.25)',
+    borderColor: `rgba(${palette.accentRgb}, 0.25)`,
   },
   sessionTitle: {
     color: '#FFFFFF',
@@ -5013,8 +5016,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   scenarioCardActive: {
-    borderColor: 'rgba(212, 255, 0, 0.3)',
-    backgroundColor: 'rgba(212, 255, 0, 0.06)',
+    borderColor: `rgba(${palette.accentRgb}, 0.3)`,
+    backgroundColor: `rgba(${palette.accentRgb}, 0.06)`,
   },
   scenarioCardTitle: {
     color: '#FFFFFF',
@@ -5028,7 +5031,7 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   scenarioCardAction: {
-    color: '#D4FF00',
+    color: palette.accent,
     fontSize: 11,
     fontWeight: '700',
   },
@@ -5058,7 +5061,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.25)',
+    borderColor: `rgba(${palette.accentRgb}, 0.25)`,
     maxWidth: 320,
     width: '100%',
   },
@@ -5091,7 +5094,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   styleChipActive: {
-    backgroundColor: 'rgba(212, 255, 0, 0.15)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
     borderColor: colors.lime,
   },
   styleChipText: {
@@ -5119,7 +5122,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.3)',
+    borderColor: `rgba(${palette.accentRgb}, 0.3)`,
   },
   generatedImagePreview: {
     width: '100%',
@@ -5130,7 +5133,7 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.65)',
     fontSize: 11,
     padding: 8,
-    backgroundColor: '#12151e',
+    backgroundColor: palette.bgSurface,
   },
   generateArtBtn: {
     flex: 1,
@@ -5165,13 +5168,13 @@ const styles = StyleSheet.create({
 
   // ── Appearance & Wallpaper Modal Styles (Blueprint Section D) ──
   appearanceSheet: {
-    backgroundColor: '#12151e',
+    backgroundColor: palette.bgSurface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 20,
     maxHeight: '85%',
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.25)',
+    borderColor: `rgba(${palette.accentRgb}, 0.25)`,
   },
   appearanceHeader: {
     flexDirection: 'row',
@@ -5197,7 +5200,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   appearanceSectionTitle: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 1,
@@ -5218,14 +5221,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     paddingVertical: 10,
     borderRadius: 12,
     marginTop: 4,
     marginBottom: 6,
   },
   uploadWallpaperText: {
-    color: '#0c0e14',
+    color: palette.bgDark,
     fontSize: 13,
     fontWeight: '800',
   },
@@ -5235,7 +5238,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   resetWallpaperText: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 11,
     fontWeight: '600',
   },
@@ -5254,8 +5257,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   sliderPillActive: {
-    backgroundColor: '#d4ff00',
-    borderColor: '#d4ff00',
+    backgroundColor: palette.accent,
+    borderColor: palette.accent,
   },
   sliderPillText: {
     color: '#9ca3af',
@@ -5263,7 +5266,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   sliderPillTextActive: {
-    color: '#0c0e14',
+    color: palette.bgDark,
     fontWeight: '800',
   },
   togglePill: {
@@ -5275,7 +5278,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   togglePillActive: {
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
   },
   toggleThumb: {
     width: 20,
@@ -5287,19 +5290,19 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
   },
   appearanceDoneBtn: {
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     paddingVertical: 12,
     borderRadius: 16,
     alignItems: 'center',
     marginTop: 14,
   },
   appearanceDoneText: {
-    color: '#0c0e14',
+    color: palette.bgDark,
     fontSize: 14,
     fontWeight: '800',
   },
   personaEditorLabel: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 1,
@@ -5344,8 +5347,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   personaSwitchCardActive: {
-    borderColor: '#d4ff00',
-    backgroundColor: 'rgba(212, 255, 0, 0.08)',
+    borderColor: palette.accent,
+    backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
   },
   personaSwitchAvatar: {
     width: 36,
@@ -5359,12 +5362,12 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     backgroundColor: '#181c28',
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.3)',
+    borderColor: `rgba(${palette.accentRgb}, 0.3)`,
     justifyContent: 'center',
     alignItems: 'center',
   },
   personaSwitchInitial: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 14,
     fontWeight: '800',
   },
@@ -5374,7 +5377,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   personaSwitchNameActive: {
-    color: '#d4ff00',
+    color: palette.accent,
   },
   personaSwitchBio: {
     color: '#9ca3af',
@@ -5388,13 +5391,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     maxHeight: '88%',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(212, 255, 0, 0.3)',
+    borderTopColor: `rgba(${palette.accentRgb}, 0.3)`,
   },
   charProfileBannerBox: {
     width: '100%',
     height: 190,
     position: 'relative',
-    backgroundColor: '#0c0e14',
+    backgroundColor: palette.bgDark,
   },
   charProfileBannerImg: {
     width: '100%',
@@ -5433,7 +5436,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   charProfileTagline: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 12,
     fontWeight: '600',
     marginTop: 2,
@@ -5499,10 +5502,10 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.3)',
+    borderColor: `rgba(${palette.accentRgb}, 0.3)`,
   },
   tokenText: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 10,
     fontWeight: '700',
   },
@@ -5528,7 +5531,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(16, 20, 30, 0.94)',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.35)',
+    borderColor: `rgba(${palette.accentRgb}, 0.35)`,
     padding: 14,
     marginVertical: 6,
     width: '100%',
@@ -5543,21 +5546,21 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   checkpointCardTitle: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 1,
   },
   checkpointTagBadge: {
-    backgroundColor: 'rgba(212, 255, 0, 0.12)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.25)',
+    borderColor: `rgba(${palette.accentRgb}, 0.25)`,
   },
   checkpointTagBadgeText: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 9.5,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     fontWeight: '700',
@@ -5579,7 +5582,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   checkpointBulletDot: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 13,
     lineHeight: 18,
   },
@@ -5602,13 +5605,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 8,
   },
   checkpointPinBtnText: {
-    color: '#0c0e14',
+    color: palette.bgDark,
     fontSize: 11,
     fontWeight: '800',
   },
@@ -5621,10 +5624,10 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.2)',
+    borderColor: `rgba(${palette.accentRgb}, 0.2)`,
   },
   checkpointCopyBtnText: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 11,
     fontWeight: '700',
   },

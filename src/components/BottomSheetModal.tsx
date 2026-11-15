@@ -16,6 +16,9 @@ import {
   PanResponder,
   StyleProp,
   ViewStyle,
+  Keyboard,
+  Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -27,6 +30,7 @@ interface BottomSheetModalProps {
   children: React.ReactNode;
   sheetStyle?: StyleProp<ViewStyle>;
   showDragHandle?: boolean;
+  fullScreen?: boolean;
 }
 
 export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
@@ -35,11 +39,29 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
   children,
   sheetStyle,
   showDragHandle = true,
+  fullScreen = false,
 }) => {
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [translateY] = useState(() => new Animated.Value(420));
   const [backdropOpacity] = useState(() => new Animated.Value(0));
   const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const subShow = Keyboard.addListener(showEvt, e => {
+      setKeyboardHeight(e.endCoordinates?.height || 0);
+    });
+    const subHide = Keyboard.addListener(hideEvt, () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, []);
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -149,7 +171,14 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
         <Animated.View
           style={[
             styles.sheet,
-            { paddingBottom: Math.max(24, insets.bottom + 12) },
+            {
+              marginBottom: keyboardHeight,
+              maxHeight: Math.max(240, windowHeight - keyboardHeight - insets.top - (fullScreen ? 8 : 28)),
+              paddingBottom: keyboardHeight > 0 ? 14 : Math.max(24, insets.bottom + 12),
+            },
+            fullScreen && {
+              height: Math.max(280, windowHeight - keyboardHeight - insets.top - 8),
+            },
             sheetStyle,
             { transform: [{ translateY }] },
           ]}

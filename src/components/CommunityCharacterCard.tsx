@@ -4,7 +4,7 @@
  * Matches Gambar 2 Bento 2-column grid layout with 100% fidelity.
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect , useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,6 @@ import {
   Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView, BlurTargetView } from 'expo-blur';
 import {
   MessageSquare,
   Heart,
@@ -28,6 +27,7 @@ import { CommunityCharacter } from '../types';
 import { matchAlgorithmService } from '../services/matchAlgorithmService';
 import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
+import { ThemePalette } from '../theme/colors';
 
 interface CommunityCharacterCardProps {
   character: CommunityCharacter;
@@ -59,8 +59,8 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
   onTagClick,
 }) => {
   const { palette } = useTheme();
+  const styles = useMemo(() => createStyles(palette), [palette]);
   const [imgError, setImgError] = useState(false);
-  const bannerTargetRef = useRef<React.ComponentRef<typeof View> | null>(null);
   const [isLiked, setIsLiked] = useState<boolean>(
     Boolean(isLikedProp ?? isBookmarked ?? matchAlgorithmService.isCharacterLiked(character.id))
   );
@@ -155,26 +155,24 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
     >
       {/* 1. Artwork Banner with 16/11 Aspect Ratio & Badges */}
       <View style={styles.bannerWrapper}>
-        <BlurTargetView ref={bannerTargetRef} style={StyleSheet.absoluteFill}>
-          {!imgError && character.avatarUrl ? (
-            <Image
-              source={{ uri: character.avatarUrl }}
-              style={styles.bannerImage}
-              onError={() => setImgError(true)}
-            />
-          ) : (
-            <View style={styles.fallbackBanner}>
-              <View style={styles.fallbackAvatar}>
-                <Text style={styles.fallbackAvatarText}>
-                  {character.name.charAt(0).toUpperCase()}
-                </Text>
-              </View>
-              <Text style={styles.fallbackName} numberOfLines={1}>
-                {character.name}
+        {!imgError && character.avatarUrl ? (
+          <Image
+            source={{ uri: character.avatarUrl }}
+            style={styles.bannerImage}
+            onError={() => setImgError(true)}
+          />
+        ) : (
+          <View style={styles.fallbackBanner}>
+            <View style={styles.fallbackAvatar}>
+              <Text style={styles.fallbackAvatarText}>
+                {character.name.charAt(0).toUpperCase()}
               </Text>
             </View>
-          )}
-        </BlurTargetView>
+            <Text style={styles.fallbackName} numberOfLines={1}>
+              {character.name}
+            </Text>
+          </View>
+        )}
 
         {/* Progressive Top Gradient Scrim behind badges */}
         <LinearGradient
@@ -198,7 +196,7 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
 
           {character.totalTokens > 0 && (
             <View style={styles.tokenBadge}>
-              <Coins size={10} color="#d4ff00" style={{ marginRight: 3 }} />
+              <Coins size={10} color={palette.accent} style={{ marginRight: 3 }} />
               <Text style={styles.tokenText}>{formatCount(character.totalTokens)}</Text>
             </View>
           )}
@@ -215,24 +213,15 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
         >
           <Bookmark
             size={13}
-            color={isBookmarked ? '#d4ff00' : '#e2e8f0'}
-            fill={isBookmarked ? '#d4ff00' : 'transparent'}
+            color={isBookmarked ? palette.accent : '#e2e8f0'}
+            fill={isBookmarked ? palette.accent : 'transparent'}
           />
         </TouchableOpacity>
 
-        {/* Progressive Blur / Gradient Scrim */}
-        {Platform.OS !== 'web' && (
-          <BlurView
-            intensity={36}
-            tint="dark"
-            blurMethod="dimezisBlurView"
-            blurTarget={bannerTargetRef}
-            pointerEvents="none"
-            style={styles.bannerGradientScrim}
-          />
-        )}
+        {/* Linear Transparent Gradient Scrim */}
         <LinearGradient
-          colors={['transparent', 'rgba(15, 18, 29, 0.16)', 'rgba(15, 18, 29, 0.52)']}
+          pointerEvents="none"
+          colors={['transparent', 'rgba(15, 18, 29, 0.22)', 'rgba(15, 18, 29, 0.72)']}
           locations={[0, 0.45, 1]}
           style={styles.bannerGradientScrim}
         />
@@ -266,7 +255,7 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
             <Text style={styles.creatorHandle} numberOfLines={1}>
               @{cleanHandle(character.creatorName || 'community')}
             </Text>
-            <CheckCircle2 size={11} color="#d4ff00" style={{ marginLeft: 2 }} />
+            <CheckCircle2 size={11} color={palette.accent} style={{ marginLeft: 2 }} />
           </TouchableOpacity>
 
           {onToggleFollowCreator && (
@@ -379,7 +368,7 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   cardContainer: {
     flex: 1,
     maxWidth: '48.5%',
@@ -402,7 +391,7 @@ const styles = StyleSheet.create({
   bannerWrapper: {
     width: '100%',
     aspectRatio: 1, // 1:1 Square artwork provides generous headroom and profile image space
-    backgroundColor: '#0c0e14',
+    backgroundColor: palette.bgDark,
     position: 'relative',
     overflow: 'hidden',
   },
@@ -423,9 +412,9 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(212, 255, 0, 0.15)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.35)',
+    borderColor: `rgba(${palette.accentRgb}, 0.35)`,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 4,
@@ -433,7 +422,7 @@ const styles = StyleSheet.create({
   fallbackAvatarText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#d4ff00',
+    color: palette.accent,
   },
   fallbackName: {
     fontSize: 10,
@@ -536,7 +525,7 @@ const styles = StyleSheet.create({
   chatSubtitle: {
     fontSize: 10.5,
     fontWeight: '700',
-    color: '#d4ff00',
+    color: palette.accent,
     marginTop: 1.5,
   },
   creatorRow: {
@@ -612,7 +601,7 @@ const styles = StyleSheet.create({
   moreTagChip: {
     backgroundColor: '#181c28',
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.25)',
+    borderColor: `rgba(${palette.accentRgb}, 0.25)`,
     borderRadius: 4,
     paddingHorizontal: 4,
     paddingVertical: 1.5,
@@ -620,7 +609,7 @@ const styles = StyleSheet.create({
   moreTagText: {
     fontSize: 8.5,
     fontWeight: '700',
-    color: '#d4ff00',
+    color: palette.accent,
   },
   cardFooter: {
     flexDirection: 'row',
@@ -678,10 +667,10 @@ const styles = StyleSheet.create({
     width: 25,
     height: 25,
     borderRadius: 12.5,
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#d4ff00',
+    shadowColor: palette.accent,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.6,
     shadowRadius: 5,

@@ -4,7 +4,7 @@
  * Avatar, Name, and Tagline docked cleanly at the BOTTOM.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect , useMemo } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
 import { storageService } from '../services/storageService';
 import { matchAlgorithmService } from '../services/matchAlgorithmService';
+import { ThemePalette } from '../theme/colors';
 
 interface StoryViewerModalProps {
   visible: boolean;
@@ -39,6 +40,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   onToggleFavorite,
 }) => {
   const { palette } = useTheme();
+  const styles = useMemo(() => createStyles(palette), [palette]);
   const [currentIndex, setCurrentIndex] = useState(initialIndex || 0);
   const [showFullDesc, setShowFullDesc] = useState(false);
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
@@ -200,7 +202,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   modalBackdrop: {
     flex: 1,
     backgroundColor: '#000',
@@ -345,11 +347,11 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#d4ff00',
+    shadowColor: palette.accent,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.5,
     shadowRadius: 5,

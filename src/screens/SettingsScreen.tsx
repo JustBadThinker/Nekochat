@@ -8,7 +8,7 @@
  * 4. Theming & Appearance Modal
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect , useMemo } from 'react';
 import {
   View,
   Text,
@@ -54,7 +54,7 @@ import { aiProviderService } from '../services/aiProviderService';
 import { wardenVaultService } from '../services/wardenVaultService';
 import { ttsService, VOICE_PROFILES, TtsConfig, DEFAULT_TTS_CONFIG } from '../services/ttsService';
 import { imageGenService, IMAGE_STYLE_OPTIONS, ImageGenConfig, DEFAULT_IMAGE_GEN_CONFIG, ImageStylePreset } from '../services/imageGenService';
-import { colors, applyThemePalette, ThemeId } from '../theme/colors';
+import { colors, applyThemePalette, ThemeId, ThemePalette } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 import { NekoLogoSvg } from '../components/NekoLogoSvg';
 import { BottomSheetModal } from '../components/BottomSheetModal';
@@ -73,6 +73,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onUpdateSettings,
 }) => {
   const { palette } = useTheme();
+  const styles = useMemo(() => createStyles(palette), [palette]);
   // Modal Visibility State
   const [activeModal, setActiveModal] = useState<
     'api' | 'theming' | 'vault' | 'personas' | 'tokens' | 'about' | 'voice' | 'image' | null
@@ -639,7 +640,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           activeOpacity={0.8}
         >
           <View style={styles.tileIconCircle}>
-            <Key size={18} color="#d4ff00" />
+            <Key size={18} color={palette.accent} />
           </View>
           <Text style={styles.tileTitle}>AI Engine Suite</Text>
           <Text style={styles.tileSubtitle}>LLM Brain, Scene Art & Voice</Text>
@@ -655,7 +656,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           activeOpacity={0.8}
         >
           <View style={styles.tileIconCircle}>
-            <Palette size={18} color="#d4ff00" />
+            <Palette size={18} color={palette.accent} />
           </View>
           <Text style={styles.tileTitle}>Theming</Text>
           <Text style={styles.tileSubtitle}>Palette & UI Accents</Text>
@@ -675,7 +676,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           activeOpacity={0.8}
         >
           <View style={styles.tileIconCircle}>
-            <ShieldCheck size={18} color="#d4ff00" />
+            <ShieldCheck size={18} color={palette.accent} />
           </View>
           <Text style={styles.tileTitle}>Data Vault</Text>
           <Text style={styles.tileSubtitle}>Zero-key backup & import</Text>
@@ -691,7 +692,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           activeOpacity={0.8}
         >
           <View style={styles.tileIconCircle}>
-            <Users size={18} color="#d4ff00" />
+            <Users size={18} color={palette.accent} />
           </View>
           <Text style={styles.tileTitle}>User Personas</Text>
           <Text style={styles.tileSubtitle}>Manage profiles & switch</Text>
@@ -707,7 +708,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           activeOpacity={0.8}
         >
           <View style={styles.tileIconCircle}>
-            <Cpu size={18} color="#d4ff00" />
+            <Cpu size={18} color={palette.accent} />
           </View>
           <Text style={styles.tileTitle}>Token & Sampling</Text>
           <Text style={styles.tileSubtitle}>Context limit & parameters</Text>
@@ -723,7 +724,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           activeOpacity={0.8}
         >
           <View style={styles.tileIconCircle}>
-            <Sparkles size={18} color="#d4ff00" />
+            <Sparkles size={18} color={palette.accent} />
           </View>
           <Text style={styles.tileTitle}>About Neko</Text>
           <Text style={styles.tileSubtitle}>v0.1.0-alpha • Free & Open</Text>
@@ -741,7 +742,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       <BottomSheetModal visible={activeModal === 'api'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleRow}>
-                <Key size={16} color="#d4ff00" style={{ marginRight: 6 }} />
+                <Key size={16} color={palette.accent} style={{ marginRight: 6 }} />
                 <Text style={styles.modalTitle}>AI Engine & Media Setup</Text>
               </View>
               <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
@@ -765,14 +766,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                       paddingVertical: 8,
                       borderRadius: 10,
                       alignItems: 'center',
-                      backgroundColor: isActive ? '#d4ff00' : 'rgba(255, 255, 255, 0.05)',
+                      backgroundColor: isActive ? palette.accent : 'rgba(255, 255, 255, 0.05)',
                       borderWidth: 1,
-                      borderColor: isActive ? '#d4ff00' : 'rgba(255, 255, 255, 0.1)',
+                      borderColor: isActive ? palette.accent : 'rgba(255, 255, 255, 0.1)',
                     }}
                     onPress={() => setAiModalTab(tb.id as any)}
                     activeOpacity={0.8}
                   >
-                    <Text style={{ fontSize: 12, fontWeight: '800', color: isActive ? '#0c0e14' : '#9ca3af' }}>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: isActive ? palette.bgDark : '#9ca3af' }}>
                       {tb.label}
                     </Text>
                   </TouchableOpacity>
@@ -800,13 +801,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                             paddingVertical: 8,
                             borderRadius: 10,
                             alignItems: 'center',
-                            backgroundColor: isActive ? 'rgba(212, 255, 0, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                            backgroundColor: isActive ? `rgba(${palette.accentRgb}, 0.15)` : 'rgba(255, 255, 255, 0.05)',
                             borderWidth: 1,
-                            borderColor: isActive ? '#d4ff00' : 'rgba(255, 255, 255, 0.1)',
+                            borderColor: isActive ? palette.accent : 'rgba(255, 255, 255, 0.1)',
                           }}
                           onPress={() => handleSelectProvider(p.id)}
                         >
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: isActive ? '#d4ff00' : '#9ca3af' }}>
+                          <Text style={{ fontSize: 11, fontWeight: '700', color: isActive ? palette.accent : '#9ca3af' }}>
                             {p.name}
                           </Text>
                         </TouchableOpacity>
@@ -852,11 +853,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                       disabled={fetchingModels}
                     >
                       {fetchingModels ? (
-                        <ActivityIndicator size="small" color="#d4ff00" />
+                        <ActivityIndicator size="small" color={palette.accent} />
                       ) : (
                         <>
-                          <RefreshCw size={12} color="#d4ff00" />
-                          <Text style={{ color: '#d4ff00', fontSize: 11, fontWeight: '700' }}>Fetch Models</Text>
+                          <RefreshCw size={12} color={palette.accent} />
+                          <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>Fetch Models</Text>
                         </>
                       )}
                     </TouchableOpacity>
@@ -880,7 +881,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                           <TouchableOpacity
                             key={m.id}
                             style={{
-                              backgroundColor: model === m.id ? '#d4ff00' : 'rgba(255, 255, 255, 0.06)',
+                              backgroundColor: model === m.id ? palette.accent : 'rgba(255, 255, 255, 0.06)',
                               paddingHorizontal: 10,
                               paddingVertical: 6,
                               borderRadius: 8,
@@ -1016,8 +1017,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   </TouchableOpacity>
 
                   {imageTestResult && (
-                    <View style={{ marginTop: 10, padding: 10, borderRadius: 10, backgroundColor: imageTestResult.ok ? 'rgba(212, 255, 0, 0.1)' : 'rgba(239, 68, 68, 0.1)', borderWidth: 1, borderColor: imageTestResult.ok ? '#d4ff00' : '#ef4444' }}>
-                      <Text style={{ color: imageTestResult.ok ? '#d4ff00' : '#ef4444', fontSize: 12, fontWeight: '700' }}>
+                    <View style={{ marginTop: 10, padding: 10, borderRadius: 10, backgroundColor: imageTestResult.ok ? `rgba(${palette.accentRgb}, 0.1)` : 'rgba(239, 68, 68, 0.1)', borderWidth: 1, borderColor: imageTestResult.ok ? palette.accent : '#ef4444' }}>
+                      <Text style={{ color: imageTestResult.ok ? palette.accent : '#ef4444', fontSize: 12, fontWeight: '700' }}>
                         {imageTestResult.ok ? '✓ Image Generation Operational!' : `✕ Error: ${imageTestResult.error}`}
                       </Text>
                     </View>
@@ -1111,7 +1112,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       <BottomSheetModal visible={activeModal === 'theming'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleRow}>
-                <Palette size={16} color="#d4ff00" style={{ marginRight: 6 }} />
+                <Palette size={16} color={palette.accent} style={{ marginRight: 6 }} />
                 <Text style={styles.modalTitle}>Theming & Appearance</Text>
               </View>
               <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
@@ -1122,7 +1123,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <ScrollView style={styles.modalBody}>
               <Text style={styles.sectionSub}>Select Theme Preset (Applies Instantly)</Text>
               {[
-                { id: 'midnight', name: '⚡ Midnight Cyber', desc: 'True OLED Black (#0c0e14) + Acid Lime (#d4ff00)', accent: '#D4FF00', bg: '#0c0e14' },
+                { id: 'midnight', name: '⚡ Midnight Cyber', desc: 'True OLED Black (#0c0e14) + Acid Lime (#d4ff00)', accent: palette.accent, bg: palette.bgDark },
                 { id: 'sakura', name: '🌸 Sakura Dusk', desc: 'Deep Charcoal (#120d14) + Pastel Rose (#fb7185)', accent: '#FB7185', bg: '#120d14' },
                 { id: 'slate', name: '☕ Warm Slate', desc: 'Warm Dark Slate (#12151f) + Amber (#facc15)', accent: '#FACC15', bg: '#12151f' },
                 { id: 'cyan', name: '💠 Cyber Cyan', desc: 'Deep Void (#070c12) + Electric Cyan (#38bdf8)', accent: '#38BDF8', bg: '#070c12' },
@@ -1181,7 +1182,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       <BottomSheetModal visible={activeModal === 'vault'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleRow}>
-                <ShieldCheck size={16} color="#d4ff00" style={{ marginRight: 6 }} />
+                <ShieldCheck size={16} color={palette.accent} style={{ marginRight: 6 }} />
                 <Text style={styles.modalTitle}>Neko Data Vault & Sanitizer</Text>
               </View>
               <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
@@ -1206,7 +1207,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               {vaultJson ? (
                 <View style={styles.vaultSnippetBox}>
                   <TouchableOpacity style={styles.copySnippetBtn} onPress={handleCopyVault}>
-                    <Copy size={13} color="#d4ff00" style={{ marginRight: 4 }} />
+                    <Copy size={13} color={palette.accent} style={{ marginRight: 4 }} />
                     <Text style={styles.copySnippetText}>{copiedVault ? 'Copied!' : 'Copy JSON'}</Text>
                   </TouchableOpacity>
                   <Text style={styles.vaultSnippetText} numberOfLines={3}>
@@ -1218,12 +1219,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginBottom: 6 }}>
                 <Text style={styles.inputLabel}>Restore from .neko or .warden JSON</Text>
                 <TouchableOpacity
-                  style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(212, 255, 0, 0.1)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(212, 255, 0, 0.3)' }}
+                  style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: `rgba(${palette.accentRgb}, 0.1)`, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: `rgba(${palette.accentRgb}, 0.3)` }}
                   onPress={handlePickVaultFile}
                   activeOpacity={0.8}
                 >
-                  <Upload size={12} color="#d4ff00" style={{ marginRight: 4 }} />
-                  <Text style={{ color: '#d4ff00', fontSize: 11, fontWeight: '700' }}>Pick File</Text>
+                  <Upload size={12} color={palette.accent} style={{ marginRight: 4 }} />
+                  <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>Pick File</Text>
                 </TouchableOpacity>
               </View>
               <TextInput
@@ -1240,7 +1241,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 onPress={handleImportVault}
                 activeOpacity={0.8}
               >
-                <Upload size={14} color="#d4ff00" style={{ marginRight: 6 }} />
+                <Upload size={14} color={palette.accent} style={{ marginRight: 6 }} />
                 <Text style={styles.importActionBtnText}>Restore / Import Backup</Text>
               </TouchableOpacity>
 
@@ -1252,7 +1253,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       <BottomSheetModal visible={activeModal === 'personas'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleRow}>
-                <Users size={16} color="#d4ff00" style={{ marginRight: 6 }} />
+                <Users size={16} color={palette.accent} style={{ marginRight: 6 }} />
                 <Text style={styles.modalTitle}>User Personas & Identity</Text>
               </View>
               <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
@@ -1280,7 +1281,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                       {p.description || 'No description provided'}
                     </Text>
                   </View>
-                  {activePersonaId === p.id && <Check size={16} color="#d4ff00" />}
+                  {activePersonaId === p.id && <Check size={16} color={palette.accent} />}
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -1300,7 +1301,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       <BottomSheetModal visible={activeModal === 'tokens'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleRow}>
-                <Cpu size={16} color="#d4ff00" style={{ marginRight: 6 }} />
+                <Cpu size={16} color={palette.accent} style={{ marginRight: 6 }} />
                 <Text style={styles.modalTitle}>Token Limits & Context Window</Text>
               </View>
               <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
@@ -1357,11 +1358,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   flexDirection: 'row',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  backgroundColor: 'rgba(212, 255, 0, 0.08)',
+                  backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
                   padding: 12,
                   borderRadius: 12,
                   borderWidth: 1,
-                  borderColor: 'rgba(212, 255, 0, 0.25)',
+                  borderColor: `rgba(${palette.accentRgb}, 0.25)`,
                   marginTop: 18,
                   marginBottom: 10,
                 }}
@@ -1369,14 +1370,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 activeOpacity={0.8}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Cpu size={15} color="#d4ff00" />
-                  <Text style={{ color: '#d4ff00', fontSize: 13, fontWeight: '700' }}>
+                  <Cpu size={15} color={palette.accent} />
+                  <Text style={{ color: palette.accent, fontSize: 13, fontWeight: '700' }}>
                     Advanced Sampling & Context Truncation
                   </Text>
                 </View>
                 <ChevronDown
                   size={16}
-                  color="#d4ff00"
+                  color={palette.accent}
                   style={{ transform: [{ rotate: showAdvancedSampling ? '180deg' : '0deg' }] }}
                 />
               </TouchableOpacity>
@@ -1519,7 +1520,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       <BottomSheetModal visible={activeModal === 'voice'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleRow}>
-                <Volume2 size={16} color="#d4ff00" style={{ marginRight: 6 }} />
+                <Volume2 size={16} color={palette.accent} style={{ marginRight: 6 }} />
                 <Text style={styles.modalTitle}>Voice & Speech Synthesis</Text>
               </View>
               <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
@@ -1607,7 +1608,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     >
                       <View style={{ flex: 1 }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text style={[styles.voiceItemName, isSel && { color: '#D4FF00' }]}>{vp.name}</Text>
+                          <Text style={[styles.voiceItemName, isSel && { color: palette.accent }]}>{vp.name}</Text>
                           <View style={styles.voiceGenderBadge}>
                             <Text style={styles.voiceGenderBadgeText}>{vp.gender}</Text>
                           </View>
@@ -1615,7 +1616,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                         <Text style={styles.voiceArchetype}>{vp.archetype}</Text>
                         <Text style={styles.voiceDesc} numberOfLines={1}>{vp.description}</Text>
                       </View>
-                      {isSel && <Check size={16} color="#D4FF00" />}
+                      {isSel && <Check size={16} color={palette.accent} />}
                     </TouchableOpacity>
                   );
                 })}
@@ -1645,7 +1646,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       <BottomSheetModal visible={activeModal === 'image'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleRow}>
-                <ImageIcon size={16} color="#d4ff00" style={{ marginRight: 6 }} />
+                <ImageIcon size={16} color={palette.accent} style={{ marginRight: 6 }} />
                 <Text style={styles.modalTitle}>Scene Art & Image Generation</Text>
               </View>
               <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
@@ -1762,7 +1763,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </View>
 
               {imageTestResult?.url && (
-                <View style={{ borderRadius: 14, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: '#D4FF00' }}>
+                <View style={{ borderRadius: 14, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: palette.accent }}>
                   <Image source={{ uri: imageTestResult.url }} style={{ width: '100%', height: 200 }} resizeMode="cover" />
                 </View>
               )}
@@ -1797,7 +1798,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       <BottomSheetModal visible={activeModal === 'about'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleRow}>
-                <Sparkles size={16} color="#d4ff00" style={{ marginRight: 6 }} />
+                <Sparkles size={16} color={palette.accent} style={{ marginRight: 6 }} />
                 <Text style={styles.modalTitle}>About NekoChat</Text>
               </View>
               <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
@@ -1827,7 +1828,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
                 {/* Open-Source & Ecosystem Credits */}
                 <View style={{ marginTop: 18, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.08)', paddingTop: 14 }}>
-                  <Text style={{ color: '#d4ff00', fontSize: 12, fontWeight: '800', letterSpacing: 0.5, marginBottom: 10 }}>
+                  <Text style={{ color: palette.accent, fontSize: 12, fontWeight: '800', letterSpacing: 0.5, marginBottom: 10 }}>
                     OPEN-SOURCE & COMMUNITY CREDITS
                   </Text>
 
@@ -1866,8 +1867,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     >
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
                         <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '700' }}>{credit.title}</Text>
-                        <View style={{ backgroundColor: 'rgba(212, 255, 0, 0.12)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                          <Text style={{ color: '#d4ff00', fontSize: 9.5, fontWeight: '800' }}>{credit.badge}</Text>
+                        <View style={{ backgroundColor: `rgba(${palette.accentRgb}, 0.12)`, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                          <Text style={{ color: palette.accent, fontSize: 9.5, fontWeight: '800' }}>{credit.badge}</Text>
                         </View>
                       </View>
                       <Text style={{ color: '#9ca3af', fontSize: 11, lineHeight: 15 }}>{credit.desc}</Text>
@@ -1881,7 +1882,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000000',
@@ -1916,7 +1917,7 @@ const styles = StyleSheet.create({
   healthPingBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     paddingHorizontal: 9,
     paddingVertical: 4.5,
     borderRadius: 8,
@@ -1945,7 +1946,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     marginRight: 6,
   },
   statusDotRed: {
@@ -1971,7 +1972,7 @@ const styles = StyleSheet.create({
   latencyText: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#d4ff00',
+    color: palette.accent,
     marginTop: 2,
   },
   latencyTextOffline: {
@@ -2035,9 +2036,9 @@ const styles = StyleSheet.create({
   },
   tileBadgeLime: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(212, 255, 0, 0.15)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.4)',
+    borderColor: `rgba(${palette.accentRgb}, 0.4)`,
     borderRadius: 6,
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -2046,7 +2047,7 @@ const styles = StyleSheet.create({
   tileBadgeLimeText: {
     fontSize: 9,
     fontWeight: '800',
-    color: '#d4ff00',
+    color: palette.accent,
   },
   tileBadge: {
     alignSelf: 'flex-start',
@@ -2146,7 +2147,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     borderRadius: 10,
     paddingVertical: 10,
     marginTop: 14,
@@ -2162,9 +2163,9 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   pingSuccess: {
-    backgroundColor: 'rgba(212, 255, 0, 0.12)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.4)',
+    borderColor: `rgba(${palette.accentRgb}, 0.4)`,
   },
   pingFailure: {
     backgroundColor: 'rgba(244, 63, 94, 0.12)',
@@ -2174,7 +2175,7 @@ const styles = StyleSheet.create({
   pingTextSuccess: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#d4ff00',
+    color: palette.accent,
   },
   pingTextFailure: {
     fontSize: 11,
@@ -2188,7 +2189,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0c0e15',
   },
   saveBtn: {
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     borderRadius: 10,
     paddingVertical: 11,
     alignItems: 'center',
@@ -2217,8 +2218,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   themeOptionActive: {
-    borderColor: '#d4ff00',
-    backgroundColor: 'rgba(212, 255, 0, 0.08)',
+    borderColor: palette.accent,
+    backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
   },
   themeOptionName: {
     fontSize: 12.5,
@@ -2240,7 +2241,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     borderRadius: 10,
     paddingVertical: 10,
     marginBottom: 10,
@@ -2271,7 +2272,7 @@ const styles = StyleSheet.create({
   copySnippetText: {
     fontSize: 9.5,
     fontWeight: '700',
-    color: '#d4ff00',
+    color: palette.accent,
   },
   vaultSnippetText: {
     fontSize: 10,
@@ -2284,7 +2285,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#171c2b',
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.4)',
+    borderColor: `rgba(${palette.accentRgb}, 0.4)`,
     borderRadius: 10,
     paddingVertical: 10,
     marginTop: 8,
@@ -2292,12 +2293,12 @@ const styles = StyleSheet.create({
   importActionBtnText: {
     fontSize: 11.5,
     fontWeight: '800',
-    color: '#d4ff00',
+    color: palette.accent,
   },
   vaultNoticeText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#d4ff00',
+    color: palette.accent,
     textAlign: 'center',
     marginTop: 10,
   },
@@ -2312,7 +2313,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   personaItemActive: {
-    borderColor: '#d4ff00',
+    borderColor: palette.accent,
   },
   personaAvatarWrap: {
     width: 36,
@@ -2326,7 +2327,7 @@ const styles = StyleSheet.create({
   personaAvatarInitial: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#d4ff00',
+    color: palette.accent,
   },
   personaName: {
     fontSize: 12,
@@ -2352,8 +2353,8 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   tokenPillActive: {
-    backgroundColor: '#d4ff00',
-    borderColor: '#d4ff00',
+    backgroundColor: palette.accent,
+    borderColor: palette.accent,
   },
   tokenPillText: {
     fontSize: 11,
@@ -2375,7 +2376,7 @@ const styles = StyleSheet.create({
   aboutTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#d4ff00',
+    color: palette.accent,
   },
   aboutVersion: {
     fontSize: 11,
@@ -2394,7 +2395,7 @@ const styles = StyleSheet.create({
   repoLinkBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -2434,7 +2435,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   toggleSwitchActive: {
-    backgroundColor: '#D4FF00',
+    backgroundColor: palette.accent,
   },
   toggleThumb: {
     width: 20,
@@ -2455,8 +2456,8 @@ const styles = StyleSheet.create({
     borderColor: '#1e2436',
   },
   radioChipActive: {
-    borderColor: '#D4FF00',
-    backgroundColor: 'rgba(212, 255, 0, 0.12)',
+    borderColor: palette.accent,
+    backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
   },
   radioChipText: {
     color: '#9ca3af',
@@ -2464,7 +2465,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   radioChipTextActive: {
-    color: '#D4FF00',
+    color: palette.accent,
   },
   voiceItemCard: {
     flexDirection: 'row',
@@ -2477,8 +2478,8 @@ const styles = StyleSheet.create({
     ...GLASS.backdrop,
   },
   voiceItemCardActive: {
-    borderColor: '#D4FF00',
-    backgroundColor: 'rgba(212, 255, 0, 0.06)',
+    borderColor: palette.accent,
+    backgroundColor: `rgba(${palette.accentRgb}, 0.06)`,
   },
   voiceItemName: {
     color: '#FFFFFF',
@@ -2497,7 +2498,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   voiceArchetype: {
-    color: '#D4FF00',
+    color: palette.accent,
     fontSize: 11,
     fontWeight: '600',
     marginTop: 2,

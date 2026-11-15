@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import {
   View,
   Image,
@@ -8,6 +8,8 @@ import {
   Easing,
   PanResponder,
 } from 'react-native';
+import { useTheme } from '../theme/ThemeContext';
+import { ThemePalette } from '../theme/colors';
 
 const DESK_SPRITE_4X4 = require('../../assets/neko-desk-4x4.png');
 const NEKO_LIFTED_IMG = require('../../assets/neko-lifted.png');
@@ -34,6 +36,8 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
   isAiWaiting,
   onPress,
 }) => {
+  const { palette } = useTheme();
+  const styles = useMemo(() => createStyles(palette), [palette]);
   const [action, setAction] = useState<DeskAction>('idle');
   const [frame, setFrame] = useState<{ row: number; col: number }>({ row: 0, col: 0 });
   const [facing, setFacing] = useState<1 | -1>(1);
@@ -351,7 +355,7 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   rail: {
     position: 'absolute',
     top: -39,
@@ -380,7 +384,7 @@ const styles = StyleSheet.create({
     top: 4,
     backgroundColor: 'rgba(12, 16, 26, 0.92)',
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.45)',
+    borderColor: `rgba(${palette.accentRgb}, 0.45)`,
     borderRadius: 10,
     paddingHorizontal: 7,
     paddingVertical: 2,
@@ -388,7 +392,7 @@ const styles = StyleSheet.create({
   waitBubbleText: {
     fontSize: 9.5,
     fontWeight: '800',
-    color: '#d4ff00',
+    color: palette.accent,
   },
 });
 

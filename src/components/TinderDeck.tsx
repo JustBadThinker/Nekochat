@@ -5,7 +5,7 @@
  * non-repeating algorithmic matching queue with affinity score badges.
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect , useMemo } from 'react';
 import {
   View,
   Text,
@@ -40,6 +40,8 @@ import {
   isCharacterExplicitlyFemale,
 } from '../services/matchAlgorithmService';
 import { Persona } from '../types';
+import { useTheme } from '../theme/ThemeContext';
+import { ThemePalette } from '../theme/colors';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SWIPE_THRESHOLD = 75;
@@ -63,6 +65,8 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
   onToggleFavorite,
   favoriteIds = new Set(),
 }) => {
+  const { palette } = useTheme();
+  const styles = useMemo(() => createStyles(palette), [palette]);
   const [deck, setDeck] = useState<ScoredMatchCharacter[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [history, setHistory] = useState<{ index: number; character: ScoredMatchCharacter }[]>([]);
@@ -434,13 +438,13 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
       <View style={styles.container}>
         <View style={styles.emptyContainer}>
           <View style={styles.pulseRadar}>
-            <Flame size={32} color="#d4ff00" />
+            <Flame size={32} color={palette.accent} />
           </View>
           <Text style={styles.emptyTitle}>Scanning Anime Companions...</Text>
           <Text style={styles.emptyDesc}>
             Calculating chemistry scores based on your persona and roleplay preferences.
           </Text>
-          <ActivityIndicator size="small" color="#d4ff00" style={{ marginTop: 14 }} />
+          <ActivityIndicator size="small" color={palette.accent} style={{ marginTop: 14 }} />
         </View>
       </View>
     );
@@ -452,7 +456,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
       <View style={styles.container}>
         <View style={styles.emptyContainer}>
           <View style={styles.emptyIconCircle}>
-            <Sparkles size={28} color="#d4ff00" />
+            <Sparkles size={28} color={palette.accent} />
           </View>
           <Text style={styles.emptyTitle}>{"You've Caught Up!"}</Text>
           <Text style={styles.emptyDesc}>
@@ -460,7 +464,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
           </Text>
           <View style={styles.emptyBtnRow}>
             <TouchableOpacity style={styles.resetBtn} onPress={handleRestartDeck}>
-              <RotateCcw size={15} color="#0c0e14" style={{ marginRight: 6 }} />
+              <RotateCcw size={15} color={palette.bgDark} style={{ marginRight: 6 }} />
               <Text style={styles.resetBtnText}>Restart Deck</Text>
             </TouchableOpacity>
 
@@ -490,7 +494,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
       <View style={styles.deckToolbar}>
         <View style={styles.deckToolbarLeft}>
           <View style={styles.affinityBadgeHeader}>
-            <Zap size={11} color="#d4ff00" style={{ marginRight: 3 }} />
+            <Zap size={11} color={palette.accent} style={{ marginRight: 3 }} />
             <Text style={styles.affinityBadgeHeaderText}>{affinity}% Chemistry</Text>
           </View>
           {!selectedTags.includes('All') && (
@@ -507,7 +511,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
           onPress={() => setFilterModalVisible(true)}
           activeOpacity={0.8}
         >
-          <SlidersHorizontal size={13} color="#d4ff00" style={{ marginRight: 5 }} />
+          <SlidersHorizontal size={13} color={palette.accent} style={{ marginRight: 5 }} />
           <Text style={styles.filterTriggerText}>Filter</Text>
         </TouchableOpacity>
       </View>
@@ -583,7 +587,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
 
           {/* Dynamic LIKE & PASS Stamp Overlays */}
           <Animated.View style={[styles.stampLike, { opacity: likeOpacity }]}>
-            <Flame size={20} color="#d4ff00" style={{ marginRight: 4 }} />
+            <Flame size={20} color={palette.accent} style={{ marginRight: 4 }} />
             <Text style={styles.stampLikeText}>MATCH 🔥</Text>
           </Animated.View>
 
@@ -593,7 +597,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
 
           {/* Algorithmic Affinity Ribbon (Top Left) */}
           <View style={styles.matchScoreRibbon}>
-            <Flame size={13} color="#d4ff00" style={{ marginRight: 4 }} />
+            <Flame size={13} color={palette.accent} style={{ marginRight: 4 }} />
             <Text style={styles.matchScoreText}>{affinity}% Match</Text>
             <Text style={styles.matchReasonText}>• {reason}</Text>
           </View>
@@ -634,11 +638,11 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
               onPress={() => setInfoModalVisible(true)}
               activeOpacity={0.8}
             >
-              <Info size={19} color="#d4ff00" />
+              <Info size={19} color={palette.accent} />
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.dockBtnMatch} onPress={handleMatch} activeOpacity={0.8}>
-              <Flame size={24} color="#0c0e14" fill="#0c0e14" />
+              <Flame size={24} color={palette.bgDark} fill={palette.bgDark} />
             </TouchableOpacity>
           </View>
 
@@ -668,7 +672,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
             <View style={styles.statsStrip}>
               {Boolean(currentCharacter.chatCount) && (
                 <View style={styles.statPill}>
-                  <MessageCircle size={11} color="#d4ff00" style={{ marginRight: 4 }} />
+                  <MessageCircle size={11} color={palette.accent} style={{ marginRight: 4 }} />
                   <Text style={styles.statPillText}>
                     {Number(currentCharacter.chatCount).toLocaleString()}
                   </Text>
@@ -769,7 +773,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
                   handleMatch();
                 }}
               >
-                <Flame size={18} color="#0c0e14" fill="#0c0e14" style={{ marginRight: 6 }} />
+                <Flame size={18} color={palette.bgDark} fill={palette.bgDark} style={{ marginRight: 6 }} />
                 <Text style={styles.inspectStartBtnText}>Match & Start Roleplay</Text>
               </TouchableOpacity>
             </View>
@@ -791,7 +795,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
           >
             <View style={styles.filterHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                <Flame size={16} color="#d4ff00" style={{ marginRight: 6 }} />
+                <Flame size={16} color={palette.accent} style={{ marginRight: 6 }} />
                 <Text style={styles.filterTitle}>Match Mode Filters</Text>
               </View>
               <TouchableOpacity onPress={() => setFilterModalVisible(false)}>
@@ -809,7 +813,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
                     style={[styles.filterTagChip, isSelected && styles.filterTagChipActive]}
                     onPress={() => handleToggleFilter(t)}
                   >
-                    {isSelected && <Check size={12} color="#0c0e14" style={{ marginRight: 4 }} />}
+                    {isSelected && <Check size={12} color={palette.bgDark} style={{ marginRight: 4 }} />}
                     <Text style={[styles.filterTagText, isSelected && styles.filterTagTextActive]}>
                       {t}
                     </Text>
@@ -824,10 +828,10 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0c0e14',
+    backgroundColor: palette.bgDark,
   },
   deckToolbar: {
     flexDirection: 'row',
@@ -844,15 +848,15 @@ const styles = StyleSheet.create({
   affinityBadgeHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(212, 255, 0, 0.12)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.3)',
+    borderColor: `rgba(${palette.accentRgb}, 0.3)`,
   },
   affinityBadgeHeaderText: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 11,
     fontWeight: '700',
   },
@@ -898,7 +902,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.15)',
-    backgroundColor: '#0c0e14',
+    backgroundColor: palette.bgDark,
     ...(Platform.OS === 'web' ? { userSelect: 'none' as any, cursor: 'grab' as any } : {}),
   },
   cardSolidBackdrop: {
@@ -907,13 +911,13 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: '#0c0e14',
+    backgroundColor: palette.bgDark,
     zIndex: 0,
   },
   topCard: {
     zIndex: 10,
     elevation: 10,
-    backgroundColor: '#0c0e14',
+    backgroundColor: palette.bgDark,
     ...(Platform.OS === 'web'
       ? ({
           cursor: 'grab',
@@ -925,7 +929,7 @@ const styles = StyleSheet.create({
   nextCardBehind: {
     zIndex: 1,
     elevation: 1,
-    backgroundColor: '#0c0e14',
+    backgroundColor: palette.bgDark,
   },
   cardCover: {
     position: 'absolute',
@@ -993,11 +997,11 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.35)',
+    borderColor: `rgba(${palette.accentRgb}, 0.35)`,
     zIndex: 25,
   },
   matchScoreText: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 11,
     fontWeight: '800',
     marginRight: 4,
@@ -1077,10 +1081,10 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#d4ff00',
+    shadowColor: palette.accent,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.6,
     shadowRadius: 12,
@@ -1182,12 +1186,12 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: 'rgba(212, 255, 0, 0.12)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.35)',
+    borderColor: `rgba(${palette.accentRgb}, 0.35)`,
   },
   emptyContainer: {
     flex: 1,
@@ -1226,13 +1230,13 @@ const styles = StyleSheet.create({
   resetBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
   },
   resetBtnText: {
-    color: '#0c0e14',
+    color: palette.bgDark,
     fontSize: 13,
     fontWeight: '800',
   },
@@ -1259,7 +1263,7 @@ const styles = StyleSheet.create({
   filterCard: {
     width: '100%',
     maxWidth: 380,
-    backgroundColor: '#12151e',
+    backgroundColor: palette.bgSurface,
     borderRadius: 20,
     padding: 20,
     borderWidth: 1,
@@ -1297,22 +1301,22 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   filterTagChipActive: {
-    backgroundColor: '#d4ff00',
-    borderColor: '#d4ff00',
+    backgroundColor: palette.accent,
+    borderColor: palette.accent,
   },
   filterTagText: {
     color: 'rgba(255, 255, 255, 0.7)',
     fontSize: 12,
   },
   filterTagTextActive: {
-    color: '#0c0e14',
+    color: palette.bgDark,
     fontWeight: '800',
   },
   inspectCard: {
     width: '100%',
     maxWidth: 440,
     maxHeight: '85%',
-    backgroundColor: '#12151e',
+    backgroundColor: palette.bgSurface,
     borderRadius: 24,
     overflow: 'hidden',
     borderWidth: 1,
@@ -1362,7 +1366,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   inspectCreatorText: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 13,
     fontWeight: '600',
   },
@@ -1376,7 +1380,7 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     borderLeftWidth: 3,
-    borderLeftColor: '#d4ff00',
+    borderLeftColor: palette.accent,
   },
   openingMessageText: {
     color: '#E5E7EB',
@@ -1393,12 +1397,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     paddingVertical: 12,
     borderRadius: 16,
   },
   inspectStartBtnText: {
-    color: '#0c0e14',
+    color: palette.bgDark,
     fontSize: 14,
     fontWeight: '800',
   },

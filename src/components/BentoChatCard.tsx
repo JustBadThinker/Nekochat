@@ -3,12 +3,14 @@
  * Clean 2-column cards for My Chats with pure monochrome white iconography.
  */
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect , useMemo } from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, Animated, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MessageSquare, Heart } from 'lucide-react-native';
 import { Character } from '../types';
 import { GLASS } from '../theme/glassTheme';
+import { useTheme } from '../theme/ThemeContext';
+import { ThemePalette } from '../theme/colors';
 
 interface BentoChatCardProps {
   character: Character;
@@ -21,6 +23,8 @@ export const BentoChatCard: React.FC<BentoChatCardProps> = ({
   onPress,
   onToggleFavorite,
 }) => {
+  const { palette } = useTheme();
+  const styles = useMemo(() => createStyles(palette), [palette]);
   const enterAnim = useRef(new Animated.Value(0)).current;
   const pressScale = useRef(new Animated.Value(1)).current;
   const heartScale = useRef(new Animated.Value(1)).current;
@@ -129,7 +133,7 @@ export const BentoChatCard: React.FC<BentoChatCardProps> = ({
 
       {/* Progressive Gradient Scrim Behind Text (Character remains sharp and clear above) */}
       <LinearGradient
-        colors={['transparent', 'rgba(12, 14, 20, 0.4)', 'rgba(12, 14, 20, 0.85)', '#0c0e14']}
+        colors={['transparent', 'rgba(12, 14, 20, 0.4)', 'rgba(12, 14, 20, 0.85)', palette.bgDark]}
         locations={[0, 0.28, 0.68, 1]}
         style={styles.scrimContainer}
       >
@@ -153,7 +157,7 @@ export const BentoChatCard: React.FC<BentoChatCardProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   cardWrapper: {
     flex: 1,
     maxWidth: '48.5%',
@@ -242,7 +246,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   charTagline: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 10.5,
     fontWeight: '600',
     marginBottom: 6,

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState , useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import {
 import { Brain, ChevronDown, PawPrint, RotateCcw, X } from 'lucide-react-native';
 import { GLASS } from '../theme/glassTheme';
 import { NekoPetSprite, NekoMood } from './NekoPetSprite';
+import { useTheme } from '../theme/ThemeContext';
+import { ThemePalette } from '../theme/colors';
 
 const DINO_SPRITE_4X4 = require('../../assets/neko-desk-4x4.png');
 const NEKO_JUMP_IMG = require('../../assets/neko-jump.png');
@@ -63,6 +65,8 @@ export const InlineWaitFidget: React.FC<InlineWaitFidgetProps> = ({
   onReset,
   onClose,
 }) => {
+  const { palette } = useTheme();
+  const styles = useMemo(() => createStyles(palette), [palette]);
   const [showThought, setShowThought] = useState(false);
   const [gameMode, setGameMode] = useState<'dino' | 'catch'>('dino');
   const [hitLabel, setHitLabel] = useState<string | null>(null);
@@ -391,7 +395,7 @@ export const InlineWaitFidget: React.FC<InlineWaitFidgetProps> = ({
               onPress={() => setShowThought(prev => !prev)}
               activeOpacity={0.8}
             >
-              <Brain size={11} color={showThought ? '#000000' : '#d4ff00'} />
+              <Brain size={11} color={showThought ? '#000000' : palette.accent} />
               <Text style={[styles.thoughtToggleText, showThought && styles.thoughtToggleTextActive]}>
                 Thinking
               </Text>
@@ -585,7 +589,7 @@ export const InlineWaitFidget: React.FC<InlineWaitFidgetProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   card: {
     marginHorizontal: 10,
     marginBottom: 6,
@@ -629,7 +633,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
   },
   writingText: {
     fontSize: 12,
@@ -644,18 +648,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3.5,
     borderRadius: 9,
-    backgroundColor: 'rgba(212, 255, 0, 0.1)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.1)`,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.25)',
+    borderColor: `rgba(${palette.accentRgb}, 0.25)`,
   },
   thoughtToggleBtnActive: {
-    backgroundColor: '#d4ff00',
-    borderColor: '#d4ff00',
+    backgroundColor: palette.accent,
+    borderColor: palette.accent,
   },
   thoughtToggleText: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#d4ff00',
+    color: palette.accent,
   },
   thoughtToggleTextActive: {
     color: '#000000',
@@ -710,7 +714,7 @@ const styles = StyleSheet.create({
   dinoRunBadge: {
     fontSize: 10.5,
     fontWeight: '800',
-    color: '#d4ff00',
+    color: palette.accent,
   },
   dinoGroundTrack: {
     height: 76,
@@ -740,7 +744,7 @@ const styles = StyleSheet.create({
   dinoGroundLine: {
     height: 2,
     borderRadius: 1,
-    backgroundColor: 'rgba(212, 255, 0, 0.35)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.35)`,
     width: '100%',
   },
   fidgetBox: {
@@ -771,20 +775,20 @@ const styles = StyleSheet.create({
     color: '#e2e8f0',
   },
   hitBadgePerfect: {
-    color: '#d4ff00',
+    color: palette.accent,
   },
   scorePill: {
     paddingHorizontal: 7,
     paddingVertical: 2.5,
     borderRadius: 8,
-    backgroundColor: 'rgba(212, 255, 0, 0.14)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.14)`,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.28)',
+    borderColor: `rgba(${palette.accentRgb}, 0.28)`,
   },
   scoreText: {
     fontSize: 10.5,
     fontWeight: '800',
-    color: '#d4ff00',
+    color: palette.accent,
   },
   track: {
     height: 14,
@@ -798,15 +802,15 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     bottom: 0,
-    backgroundColor: 'rgba(212, 255, 0, 0.3)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.3)`,
     borderLeftWidth: 1,
     borderRightWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.78)',
+    borderColor: `rgba(${palette.accentRgb}, 0.78)`,
     alignItems: 'center',
     justifyContent: 'center',
   },
   sweetSpotHiFive: {
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
   },
   spark: {
     position: 'absolute',
@@ -815,9 +819,9 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: '#ffffff',
     borderWidth: 2,
-    borderColor: '#d4ff00',
+    borderColor: palette.accent,
     top: 1,
-    shadowColor: '#d4ff00',
+    shadowColor: palette.accent,
     shadowOpacity: 0.9,
     shadowRadius: 5,
   },

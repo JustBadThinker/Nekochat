@@ -37,6 +37,7 @@ import { storageService } from '../services/storageService';
 import { GLASS } from '../theme/glassTheme';
 import { matchAlgorithmService } from '../services/matchAlgorithmService';
 import { characterService } from '../services/characterService';
+import { ThemePalette } from '../theme/colors';
 
 interface ChatsScreenProps {
   characters: Character[];
@@ -182,6 +183,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
     : [];
 
   const { palette } = useTheme();
+  const styles = useMemo(() => createStyles(palette), [palette]);
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.bgDark }]}>
@@ -303,7 +305,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
                       Created by @{selectedGroupChar.creator || 'community'}
                     </Text>
                     <View style={styles.groupSessionBadge}>
-                      <Layers size={11} color="#d4ff00" style={{ marginRight: 4 }} />
+                      <Layers size={11} color={palette.accent} style={{ marginRight: 4 }} />
                       <Text style={styles.groupSessionBadgeText}>
                         {activeCharSessions.length} {activeCharSessions.length === 1 ? 'Session' : 'Sessions'} Saved
                       </Text>
@@ -338,7 +340,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
                   }}
                   activeOpacity={0.85}
                 >
-                  <Plus size={16} color="#0c0e14" style={{ marginRight: 6 }} />
+                  <Plus size={16} color={palette.bgDark} style={{ marginRight: 6 }} />
                   <Text style={styles.newGroupChatBtnText}>Start New Scenario / Chat</Text>
                 </TouchableOpacity>
 
@@ -412,10 +414,10 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#0c0e14',
+    backgroundColor: palette.bgDark,
   },
   header: {
     flexDirection: 'row',
@@ -580,16 +582,16 @@ const styles = StyleSheet.create({
   groupSessionBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(212, 255, 0, 0.1)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.1)`,
     alignSelf: 'flex-start',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.25)',
+    borderColor: `rgba(${palette.accentRgb}, 0.25)`,
   },
   groupSessionBadgeText: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 10,
     fontWeight: '700',
   },
@@ -606,18 +608,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     paddingVertical: 12,
     borderRadius: 14,
     marginBottom: 16,
-    shadowColor: '#d4ff00',
+    shadowColor: palette.accent,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.4,
     shadowRadius: 6,
     elevation: 4,
   },
   newGroupChatBtnText: {
-    color: '#0c0e14',
+    color: palette.bgDark,
     fontSize: 14,
     fontWeight: '800',
   },
@@ -705,7 +707,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   sessionResumeText: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 11,
     fontWeight: '700',
   },

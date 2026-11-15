@@ -46,6 +46,7 @@ import {
   MessageCircle,
 } from 'lucide-react-native';
 import { matchAlgorithmService } from '../services/matchAlgorithmService';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView, BlurTargetView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RichHtmlRenderer } from '../components/RichHtmlRenderer';
@@ -63,6 +64,7 @@ import {
 import { storageService } from '../services/storageService';
 import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
+import { ThemePalette } from '../theme/colors';
 
 interface DiscoverScreenProps {
   characters: Character[];
@@ -89,6 +91,8 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   onMatchModeChange,
 }) => {
   const { palette } = useTheme();
+  const styles = useMemo(() => createStyles(palette), [palette]);
+  const insets = useSafeAreaInsets();
   // Top Primary Switcher: Catalog Grid / For You / Match Mode
   const [topMode, setTopMode] = useState<TopMode>('catalog');
   const [showCatalogDropdown, setShowCatalogDropdown] = useState(false);
@@ -873,7 +877,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           activeOpacity={0.7}
           accessibilityLabel="Filter Drawer"
         >
-          <SlidersHorizontal size={14} color="#d4ff00" />
+          <SlidersHorizontal size={14} color={palette.accent} />
         </TouchableOpacity>
 
         <ScrollView
@@ -1067,11 +1071,11 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           activeOpacity={0.8}
         >
           {scopeMode === 'all' ? (
-            <Globe size={12} color="#d4ff00" style={{ marginRight: 5 }} />
+            <Globe size={12} color={palette.accent} style={{ marginRight: 5 }} />
           ) : scopeMode === 'following' ? (
-            <Users size={12} color="#d4ff00" style={{ marginRight: 5 }} />
+            <Users size={12} color={palette.accent} style={{ marginRight: 5 }} />
           ) : (
-            <Heart size={12} color="#d4ff00" style={{ marginRight: 5 }} />
+            <Heart size={12} color={palette.accent} style={{ marginRight: 5 }} />
           )}
           <Text style={styles.sortDropdownText}>
             {scopeMode === 'all'
@@ -1082,7 +1086,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           </Text>
           <ChevronDown
             size={12}
-            color="#d4ff00"
+            color={palette.accent}
             style={{
               marginLeft: 5,
               transform: [{ rotate: scopeDropdownOpen ? '180deg' : '0deg' }],
@@ -1104,7 +1108,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       {/* ── Toast Notification ── */}
       {toastMessage && (
         <View style={styles.toastBox}>
-          <Sparkles size={14} color="#d4ff00" style={{ marginRight: 6 }} />
+          <Sparkles size={14} color={palette.accent} style={{ marginRight: 6 }} />
           <Text style={styles.toastText}>{toastMessage}</Text>
         </View>
       )}
@@ -1115,14 +1119,16 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       {topMode !== 'catalog' && renderTopPrimarySwitcher()}
 
       {topMode === 'match' ? (
-        <TinderDeck
-          characters={communityCharacters.length > 0 ? communityCharacters : (characters as any)}
-          activePersona={activePersona}
-          onBack={() => setTopMode('catalog')}
-          onMatchChat={onStartChat}
-          onToggleFavorite={handleToggleCommunityFavorite}
-          favoriteIds={new Set(favoriteCharacters.map(f => f.id))}
-        />
+        <View style={{ flex: 1, paddingBottom: Math.max(8, insets.bottom) }}>
+          <TinderDeck
+            characters={communityCharacters.length > 0 ? communityCharacters : (characters as any)}
+            activePersona={activePersona}
+            onBack={() => setTopMode('catalog')}
+            onMatchChat={onStartChat}
+            onToggleFavorite={handleToggleCommunityFavorite}
+            favoriteIds={new Set(favoriteCharacters.map(f => f.id))}
+          />
+        </View>
       ) : topMode === 'foryou' ? (
         <View
           style={{ flex: 1 }}
@@ -1196,7 +1202,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                       height: forYouHeight,
                       paddingHorizontal: 14,
                       paddingTop: 6,
-                      paddingBottom: 14,
+                      paddingBottom: Math.max(16, insets.bottom + 14),
                       justifyContent: 'space-between',
                       gap: 8,
                     }}
@@ -1419,7 +1425,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                           }}
                           activeOpacity={0.85}
                         >
-                          <Text style={{ color: '#0c0e14', fontSize: 13.5, fontWeight: '800' }}>Start Chat</Text>
+                          <Text style={{ color: palette.bgDark, fontSize: 13.5, fontWeight: '800' }}>Start Chat</Text>
                         </TouchableOpacity>
                       </LinearGradient>
                     </View>
@@ -1464,7 +1470,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                   activeOpacity={0.8}
                 >
                   <View style={[styles.scopeMenuIconWrap, isSelected && styles.scopeMenuIconWrapActive]}>
-                    <Icon size={13} color={isSelected ? '#000000' : '#d4ff00'} />
+                    <Icon size={13} color={isSelected ? '#000000' : palette.accent} />
                   </View>
                   <Text style={[styles.scopeMenuText, isSelected && styles.scopeMenuTextActive]}>
                     {opt.label}
@@ -1900,7 +1906,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                   }}
                   activeOpacity={0.85}
                 >
-                  <Text style={{ color: '#0c0e14', fontSize: 14.5, fontWeight: '800' }}>Start Chat</Text>
+                  <Text style={{ color: palette.bgDark, fontSize: 14.5, fontWeight: '800' }}>Start Chat</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1978,7 +1984,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000000',
@@ -1994,11 +2000,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: 'rgba(20, 24, 15, 0.96)',
     borderWidth: 1,
-    borderColor: '#d4ff00',
+    borderColor: palette.accent,
     borderRadius: 14,
     paddingVertical: 9,
     paddingHorizontal: 14,
-    shadowColor: '#d4ff00',
+    shadowColor: palette.accent,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.5,
     shadowRadius: 10,
@@ -2006,7 +2012,7 @@ const styles = StyleSheet.create({
   toastText: {
     fontSize: 11.5,
     fontWeight: '700',
-    color: '#d4ff00',
+    color: palette.accent,
   },
   topBrandHeader: {
     flexDirection: 'row',
@@ -2049,7 +2055,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     marginLeft: 5,
   },
   brandRight: {
@@ -2064,7 +2070,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
   },
   profileAvatarCircle: {
     width: 32,
@@ -2072,14 +2078,14 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#1b1a2e',
     borderWidth: 1.5,
-    borderColor: '#d4ff00',
+    borderColor: palette.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
   profileAvatarLetter: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#d4ff00',
+    color: palette.accent,
   },
   topPrimaryBar: {
     alignItems: 'center',
@@ -2105,8 +2111,8 @@ const styles = StyleSheet.create({
     borderRadius: 18,
   },
   topPrimaryBtnActive: {
-    backgroundColor: '#d4ff00',
-    shadowColor: '#d4ff00',
+    backgroundColor: palette.accent,
+    shadowColor: palette.accent,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.4,
     shadowRadius: 4,
@@ -2148,7 +2154,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   viewTabBtnActive: {
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
   },
   viewTabBtnText: {
     fontSize: 10.5,
@@ -2197,7 +2203,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   sourcePillBtnActive: {
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
   },
   sourcePillText: {
     fontSize: 9.5,
@@ -2227,7 +2233,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     paddingVertical: 8,
-    backgroundColor: '#0c0e14',
+    backgroundColor: palette.bgDark,
     borderBottomWidth: 1,
     borderBottomColor: '#161a26',
     zIndex: 20,
@@ -2240,10 +2246,10 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.35)',
+    borderColor: `rgba(${palette.accentRgb}, 0.35)`,
   },
   stickyFilterToggleText: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 11,
     fontWeight: '700',
     marginLeft: 4,
@@ -2321,8 +2327,8 @@ const styles = StyleSheet.create({
     ...GLASS.backdrop,
   },
   communityTagChipActive: {
-    backgroundColor: '#d4ff00',
-    borderColor: '#d4ff00',
+    backgroundColor: palette.accent,
+    borderColor: palette.accent,
   },
   communityTagText: {
     fontSize: 10.5,
@@ -2385,7 +2391,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   pillSegmentActive: {
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
   },
   pillSegmentText: {
     fontSize: 11.5,
@@ -2441,7 +2447,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   sortMenuItemActive: {
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
   },
   sortMenuItemText: {
     fontSize: 10.5,
@@ -2453,8 +2459,8 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   sortDropdownBtnActive: {
-    borderColor: 'rgba(212, 255, 0, 0.55)',
-    backgroundColor: 'rgba(212, 255, 0, 0.12)',
+    borderColor: `rgba(${palette.accentRgb}, 0.55)`,
+    backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
   },
   scopeDropdownOverlay: {
     flex: 1,
@@ -2480,13 +2486,13 @@ const styles = StyleSheet.create({
     borderRadius: 11,
   },
   scopeMenuItemActive: {
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
   },
   scopeMenuIconWrap: {
     width: 24,
     height: 24,
     borderRadius: 8,
-    backgroundColor: 'rgba(212, 255, 0, 0.12)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 9,
@@ -2516,7 +2522,7 @@ const styles = StyleSheet.create({
   scopeCountBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#d4ff00',
+    color: palette.accent,
   },
   scopeCountBadgeTextActive: {
     color: '#000000',
@@ -2562,7 +2568,7 @@ const styles = StyleSheet.create({
   },
   footerLoaderText: {
     fontSize: 11,
-    color: '#d4ff00',
+    color: palette.accent,
     fontWeight: '600',
   },
   emptyContainer: {
@@ -2621,7 +2627,7 @@ const styles = StyleSheet.create({
   errorRetryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 10,
@@ -2681,7 +2687,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     backgroundColor: '#161a26',
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.3)',
+    borderColor: `rgba(${palette.accentRgb}, 0.3)`,
     marginRight: 10,
   },
   creatorInfoCol: {
@@ -2710,8 +2716,8 @@ const styles = StyleSheet.create({
     borderColor: '#22293d',
   },
   creatorFollowBtnActive: {
-    backgroundColor: '#d4ff00',
-    borderColor: '#d4ff00',
+    backgroundColor: palette.accent,
+    borderColor: palette.accent,
   },
   creatorFollowBtnText: {
     fontSize: 10.5,
@@ -2736,6 +2742,6 @@ const styles = StyleSheet.create({
   viewBotsBtnText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#d4ff00',
+    color: palette.accent,
   },
 });

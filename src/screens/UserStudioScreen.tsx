@@ -5,7 +5,7 @@
  * 2. My Personas: Full persona roster with photo upload/compression, editing, and default persona switcher.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef , useMemo } from 'react';
 import {
   View,
   Text,
@@ -50,6 +50,7 @@ import { colors } from '../theme/colors';
 import { storageService } from '../services/storageService';
 import { characterImportService } from '../services/characterImportService';
 import { compressImageFile, ANIME_DEFAULT_FALLBACK } from '../utils/imageUtils';
+import { ThemePalette } from '../theme/colors';
 
 interface UserStudioScreenProps {
   onStartChat: (character: Character) => void;
@@ -62,6 +63,8 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
   activePersona,
   onUpdateActivePersona,
 }) => {
+  const { palette } = useTheme();
+  const styles = useMemo(() => createStyles(palette), [palette]);
   const [activeTab, setActiveTab] = useState<'cards' | 'personas' | 'lorebooks'>('cards');
   const [userCharacters, setUserCharacters] = useState<Character[]>([]);
   const [personas, setPersonas] = useState<Persona[]>([]);
@@ -602,7 +605,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                   onPress={() => setImportModalVisible(true)}
                   activeOpacity={0.8}
                 >
-                  <Download size={15} color="#D4FF00" style={{ marginRight: 6 }} />
+                  <Download size={15} color={palette.accent} style={{ marginRight: 6 }} />
                   <Text style={styles.importButtonText}>Import</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -635,11 +638,11 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                     <Text style={styles.emptyActionBtnText}>Create Card</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.emptyActionBtn, { backgroundColor: 'rgba(212, 255, 0, 0.12)', borderColor: 'rgba(212, 255, 0, 0.3)' }]}
+                    style={[styles.emptyActionBtn, { backgroundColor: `rgba(${palette.accentRgb}, 0.12)`, borderColor: `rgba(${palette.accentRgb}, 0.3)` }]}
                     onPress={() => setImportModalVisible(true)}
                   >
-                    <Download size={16} color="#D4FF00" style={{ marginRight: 6 }} />
-                    <Text style={[styles.emptyActionBtnText, { color: '#D4FF00' }]}>Import Card</Text>
+                    <Download size={16} color={palette.accent} style={{ marginRight: 6 }} />
+                    <Text style={[styles.emptyActionBtnText, { color: palette.accent }]}>Import Card</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -878,7 +881,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
       >
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Download size={18} color="#D4FF00" />
+                <Download size={18} color={palette.accent} />
                 <Text style={styles.modalTitle}>Import Character Card</Text>
               </View>
               <TouchableOpacity onPress={() => setImportModalVisible(false)}>
@@ -950,7 +953,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
               )}
 
               <TouchableOpacity
-                style={[styles.saveSubmitBtn, { marginTop: 24, backgroundColor: '#D4FF00' }]}
+                style={[styles.saveSubmitBtn, { marginTop: 24, backgroundColor: palette.accent }]}
                 onPress={handleImportSubmit}
                 disabled={importLoading}
                 activeOpacity={0.8}
@@ -1106,7 +1109,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                   style={styles.addMiniBtn}
                   onPress={handleAddCharScenario}
                 >
-                  <Plus size={13} color="#D4FF00" style={{ marginRight: 4 }} />
+                  <Plus size={13} color={palette.accent} style={{ marginRight: 4 }} />
                   <Text style={styles.addMiniBtnText}>Add Scenario</Text>
                 </TouchableOpacity>
               </View>
@@ -1161,7 +1164,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                   style={styles.addMiniBtn}
                   onPress={handleAddCharGreeting}
                 >
-                  <Plus size={13} color="#D4FF00" style={{ marginRight: 4 }} />
+                  <Plus size={13} color={palette.accent} style={{ marginRight: 4 }} />
                   <Text style={styles.addMiniBtnText}>Add Greeting</Text>
                 </TouchableOpacity>
               </View>
@@ -1285,7 +1288,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
       >
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <BookOpen size={18} color="#D4FF00" />
+                <BookOpen size={18} color={palette.accent} />
                 <Text style={styles.modalTitle}>
                   {editingLorebookId ? 'Edit Codex Lorebook' : 'New Codex Lorebook'}
                 </Text>
@@ -1347,7 +1350,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                 </Text>
                 <View style={{ flexDirection: 'row', gap: 6 }}>
                   <TouchableOpacity
-                    style={[styles.addMiniBtn, { backgroundColor: 'rgba(212, 255, 0, 0.12)', borderColor: 'rgba(212, 255, 0, 0.4)' }]}
+                    style={[styles.addMiniBtn, { backgroundColor: `rgba(${palette.accentRgb}, 0.12)`, borderColor: `rgba(${palette.accentRgb}, 0.4)` }]}
                     onPress={() => {
                       if (Platform.OS === 'web' && typeof document !== 'undefined') {
                         const input = document.createElement('input');
@@ -1371,7 +1374,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                     activeOpacity={0.8}
                     accessibilityLabel="Import JanitorAI or SillyTavern Lorebook JSON"
                   >
-                    <Download size={13} color="#D4FF00" style={{ marginRight: 4 }} />
+                    <Download size={13} color={palette.accent} style={{ marginRight: 4 }} />
                     <Text style={styles.addMiniBtnText}>Import JSON</Text>
                   </TouchableOpacity>
 
@@ -1380,7 +1383,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                     onPress={handleAddLorebookEntry}
                     activeOpacity={0.8}
                   >
-                    <Plus size={13} color="#D4FF00" style={{ marginRight: 4 }} />
+                    <Plus size={13} color={palette.accent} style={{ marginRight: 4 }} />
                     <Text style={styles.addMiniBtnText}>Add Entry</Text>
                   </TouchableOpacity>
                 </View>
@@ -1393,9 +1396,9 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                       <TouchableOpacity
                         onPress={() => handleUpdateLorebookEntry(eIdx, { enabled: !entry.enabled })}
-                        style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: entry.enabled ? 'rgba(212, 255, 0, 0.15)' : 'rgba(255, 255, 255, 0.08)' }}
+                        style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: entry.enabled ? `rgba(${palette.accentRgb}, 0.15)` : 'rgba(255, 255, 255, 0.08)' }}
                       >
-                        <Text style={{ color: entry.enabled ? '#D4FF00' : '#888', fontSize: 10, fontWeight: '700' }}>
+                        <Text style={{ color: entry.enabled ? palette.accent : '#888', fontSize: 10, fontWeight: '700' }}>
                           {entry.enabled ? 'ACTIVE' : 'OFF'}
                         </Text>
                       </TouchableOpacity>
@@ -1438,10 +1441,10 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#0c0e14',
+    backgroundColor: palette.bgDark,
   },
   header: {
     paddingHorizontal: 20,
@@ -1530,15 +1533,15 @@ const styles = StyleSheet.create({
   importButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(212, 255, 0, 0.1)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.1)`,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.3)',
+    borderColor: `rgba(${palette.accentRgb}, 0.3)`,
   },
   importButtonText: {
-    color: '#D4FF00',
+    color: palette.accent,
     fontSize: 12,
     fontWeight: '700',
   },
@@ -1713,7 +1716,7 @@ const styles = StyleSheet.create({
   personaItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#12151e',
+    backgroundColor: palette.bgSurface,
     padding: 14,
     borderRadius: 16,
     borderWidth: 1,
@@ -1816,7 +1819,7 @@ const styles = StyleSheet.create({
       : {}),
   },
   modalSheet: {
-    backgroundColor: '#12151e',
+    backgroundColor: palette.bgSurface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderWidth: 1,
@@ -1978,10 +1981,10 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 8,
     borderRadius: 8,
-    backgroundColor: 'rgba(212, 255, 0, 0.12)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
   },
   addMiniBtnText: {
-    color: '#D4FF00',
+    color: palette.accent,
     fontSize: 11,
     fontWeight: '700',
   },
@@ -2015,13 +2018,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   lorebookBadge: {
-    backgroundColor: 'rgba(212, 255, 0, 0.15)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
   },
   lorebookBadgeText: {
-    color: '#D4FF00',
+    color: palette.accent,
     fontSize: 10,
     fontWeight: '700',
   },

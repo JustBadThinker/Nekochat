@@ -4,9 +4,11 @@
  * Automatically adapts its fill color to the active NekoChat theme (or explicit `color` prop).
  */
 
-import React from 'react';
+import React , { useMemo } from 'react';
 import Svg, { G, Path } from 'react-native-svg';
 import { colors } from '../theme/colors';
+import { useTheme } from '../theme/ThemeContext';
+import { ThemePalette } from '../theme/colors';
 
 export interface NekoLogoSvgProps {
   size?: number;
@@ -14,7 +16,8 @@ export interface NekoLogoSvgProps {
 }
 
 export const NekoLogoSvg: React.FC<NekoLogoSvgProps> = ({ size = 36, color }) => {
-  const activeColor = color || colors.lime || '#D4FF00';
+  const { palette } = useTheme();
+  const activeColor = color || colors.lime || palette.accent;
 
   return (
     <Svg

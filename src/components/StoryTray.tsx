@@ -5,11 +5,12 @@
  * from the live 24h trending feed.
  */
 
-import React from 'react';
+import React , { useMemo } from 'react';
 import { View, Text, ScrollView, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import { Flame, Zap } from 'lucide-react-native';
 import { Character } from '../types';
 import { useTheme } from '../theme/ThemeContext';
+import { ThemePalette } from '../theme/colors';
 
 export interface StoryTrayProps {
   recommendations?: Character[];
@@ -23,6 +24,7 @@ export const StoryTray: React.FC<StoryTrayProps> = ({
   onOpenStory,
 }) => {
   const { palette } = useTheme();
+  const styles = useMemo(() => createStyles(palette), [palette]);
   const topRecs = (recommendations || []).slice(0, 3);
   const hasRecommendations = topRecs.length > 0;
   const hasTrending = trendingCharacters && trendingCharacters.length > 0;
@@ -80,7 +82,7 @@ export const StoryTray: React.FC<StoryTrayProps> = ({
                   <Text style={styles.recTinyBadgeText}>FYP</Text>
                 </View>
               </View>
-              <Text style={[styles.storyName, { color: '#d4ff00' }]} numberOfLines={1}>
+              <Text style={[styles.storyName, { color: palette.accent }]} numberOfLines={1}>
                 {char.name}
               </Text>
             </TouchableOpacity>
@@ -90,7 +92,7 @@ export const StoryTray: React.FC<StoryTrayProps> = ({
         {hasRecommendations && hasTrending && (
           <View style={styles.traySeparator}>
             <View style={styles.traySeparatorPill}>
-              <Flame size={12} color="#d4ff00" style={{ marginRight: 3 }} />
+              <Flame size={12} color={palette.accent} style={{ marginRight: 3 }} />
               <Text style={styles.traySeparatorText}>24h Trending</Text>
             </View>
           </View>
@@ -127,7 +129,7 @@ export const StoryTray: React.FC<StoryTrayProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   container: {
     marginBottom: 16,
   },
@@ -149,15 +151,15 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   headerBadge: {
-    color: '#d4ff00',
+    color: palette.accent,
     fontSize: 10,
     fontWeight: '800',
-    backgroundColor: 'rgba(212, 255, 0, 0.12)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.25)',
+    borderColor: `rgba(${palette.accentRgb}, 0.25)`,
   },
   scrollContent: {
     paddingHorizontal: 16,
@@ -174,22 +176,22 @@ const styles = StyleSheet.create({
     borderRadius: 31,
     padding: 2.5,
     borderWidth: 1.5,
-    backgroundColor: '#0c0e14',
+    backgroundColor: palette.bgDark,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
   },
   recAvatarRing: {
-    borderColor: '#d4ff00',
+    borderColor: palette.accent,
     borderWidth: 2,
-    shadowColor: '#d4ff00',
+    shadowColor: palette.accent,
     shadowOpacity: 0.4,
     shadowRadius: 5,
   },
   recTinyBadge: {
     position: 'absolute',
     bottom: -3,
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     paddingHorizontal: 5,
     paddingVertical: 1,
     borderRadius: 6,
@@ -226,7 +228,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.3)',
+    borderColor: `rgba(${palette.accentRgb}, 0.3)`,
   },
   traySeparatorText: {
     color: '#e2e8f0',

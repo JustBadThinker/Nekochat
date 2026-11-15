@@ -4,7 +4,7 @@
  * Multi-category community tag drawer with accordion expand/collapse.
  */
 
-import React, { useState } from 'react';
+import React, { useState , useMemo } from 'react';
 import {
   View,
   Text,
@@ -24,6 +24,8 @@ import {
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { GLASS } from '../theme/glassTheme';
+import { useTheme } from '../theme/ThemeContext';
+import { ThemePalette } from '../theme/colors';
 
 interface TagCategoryItem {
   id: string;
@@ -142,6 +144,8 @@ export const TagFilterDrawerModal: React.FC<TagFilterDrawerModalProps> = ({
   onApply,
   matchingCount = 200000,
 }) => {
+  const { palette } = useTheme();
+  const styles = useMemo(() => createStyles(palette), [palette]);
   const insets = useSafeAreaInsets();
   const [expandedCats, setExpandedCats] = useState<Record<string, boolean>>({
     gender: true,
@@ -168,7 +172,7 @@ export const TagFilterDrawerModal: React.FC<TagFilterDrawerModalProps> = ({
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerLeft}>
-              <SlidersHorizontal size={17} color="#d4ff00" style={{ marginRight: 8 }} />
+              <SlidersHorizontal size={17} color={palette.accent} style={{ marginRight: 8 }} />
               <Text style={styles.headerTitle}>Filter Characters by Tags</Text>
             </View>
 
@@ -270,7 +274,7 @@ export const TagFilterDrawerModal: React.FC<TagFilterDrawerModalProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'transparent',
@@ -341,7 +345,7 @@ const styles = StyleSheet.create({
     color: '#e2e8f0',
   },
   catActiveBadge: {
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     borderRadius: 9,
     paddingHorizontal: 6,
     paddingVertical: 1,
@@ -350,7 +354,7 @@ const styles = StyleSheet.create({
   catActiveBadgeText: {
     fontSize: 9,
     fontWeight: '800',
-    color: '#0c0e14',
+    color: palette.bgDark,
   },
   pillsWrap: {
     flexDirection: 'row',
@@ -370,8 +374,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   pillSelected: {
-    backgroundColor: '#d4ff00',
-    borderColor: '#d4ff00',
+    backgroundColor: palette.accent,
+    borderColor: palette.accent,
   },
   pillText: {
     fontSize: 11,
@@ -390,7 +394,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderTopWidth: 1,
     borderTopColor: '#1b1e28',
-    backgroundColor: '#0c0e14',
+    backgroundColor: palette.bgDark,
     gap: 12,
   },
   resetBtn: {
@@ -414,8 +418,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 11,
     borderRadius: 10,
-    backgroundColor: '#d4ff00',
-    shadowColor: '#d4ff00',
+    backgroundColor: palette.accent,
+    shadowColor: palette.accent,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.4,
     shadowRadius: 5,
