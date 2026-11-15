@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, Platform, ScrollView, Dimensions, Animated, BackHandler } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { BlurTargetView } from 'expo-blur';
 import { Character, Persona, ProviderConfig, AppSettings } from './src/types';
 import { colors, applyThemePalette, getThemePalette } from './src/theme/colors';
 import { ThemeProvider } from './src/theme/ThemeContext';
@@ -31,6 +32,7 @@ export default function App() {
     return Platform.OS === 'web' ? Math.min(w, 1080) : w;
   });
   const pagerRef = useRef<any>(null);
+  const dockBlurTargetRef = useRef<React.ComponentRef<typeof View> | null>(null);
   const scrollSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chatRoomEnterAnim = useRef(new Animated.Value(0)).current;
   const tabHistoryRef = useRef<TabScreen[]>(['chats']);
@@ -335,7 +337,8 @@ export default function App() {
         <StatusBar style="light" />
 
         {/* Horizontal Swipeable Pager across Chats, Discover, Studio, Settings */}
-        <View
+        <BlurTargetView
+          ref={dockBlurTargetRef}
           style={styles.screenArea}
           onLayout={e => {
             const w = e.nativeEvent.layout.width;
@@ -406,11 +409,15 @@ export default function App() {
               />
             </View>
           </ScrollView>
-        </View>
+        </BlurTargetView>
 
         {/* Minimalist Floating Capsule Dock (hidden in Discover Match/For You modes) */}
         {!(activeTab === 'discover' && isDiscoverMatchMode) && (
-          <CapsuleDock activeTab={activeTab} onTabChange={handleTabChange} />
+          <CapsuleDock
+            activeTab={activeTab}
+            onTabChange={handleTabChange}
+            blurTargetRef={dockBlurTargetRef}
+          />
         )}
       </SafeAreaView>
     </View>

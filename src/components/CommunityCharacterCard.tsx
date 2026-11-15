@@ -15,7 +15,7 @@ import {
   Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { BlurView, BlurTargetView } from 'expo-blur';
 import {
   MessageSquare,
   Heart,
@@ -60,6 +60,7 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
 }) => {
   const { palette } = useTheme();
   const [imgError, setImgError] = useState(false);
+  const bannerTargetRef = useRef<React.ComponentRef<typeof View> | null>(null);
   const [isLiked, setIsLiked] = useState<boolean>(
     Boolean(isLikedProp ?? isBookmarked ?? matchAlgorithmService.isCharacterLiked(character.id))
   );
@@ -154,24 +155,26 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
     >
       {/* 1. Artwork Banner with 16/11 Aspect Ratio & Badges */}
       <View style={styles.bannerWrapper}>
-        {!imgError && character.avatarUrl ? (
-          <Image
-            source={{ uri: character.avatarUrl }}
-            style={styles.bannerImage}
-            onError={() => setImgError(true)}
-          />
-        ) : (
-          <View style={styles.fallbackBanner}>
-            <View style={styles.fallbackAvatar}>
-              <Text style={styles.fallbackAvatarText}>
-                {character.name.charAt(0).toUpperCase()}
+        <BlurTargetView ref={bannerTargetRef} style={StyleSheet.absoluteFill}>
+          {!imgError && character.avatarUrl ? (
+            <Image
+              source={{ uri: character.avatarUrl }}
+              style={styles.bannerImage}
+              onError={() => setImgError(true)}
+            />
+          ) : (
+            <View style={styles.fallbackBanner}>
+              <View style={styles.fallbackAvatar}>
+                <Text style={styles.fallbackAvatarText}>
+                  {character.name.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <Text style={styles.fallbackName} numberOfLines={1}>
+                {character.name}
               </Text>
             </View>
-            <Text style={styles.fallbackName} numberOfLines={1}>
-              {character.name}
-            </Text>
-          </View>
-        )}
+          )}
+        </BlurTargetView>
 
         {/* Progressive Top Gradient Scrim behind badges */}
         <LinearGradient
@@ -222,7 +225,8 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
           <BlurView
             intensity={36}
             tint="dark"
-            experimentalBlurMethod="dimezisBlurView"
+            blurMethod="dimezisBlurView"
+            blurTarget={bannerTargetRef}
             pointerEvents="none"
             style={styles.bannerGradientScrim}
           />

@@ -46,7 +46,7 @@ import {
   MessageCircle,
 } from 'lucide-react-native';
 import { matchAlgorithmService } from '../services/matchAlgorithmService';
-import { BlurView } from 'expo-blur';
+import { BlurView, BlurTargetView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RichHtmlRenderer } from '../components/RichHtmlRenderer';
 import { Character, CommunityCharacter, CommunityCharacterDetail, Persona } from '../types';
@@ -95,6 +95,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   const [catalogScrollMode, setCatalogScrollMode] = useState<'top' | 'compact' | 'floating'>('top');
   const lastCatalogScrollYRef = useRef(0);
   const floatingHeaderAnim = useRef(new Animated.Value(0)).current;
+  const discoverContentRef = useRef<React.ComponentRef<typeof View> | null>(null);
 
   useEffect(() => {
     if (catalogScrollMode === 'top') {
@@ -1519,7 +1520,8 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             <BlurView
               intensity={52}
               tint="dark"
-              experimentalBlurMethod="dimezisBlurView"
+              blurMethod="dimezisBlurView"
+              blurTarget={discoverContentRef}
               style={StyleSheet.absoluteFill}
               pointerEvents="none"
             />
@@ -1538,6 +1540,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* 6. MAIN CONTENT: 2-COLUMN BENTO GRID WITH TRUE INFINITE SCROLL     */}
       {/* ══════════════════════════════════════════════════════════════════ */}
+      <BlurTargetView ref={discoverContentRef} style={{ flex: 1 }}>
       {(communityLoading || (scopeMode === 'following' && followingLoading && displayedCharacters.length === 0)) ? (
         <View style={{ flex: 1 }}>
           {renderTopPrimarySwitcher()}
@@ -1772,6 +1775,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           }
         />
       )}
+      </BlurTargetView>
       </>
       )}
 

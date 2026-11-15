@@ -28,9 +28,10 @@ const STEP_WIDTH = ITEM_WIDTH + ITEM_MARGIN * 2;
 interface CapsuleDockProps {
   activeTab: TabScreen;
   onTabChange: (tab: TabScreen) => void;
+  blurTargetRef?: React.RefObject<React.ComponentRef<typeof View> | null>;
 }
 
-export const CapsuleDock: React.FC<CapsuleDockProps> = ({ activeTab, onTabChange }) => {
+export const CapsuleDock: React.FC<CapsuleDockProps> = ({ activeTab, onTabChange, blurTargetRef }) => {
   const insets = useSafeAreaInsets();
   const { palette } = useTheme();
   const activeIdx = Math.max(0, TAB_ITEMS.findIndex(t => t.key === activeTab));
@@ -82,7 +83,8 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({ activeTab, onTabChange
           <BlurView
             intensity={48}
             tint="dark"
-            experimentalBlurMethod="dimezisBlurView"
+            blurMethod="dimezisBlurView"
+            blurTarget={blurTargetRef}
             style={StyleSheet.absoluteFill}
             pointerEvents="none"
           />

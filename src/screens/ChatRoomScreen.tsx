@@ -32,7 +32,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { BlurView, BlurTargetView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SmoothSlider } from '../components/SmoothSlider';
 import { ModelDropdown } from '../components/ModelDropdown';
@@ -192,6 +192,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 
   // Character Profile Card Modal State (Header Name Tap)
   const [showCharacterCardModal, setShowCharacterCardModal] = useState(false);
+  const wallpaperTargetRef = useRef<React.ComponentRef<typeof View> | null>(null);
 
   // Chat Control Modal State (3-Dot Button: Memory, Per-Chat Model, Syntax Colors)
   const [showChatControlModal, setShowChatControlModal] = useState(false);
@@ -1603,24 +1604,27 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       {/* ── Background Wallpaper, Gaussian Blur & Dark Overlay (Blueprint Section D) ── */}
       {appearance.enableWallpaper && (
         <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="none">
-          <Image
-            source={{ uri: appearance.wallpaperUrl || character.coverUrl || character.avatar }}
-            style={[
-              StyleSheet.absoluteFill,
-              Platform.OS === 'web' && appearance.blurRadius > 0
-                ? ({
-                    filter: `blur(${appearance.blurRadius}px)`,
-                    transform: [{ scale: 1.08 }],
-                  } as any)
-                : {},
-            ]}
-            resizeMode="cover"
-          />
+          <BlurTargetView ref={wallpaperTargetRef} style={StyleSheet.absoluteFill}>
+            <Image
+              source={{ uri: appearance.wallpaperUrl || character.coverUrl || character.avatar }}
+              style={[
+                StyleSheet.absoluteFill,
+                Platform.OS === 'web' && appearance.blurRadius > 0
+                  ? ({
+                      filter: `blur(${appearance.blurRadius}px)`,
+                      transform: [{ scale: 1.08 }],
+                    } as any)
+                  : {},
+              ]}
+              resizeMode="cover"
+            />
+          </BlurTargetView>
           {Platform.OS !== 'web' && appearance.blurRadius > 0 && (
             <BlurView
               intensity={Math.min(100, Math.max(8, Math.round(appearance.blurRadius * 4)))}
               tint="dark"
-              experimentalBlurMethod="dimezisBlurView"
+              blurMethod="dimezisBlurView"
+              blurTarget={wallpaperTargetRef}
               style={StyleSheet.absoluteFill}
             />
           )}
