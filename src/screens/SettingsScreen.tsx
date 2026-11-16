@@ -142,7 +142,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [currency, setCurrency] = useState<'IDR' | 'USD'>('IDR');
   const [showAdvancedSampling, setShowAdvancedSampling] = useState(false);
   const [truncationStrategy, setTruncationStrategy] = useState<'rolling' | 'smart' | 'lorebook'>('smart');
-  const [maxTokens, setMaxTokens] = useState<string>(String(config.maxTokens || '1024'));
+  const [maxTokens, setMaxTokens] = useState<string>(
+    config.maxTokens === 0 ? '0' : String(config.maxTokens || '4096')
+  );
   const [temperature, setTemperature] = useState<string>(String(config.temperature || '0.7'));
   const [topP, setTopP] = useState<string>(String(config.topP || '0.95'));
   const [repPenalty, setRepPenalty] = useState<string>(String(config.repetitionPenalty || '1.15'));
@@ -1412,15 +1414,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   {/* Max Output Tokens */}
                   <Text style={styles.inputLabel}>Max Generation Output Tokens</Text>
                   <View style={[styles.tokenPillRow, { marginBottom: 12 }]}>
-                    {['256', '512', '1024', '2048'].map(tok => (
+                    {[
+                      { val: '0', label: 'Unlimited' },
+                      { val: '2048', label: '2k' },
+                      { val: '4096', label: '4k' },
+                      { val: '8192', label: '8k' },
+                      { val: '15000', label: '15k' },
+                    ].map(tok => (
                       <TouchableOpacity
-                        key={tok}
-                        style={[styles.tokenPill, maxTokens === tok && styles.tokenPillActive, { flex: 1, alignItems: 'center' }]}
-                        onPress={() => setMaxTokens(tok)}
+                        key={tok.val}
+                        style={[styles.tokenPill, maxTokens === tok.val && styles.tokenPillActive, { flex: 1, alignItems: 'center' }]}
+                        onPress={() => setMaxTokens(tok.val)}
                         activeOpacity={0.8}
                       >
-                        <Text style={[styles.tokenPillText, maxTokens === tok && styles.tokenPillTextActive]}>
-                          {tok}
+                        <Text style={[styles.tokenPillText, maxTokens === tok.val && styles.tokenPillTextActive, { fontSize: 11.5 }]}>
+                          {tok.label}
                         </Text>
                       </TouchableOpacity>
                     ))}
@@ -1497,7 +1505,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   const updated: ProviderConfig = {
                     ...config,
                     contextLimit: parseInt(contextLimit, 10) || 8192,
-                    maxTokens: parseInt(maxTokens, 10) || 1024,
+                    maxTokens: maxTokens === '0' ? 0 : (parseInt(maxTokens, 10) || 4096),
                     temperature: parseFloat(temperature) || 0.7,
                     topP: parseFloat(topP) || 0.95,
                     repetitionPenalty: parseFloat(repPenalty) || 1.15,

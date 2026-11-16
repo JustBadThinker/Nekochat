@@ -811,9 +811,9 @@ export const aiProviderService = {
       sections.push(
         `[FORMATTING GUIDELINES]\n` +
         `- Stay in character as ${chatCharName}.\n` +
-        `- Actions, body language, and expressions in *italics*.\n` +
+        `- Actions, body language, and narration ONLY in *single asterisks* (rendered as italic). Never use *single asterisks* for bold words.\n` +
         `- Spoken dialogue in "double quotes".\n` +
-        `- Strong emphasis, key sounds, or dramatic moments in **bold**.\n` +
+        `- Bold emphasis, key sounds, or dramatic words ONLY in **double asterisks** (never single asterisks).\n` +
         `- System readouts, notes, or \`inline code\` in \`backticks\`.\n` +
         `- Do not speak or act on behalf of ${userName}.`
       );
@@ -821,8 +821,8 @@ export const aiProviderService = {
 
     const systemInstruction = sections.join('\n\n');
     const contextLimit = Number(config.contextLimit || config.contextWindow || 32768);
-    const maxOutputTokens = Number(config.maxTokens || 4096);
-    const reservedTokens = estimateTokens(systemInstruction) + maxOutputTokens + 128;
+    const maxOutputTokens = config.maxTokens === 0 ? 0 : Number(config.maxTokens || 4096);
+    const reservedTokens = estimateTokens(systemInstruction) + (maxOutputTokens > 0 ? maxOutputTokens : 4096) + 128;
 
     const turns = buildTurns(history, userMessage, {
       isContinue: options?.isContinue,
@@ -850,7 +850,7 @@ export const aiProviderService = {
             systemInstruction,
             temperature: typeof config.temperature === 'number' ? config.temperature : 0.85,
             topP: typeof config.topP === 'number' ? config.topP : 0.95,
-            maxOutputTokens,
+            ...(maxOutputTokens > 0 ? { maxOutputTokens } : {}),
           },
         });
 
@@ -891,7 +891,7 @@ export const aiProviderService = {
           messages,
           temperature: typeof config.temperature === 'number' ? config.temperature : 0.85,
           top_p: typeof config.topP === 'number' ? config.topP : 0.95,
-          max_tokens: maxOutputTokens,
+          ...(maxOutputTokens > 0 ? { max_tokens: maxOutputTokens } : {}),
           stream: true,
         };
 

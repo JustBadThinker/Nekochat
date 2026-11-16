@@ -74,7 +74,10 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => true,
       onMoveShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponderCapture: () => true,
+      onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: () => {
         if (throwRafRef.current !== null) {
           cancelAnimationFrame(throwRafRef.current);
@@ -89,8 +92,8 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
         const minX = 8;
         const maxX = maxWalkXRef.current;
         const nextX = Math.max(minX, Math.min(maxX, dragStartRef.current.x + gesture.dx));
-        // Allow lifting above the input border (-110px..0px) so she always stays on/above the border
-        const nextY = Math.max(-110, Math.min(0, dragStartRef.current.y + gesture.dy));
+        // Allow lifting high across the chat area (-420px..0px) while keeping landing intact on top border
+        const nextY = Math.max(-420, Math.min(0, dragStartRef.current.y + gesture.dy));
         if (Math.abs(gesture.dx) > 4) {
           setFacing(gesture.dx >= 0 ? 1 : -1);
         }
@@ -107,30 +110,35 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
           return;
         }
 
-        // Throw physics: velocity + gravity + edge bounce, landing intact on top border (y = 0)
+        // Throw physics: velocity + gravity + wall/ceiling bounce, landing intact on top border (y = 0)
         setAction('thrown');
         let x = currentXRef.current;
         let y = currentYRef.current;
-        let vx = Math.max(-16, Math.min(16, gesture.vx * 14));
-        let vy = Math.max(-14, Math.min(10, gesture.vy * 14));
+        let vx = Math.max(-20, Math.min(20, gesture.vx * 16));
+        let vy = Math.max(-24, Math.min(14, gesture.vy * 18));
         const gravity = 0.85;
         const minX = 8;
         const maxX = maxWalkXRef.current;
 
         const step = () => {
-          vx *= 0.975;
+          vx *= 0.978;
           vy += gravity;
           x += vx;
           y += vy;
 
           if (x <= minX) {
             x = minX;
-            vx = Math.abs(vx) * 0.6;
+            vx = Math.abs(vx) * 0.65;
             setFacing(1);
           } else if (x >= maxX) {
             x = maxX;
-            vx = -Math.abs(vx) * 0.6;
+            vx = -Math.abs(vx) * 0.65;
             setFacing(-1);
+          }
+
+          if (y < -460) {
+            y = -460;
+            vy = Math.abs(vy) * 0.45;
           }
 
           if (y >= 0) {

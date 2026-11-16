@@ -27,7 +27,6 @@ import {
   ActivityIndicator,
   Modal,
   Animated,
-  Switch,
   Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -38,6 +37,7 @@ import { SmoothSlider } from '../components/SmoothSlider';
 import { ModelDropdown } from '../components/ModelDropdown';
 import { RichHtmlRenderer } from '../components/RichHtmlRenderer';
 import { BottomSheetModal } from '../components/BottomSheetModal';
+import { NekoSwitch } from '../components/NekoSwitch';
 import { GLASS } from '../theme/glassTheme';
 import {
   ArrowLeft,
@@ -157,6 +157,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   // Per-chat Custom Prompt / Rules & Header Menu & Scroll-to-Bottom FAB
   const [customPrompt, setCustomPrompt] = useState('');
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
+  const headerMenuAnim = useRef(new Animated.Value(0)).current;
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const scrollBottomAnim = useRef(new Animated.Value(0)).current;
 
@@ -202,7 +203,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [chatMemory, setChatMemory] = useState('');
   const [chatModel, setChatModel] = useState('');
   const [chatTemperature, setChatTemperature] = useState<number>(config?.temperature || 0.7);
-  const [chatMaxTokens, setChatMaxTokens] = useState<number>(config?.maxTokens || 1200);
+  const [chatMaxTokens, setChatMaxTokens] = useState<number>(config?.maxTokens ?? 4096);
   const [promptPresets, setPromptPresets] = useState<{ id: string; name: string; prompt: string; updatedAt: number }[]>([]);
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
   const [showNewPresetForm, setShowNewPresetForm] = useState(false);
@@ -384,13 +385,22 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   }, [appearance.enableWallpaper]);
 
   useEffect(() => {
+    Animated.spring(headerMenuAnim, {
+      toValue: showHeaderMenu ? 1 : 0,
+      useNativeDriver: true,
+      friction: 8,
+      tension: 130,
+    }).start();
+  }, [showHeaderMenu, headerMenuAnim]);
+
+  useEffect(() => {
     chatControlTabAnim.setValue(0.35);
     Animated.timing(chatControlTabAnim, {
       toValue: 1,
       duration: 180,
       useNativeDriver: true,
     }).start();
-  }, [chatControlTab]);
+  }, [chatControlTab, settingsSubView]);
 
   useEffect(() => {
     loadPersonas();
@@ -611,8 +621,8 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       chatModel && chatModel.trim() && chatModel !== 'custom'
         ? chatModel.trim()
         : baseCfg.model || baseCfg.defaultModel || 'gpt-4o-mini';
-    const rawTokens = chatMaxTokens === 0 ? baseCfg.maxTokens : (chatMaxTokens ?? baseCfg.maxTokens);
-    const effectiveTokens = responseLength === 'shorter' && rawTokens ? Math.min(rawTokens, 600) : rawTokens;
+    const rawTokens = chatMaxTokens === 0 ? 0 : (chatMaxTokens ?? baseCfg.maxTokens ?? 4096);
+    const effectiveTokens = responseLength === 'shorter' ? (rawTokens > 0 ? Math.min(rawTokens, 600) : 600) : rawTokens;
     return {
       ...baseCfg,
       model: effectiveModel,
@@ -1053,7 +1063,12 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         },
         onComplete: async (fullText, tokenCount, thought) => {
           setIsStreaming(false);
-          const finalText = fullText || incomingAssistantText || ' [Generation paused]';
+          const candidateText = fullText || incomingAssistantText || '';
+          const visibleText = stripThinkTags(candidateText).trim();
+          const finalText =
+            visibleText.length > 0
+              ? candidateText
+              : '*(Empty response — tap Regenerate or Continue)*';
           const nextSwipes =
             existingSwipes && existingSwipes.length > 0
               ? [...existingSwipes, finalText]
@@ -1396,8 +1411,8 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   }, [revealState, messages, isStreaming]);
 
   const renderBoldInline = (str: string, baseStyle: any, keyPrefix: string) => {
-    const boldParts = str.split(/(\*\*[\s\S]+?\*\*)/g);
-    if (boldParts.length === 1) {
+    const inlineParts = str.split(/(\*\*\*[\s\S]+?\*\*\*|\*\*[\s\S]+?\*\*|\*(?!\*)[^*\n]+?\*)/g);
+    if (inlineParts.length === 1) {
       return (
         <Text key={keyPrefix} style={baseStyle}>
           {str}
@@ -1406,11 +1421,25 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     }
     return (
       <Text key={keyPrefix} style={baseStyle}>
-        {boldParts.map((bp, bi) => {
+        {inlineParts.map((bp, bi) => {
+          if (bp.startsWith('***') && bp.endsWith('***') && bp.length > 6) {
+            return (
+              <Text key={`${keyPrefix}-bi-${bi}`} style={[baseStyle, { color: syntaxColors.bold, fontWeight: '800', fontStyle: 'italic' }]}>
+                {bp.slice(3, -3)}
+              </Text>
+            );
+          }
           if (bp.startsWith('**') && bp.endsWith('**') && bp.length > 4) {
             return (
               <Text key={`${keyPrefix}-b-${bi}`} style={[baseStyle, { color: syntaxColors.bold, fontWeight: '800' }]}>
                 {bp.slice(2, -2)}
+              </Text>
+            );
+          }
+          if (bp.startsWith('*') && bp.endsWith('*') && bp.length > 2) {
+            return (
+              <Text key={`${keyPrefix}-i-${bi}`} style={[baseStyle, { fontStyle: 'italic' }]}>
+                {bp.slice(1, -1)}
               </Text>
             );
           }
@@ -1421,7 +1450,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   };
 
   const renderFormattedText = (text: string, isUser: boolean, isNovel: boolean) => {
-    const regex = /(\*\*[\s\S]*?(?:\*\*|$)|"[^"]*"|“[^”]*”|「[^」]*」|\*(?!\*)[^*\n]+?(?:\*|$)|`[^`]*?`)/g;
+    const regex = /(\*\*\*[\s\S]*?(?:\*\*\*|$)|\*\*[\s\S]*?(?:\*\*|$)|"[^"]*"|“[^”]*”|「[^」]*」|\*(?!\*)(?:[^*\n]|\*\*[\s\S]*?\*\*)+?(?:\*|$)|`[^`]*?`)/g;
     const parts = text.split(regex);
     const baseTextColor = isUser ? '#FFFFFF' : isNovel ? '#e2e8f0' : colors.textPrimary;
     const baseStyle = isUser
@@ -1436,6 +1465,21 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       <Text style={[baseStyle, { color: baseTextColor, fontSize: chatFontSize, lineHeight: Math.round(chatFontSize * 1.48) }]}>
         {parts.map((part, index) => {
           if (!part) return null;
+          if (part.startsWith('***')) {
+            const inner = part.endsWith('***') && part.length > 6 ? part.slice(3, -3) : part.slice(3);
+            return (
+              <Text
+                key={index}
+                style={{
+                  color: isUser ? '#FFFFFF' : syntaxColors.bold,
+                  fontWeight: '800',
+                  fontStyle: 'italic',
+                }}
+              >
+                {inner}
+              </Text>
+            );
+          }
           if (part.startsWith('**')) {
             const inner = part.endsWith('**') && part.length > 4 ? part.slice(2, -2) : part.slice(2);
             return (
@@ -1459,7 +1503,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             const inner = part.endsWith('*') && part.length > 2 ? part.slice(1, -1) : part.slice(1);
             return renderBoldInline(
               inner,
-              { color: syntaxColors.narration, fontStyle: 'italic' },
+              { color: isUser && !isNovel ? '#cbd5e1' : syntaxColors.narration, fontStyle: 'italic' },
               `nar-${index}`
             );
           }
@@ -1577,7 +1621,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       return (
         <View>
           {textPart.length > 0 && renderFormattedText(textPart, isUser, isNovel)}
-          <View style={styles.msgImageContainer}>
+          <TouchableOpacity
+            style={styles.msgImageContainer}
+            activeOpacity={0.9}
+            onPress={() => setLightboxImageUrl(imageUrl)}
+          >
             <Image
               source={{ uri: imageUrl }}
               style={styles.msgInlineImage}
@@ -1586,8 +1634,16 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             {caption.length > 0 && (
               <Text style={styles.msgImageCaption}>{caption}</Text>
             )}
-          </View>
+          </TouchableOpacity>
         </View>
+      );
+    }
+
+    if (!isUser && content.trim().length === 0) {
+      return (
+        <Text style={{ color: 'rgba(226, 232, 240, 0.55)', fontStyle: 'italic', fontSize: chatFontSize }}>
+          *(Empty response — tap Regenerate or Continue)*
+        </Text>
       );
     }
 
@@ -1672,7 +1728,26 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           activeOpacity={0.8}
           accessibilityLabel="Open Chat Menu"
         >
-          <MoreHorizontal size={20} color={palette.accent} />
+          <Animated.View
+            style={{
+              transform: [
+                {
+                  rotate: headerMenuAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0deg', '90deg'],
+                  }),
+                },
+                {
+                  scale: headerMenuAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [1, 0.92],
+                  }),
+                },
+              ],
+            }}
+          >
+            <MoreHorizontal size={20} color={palette.accent} />
+          </Animated.View>
         </TouchableOpacity>
       </View>
 
@@ -1683,12 +1758,27 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           activeOpacity={1}
           onPress={() => setShowHeaderMenu(false)}
         >
-          <View
+          <Animated.View
             style={[
               styles.headerMenuCard,
               {
                 backgroundColor: palette.bgSurface,
                 borderColor: `rgba(${palette.accentRgb}, 0.28)`,
+                opacity: headerMenuAnim,
+                transform: [
+                  {
+                    translateY: headerMenuAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-10, 0],
+                    }),
+                  },
+                  {
+                    scale: headerMenuAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.92, 1],
+                    }),
+                  },
+                ],
               },
             ]}
           >
@@ -1756,7 +1846,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                 <Text style={styles.headerMenuItemText}>{item.label}</Text>
               </TouchableOpacity>
             ))}
-          </View>
+          </Animated.View>
         </TouchableOpacity>
       )}
 
@@ -2104,14 +2194,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                       Writing...
                     </Text>
                   ) : (
-                    <>
-                      {msg.thought && (
-                        <View style={styles.thoughtBox}>
-                          <Text style={styles.thoughtText}>{msg.thought}</Text>
-                        </View>
-                      )}
-                      {renderMessageContent(displayContent, isUser, false)}
-                    </>
+                    renderMessageContent(displayContent, isUser, false)
                   )}
 
                   {!isUser && (
@@ -3178,7 +3261,12 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               ))}
             </View>
 
-            <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={{ paddingBottom: 16 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
               <Animated.View style={{ opacity: chatControlTabAnim }}>
               {/* TAB 2: Memory (Summary of this chat) */}
               {chatControlTab === 'memory' && (
@@ -3195,14 +3283,12 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                           When on, messages already covered by your saved Memory are left out of the prompt to free up context. Off keeps the classic behavior: Memory is added on top and nothing is removed.
                         </Text>
                       </View>
-                      <Switch
+                      <NekoSwitch
                         value={memoryReplacesOld}
                         onValueChange={val => {
                           setMemoryReplacesOld(val);
                           persistChatSettings({ memoryReplacesOld: val });
                         }}
-                        trackColor={{ false: 'rgba(255,255,255,0.15)', true: palette.accent }}
-                        thumbColor="#ffffff"
                       />
                     </View>
 
@@ -3423,7 +3509,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         <View>
                           <Text style={styles.settingsCardTitle}>Generation controls</Text>
                           <Text style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>
-                            Temperature {chatTemperature.toFixed(1)} · Max tokens {chatMaxTokens === 0 ? 'Auto' : chatMaxTokens}
+                            Temperature {chatTemperature.toFixed(1)} · Max tokens {chatMaxTokens === 0 ? 'Unlimited' : chatMaxTokens}
                           </Text>
                         </View>
                         <ChevronRight size={17} color="#64748b" />
@@ -3518,23 +3604,23 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                           <Text style={styles.settingsCardTitle}>Max tokens</Text>
                           <View style={styles.settingsValueBadge}>
-                            <Text style={styles.settingsValueBadgeText}>{chatMaxTokens}</Text>
+                            <Text style={styles.settingsValueBadgeText}>{chatMaxTokens === 0 ? 'Unlimited' : chatMaxTokens}</Text>
                           </View>
                         </View>
                         <SmoothSlider
                           value={chatMaxTokens}
                           min={0}
-                          max={4096}
-                          step={100}
+                          max={15000}
+                          step={250}
                           onValueChange={val => {
                             setChatMaxTokens(val);
                             persistChatSettings({ maxTokens: val });
                           }}
-                          minLabel="0 Auto"
-                          maxLabel="4096"
+                          minLabel="0 Unlimited"
+                          maxLabel="15000"
                         />
                         <Text style={styles.settingsHelperText}>
-                          Limits how long replies can be. 0 lets the model choose the length.
+                          Limits how long replies can be (up to 15k). 0 = Unlimited.
                         </Text>
 
                         <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 }}>
@@ -3542,8 +3628,8 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                             style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4, paddingHorizontal: 8 }}
                             onPress={() => {
                               setChatTemperature(0.7);
-                              setChatMaxTokens(1200);
-                              persistChatSettings({ temperature: 0.7, maxTokens: 1200 });
+                              setChatMaxTokens(4096);
+                              persistChatSettings({ temperature: 0.7, maxTokens: 4096 });
                             }}
                           >
                             <RotateCcw size={13} color="#94a3b8" />
@@ -3764,14 +3850,12 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                       <View style={styles.settingsBentoCard}>
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                           <Text style={styles.settingsCardTitle}>Enable response prefill</Text>
-                          <Switch
+                          <NekoSwitch
                             value={prefillEnabled}
                             onValueChange={val => {
                               setPrefillEnabled(val);
                               persistChatSettings({ prefillEnabled: val });
                             }}
-                            trackColor={{ false: 'rgba(255,255,255,0.15)', true: palette.accent }}
-                            thumbColor="#ffffff"
                           />
                         </View>
 
@@ -3893,14 +3977,12 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                           {"When off, the chat won't follow replies as they're being generated."}
                         </Text>
                       </View>
-                      <Switch
+                      <NekoSwitch
                         value={autoScrollEnabled}
                         onValueChange={val => {
                           setAutoScrollEnabled(val);
                           persistCustomizePrefs({ autoScrollEnabled: val });
                         }}
-                        trackColor={{ false: 'rgba(255,255,255,0.15)', true: palette.accent }}
-                        thumbColor="#ffffff"
                       />
                     </View>
 
@@ -3913,14 +3995,12 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                           Determines if text comes all at once or bit-by-bit. Turning this off may improve performance.
                         </Text>
                       </View>
-                      <Switch
+                      <NekoSwitch
                         value={textStreamingEnabled}
                         onValueChange={val => {
                           setTextStreamingEnabled(val);
                           persistCustomizePrefs({ textStreamingEnabled: val });
                         }}
-                        trackColor={{ false: 'rgba(255,255,255,0.15)', true: palette.accent }}
-                        thumbColor="#ffffff"
                       />
                     </View>
 
@@ -4441,21 +4521,23 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     borderRadius: 18,
   },
   bubbleUser: {
-    backgroundColor: colors.lime,
+    backgroundColor: `rgba(${palette.accentRgb}, 0.14)`,
+    borderWidth: 1,
+    borderColor: `rgba(${palette.accentRgb}, 0.42)`,
     borderBottomRightRadius: 4,
   },
   bubbleBot: {
-    backgroundColor: colors.bgSurface,
+    backgroundColor: 'rgba(18, 21, 30, 0.88)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(255, 255, 255, 0.09)',
     borderBottomLeftRadius: 4,
   },
   bubbleSelected: {
-    borderColor: colors.lime,
+    borderColor: palette.accent,
     borderWidth: 1.5,
   },
   bubbleUserText: {
-    color: '#000000',
+    color: '#FFFFFF',
     fontSize: 14,
     lineHeight: 20,
     fontWeight: '500',
@@ -4481,11 +4563,13 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   },
   bubbleActionRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    maxWidth: '100%',
     backgroundColor: '#1C2232',
     padding: 4,
     borderRadius: 12,
     marginTop: 6,
-    gap: 8,
+    gap: 4,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },

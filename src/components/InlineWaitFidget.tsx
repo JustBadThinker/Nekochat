@@ -463,8 +463,9 @@ export const InlineWaitFidget: React.FC<InlineWaitFidgetProps> = ({
       {gameMode === 'dino' ? (
         <TouchableOpacity
           style={styles.dinoArena}
-          onPress={handleDinoTap}
-          activeOpacity={0.9}
+          onPressIn={handleDinoTap}
+          delayPressIn={0}
+          activeOpacity={0.95}
           onLayout={e => {
             const w = e.nativeEvent.layout.width;
             if (w > 40) setDinoTrackWidth(w);
@@ -545,7 +546,8 @@ export const InlineWaitFidget: React.FC<InlineWaitFidgetProps> = ({
 
         <TouchableOpacity
           style={styles.fidgetBox}
-          onPress={handleFidgetTap}
+          onPressIn={handleFidgetTap}
+          delayPressIn={0}
           activeOpacity={0.85}
         >
           <View style={styles.fidgetHeader}>
