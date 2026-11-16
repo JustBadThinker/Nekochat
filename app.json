@@ -2,7 +2,7 @@
   "expo": {
     "name": "NekoChat",
     "slug": "nekochat",
-    "version": "0.1.6-beta",
+    "version": "0.1.7-beta",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.nekochat.app",
-      "versionCode": 6,
+      "versionCode": 7,
       "adaptiveIcon": {
         "backgroundColor": "#000000",
         "foregroundImage": "./assets/android-icon-foreground.png",

@@ -400,6 +400,9 @@ export interface AppSettings {
   uiLanguage?: 'en' | 'ja' | 'fr' | 'id';
   autoLanguagePrompt?: boolean;
   languageCustomPrompt?: string;
+  hasCompletedOnboarding?: boolean;
+  passcodeEnabled?: boolean;
+  passcodePin?: string;
   activePersonaId?: string;
   customProxyUrl?: string;
 }

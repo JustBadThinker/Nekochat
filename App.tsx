@@ -17,6 +17,8 @@ import { characterService } from './src/services/characterService';
 import { communityCatalogService } from './src/services/communityCatalogService';
 import { CapsuleDock, TabScreen } from './src/components/CapsuleDock';
 import { SplashScreen } from './src/components/SplashScreen';
+import { OnboardingFlow } from './src/components/OnboardingFlow';
+import { PasscodeGate } from './src/components/PasscodeGate';
 import { ChatsScreen } from './src/screens/ChatsScreen';
 import { DiscoverScreen } from './src/screens/DiscoverScreen';
 import { ChatRoomScreen } from './src/screens/ChatRoomScreen';
@@ -248,6 +250,9 @@ export default function App() {
       .catch(() => {});
   };
 
+  const [isPasscodeUnlocked, setIsPasscodeUnlocked] = useState(false);
+  const [forceShowOnboarding, setForceShowOnboarding] = useState(false);
+
   const appReady = !loading && Boolean(config && settings && activePersona);
 
   if (showSplash || loading || !config || !settings || !activePersona) {
@@ -259,6 +264,52 @@ export default function App() {
   const activePalette = applyThemePalette(currentTheme);
   const themeBg = activePalette.bgDark;
   const webFrameBg = activePalette.webFrameBg;
+
+  if (!settings.hasCompletedOnboarding || forceShowOnboarding) {
+    return (
+      <SafeAreaProvider>
+        <ThemeProvider themeId={currentTheme}>
+          <LanguageProvider language={settings?.uiLanguage || 'en'}>
+            <View style={[styles.webFrame, { backgroundColor: webFrameBg }]}>
+              <View style={[styles.appContainer, { backgroundColor: themeBg }]}>
+                <StatusBar style="light" />
+                <OnboardingFlow
+                  settings={settings}
+                  config={config}
+                  onUpdateSettings={setSettings}
+                  onUpdateConfig={setConfig}
+                  onFinish={() => {
+                    setForceShowOnboarding(false);
+                    setIsPasscodeUnlocked(true);
+                  }}
+                />
+              </View>
+            </View>
+          </LanguageProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    );
+  }
+
+  if (settings.passcodeEnabled && settings.passcodePin && !isPasscodeUnlocked) {
+    return (
+      <SafeAreaProvider>
+        <ThemeProvider themeId={currentTheme}>
+          <LanguageProvider language={settings?.uiLanguage || 'en'}>
+            <View style={[styles.webFrame, { backgroundColor: webFrameBg }]}>
+              <View style={[styles.appContainer, { backgroundColor: themeBg }]}>
+                <StatusBar style="light" />
+                <PasscodeGate
+                  expectedPin={settings.passcodePin}
+                  onUnlock={() => setIsPasscodeUnlocked(true)}
+                />
+              </View>
+            </View>
+          </LanguageProvider>
+        </ThemeProvider>
+      </SafeAreaProvider>
+    );
+  }
 
   const handleTabChange = (tab: TabScreen, recordHistory = true) => {
     if (recordHistory && tab !== activeTab) {
@@ -417,6 +468,7 @@ export default function App() {
                 onUpdateConfig={setConfig}
                 settings={settings}
                 onUpdateSettings={setSettings}
+                onReplayOnboarding={() => setForceShowOnboarding(true)}
               />
             </View>
           </ScrollView>

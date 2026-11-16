@@ -44,6 +44,7 @@ import {
   ChevronDown,
   Image as ImageIcon,
   Globe,
+  Lock,
 } from 'lucide-react-native';
 import { ProviderConfig, AppSettings, Persona } from '../types';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -68,6 +69,7 @@ interface SettingsScreenProps {
   onUpdateConfig: (cfg: ProviderConfig) => void;
   settings: AppSettings;
   onUpdateSettings: (s: AppSettings) => void;
+  onReplayOnboarding?: () => void;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
@@ -75,14 +77,20 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onUpdateConfig,
   settings,
   onUpdateSettings,
+  onReplayOnboarding,
 }) => {
   const { palette } = useTheme();
   const { t } = useTranslation();
   const styles = useMemo(() => createStyles(palette), [palette]);
   // Modal Visibility State
   const [activeModal, setActiveModal] = useState<
-    'api' | 'theming' | 'language' | 'vault' | 'personas' | 'tokens' | 'about' | 'voice' | 'image' | null
+    'api' | 'theming' | 'language' | 'passcode' | 'vault' | 'personas' | 'tokens' | 'about' | 'voice' | 'image' | null
   >(null);
+
+  const [passcodeEnabledDraft, setPasscodeEnabledDraft] = useState<boolean>(!!settings.passcodeEnabled);
+  const [passcodePinDraft, setPasscodePinDraft] = useState<string>(settings.passcodePin || '');
+  const [passcodeConfirmDraft, setPasscodeConfirmDraft] = useState<string>(settings.passcodePin || '');
+  const [passcodeError, setPasscodeError] = useState<string>('');
 
   const [selectedUiLang, setSelectedUiLang] = useState<UiLanguage>(settings.uiLanguage || 'en');
   const [autoLangPrompt, setAutoLangPrompt] = useState<boolean>(!!settings.autoLanguagePrompt);
@@ -361,8 +369,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     const updated = await persistProviderConfigQuietly();
 
     if (updated.provider === 'gemini' && !updated.customEndpoint) {
-      const ping = await aiProviderService.pingService('gemini', updated.apiKey);
-      setPingResult({ ok: ping.ok, latencyMs: ping.latencyMs, error: ping.ok ? undefined : 'Invalid Gemini API Key' });
+      const ping = await aiProviderService.pingService('gemini', updated.apiKey, updated.model);
+      setPingResult({
+        ok: ping.ok,
+        latencyMs: ping.latencyMs,
+        error: ping.ok ? undefined : ping.error || 'Invalid Gemini API Key',
+      });
     } else if (updated.provider === 'openrouter' && (!updated.customEndpoint || updated.customEndpoint.includes('openrouter.ai'))) {
       const ping = await aiProviderService.pingService('openrouter', updated.apiKey);
       setPingResult({ ok: ping.ok, latencyMs: ping.latencyMs, error: ping.ok ? undefined : 'Invalid OpenRouter Key' });
@@ -780,7 +792,31 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </View>
         </TouchableOpacity>
 
-        {/* Tile 7: About NekoChat */}
+        {/* Tile 7: Passcode Lock */}
+        <TouchableOpacity
+          style={styles.bentoTile}
+          onPress={() => {
+            setPasscodeEnabledDraft(!!settings.passcodeEnabled);
+            setPasscodePinDraft(settings.passcodePin || '');
+            setPasscodeConfirmDraft(settings.passcodePin || '');
+            setPasscodeError('');
+            setActiveModal('passcode');
+          }}
+          activeOpacity={0.8}
+        >
+          <View style={styles.tileIconCircle}>
+            <Lock size={18} color={palette.accent} />
+          </View>
+          <Text style={styles.tileTitle}>Passcode Lock</Text>
+          <Text style={styles.tileSubtitle}>App PIN & First-Time Tour</Text>
+          <View style={styles.tileBadge}>
+            <Text style={styles.tileBadgeText}>
+              {settings.passcodeEnabled && settings.passcodePin ? 'Enabled' : 'Off'}
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* Tile 8: About NekoChat */}
         <TouchableOpacity
           style={styles.bentoTile}
           onPress={() => setActiveModal('about')}
@@ -1353,6 +1389,138 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             activeOpacity={0.8}
           >
             <Text style={styles.saveBtnText}>{t('settings.saveLanguage')}</Text>
+          </TouchableOpacity>
+        </View>
+      </BottomSheetModal>
+
+      {/* MODAL: Passcode Lock & Replay Onboarding */}
+      <BottomSheetModal visible={activeModal === 'passcode'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
+        <View style={styles.modalHeader}>
+          <View style={styles.modalTitleRow}>
+            <Lock size={16} color={palette.accent} style={{ marginRight: 6 }} />
+            <Text style={styles.modalTitle}>Passcode Lock & Tour</Text>
+          </View>
+          <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+            <X size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <View
+            style={{
+              backgroundColor: 'rgba(255,255,255,0.04)',
+              borderRadius: 14,
+              padding: 14,
+              borderWidth: 1,
+              borderColor: 'rgba(255,255,255,0.08)',
+              marginBottom: 14,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#f8fafc', fontSize: 13.5, fontWeight: '700' }}>
+                  Require 4-Digit Passcode
+                </Text>
+                <Text style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 3 }}>
+                  Lock NekoChat on launch with a local PIN.
+                </Text>
+              </View>
+              <NekoSwitch
+                value={passcodeEnabledDraft}
+                onValueChange={val => {
+                  setPasscodeEnabledDraft(val);
+                  setPasscodeError('');
+                }}
+              />
+            </View>
+
+            {passcodeEnabledDraft && (
+              <View style={{ marginTop: 14, gap: 10 }}>
+                <View>
+                  <Text style={styles.inputLabel}>4-Digit Passcode</Text>
+                  <TextInput
+                    style={styles.inputBox}
+                    value={passcodePinDraft}
+                    onChangeText={v => {
+                      setPasscodeError('');
+                      setPasscodePinDraft(v.replace(/\D/g, '').slice(0, 4));
+                    }}
+                    keyboardType="number-pad"
+                    maxLength={4}
+                    secureTextEntry
+                    placeholder="••••"
+                    placeholderTextColor="#6b7280"
+                  />
+                </View>
+                <View>
+                  <Text style={styles.inputLabel}>Confirm Passcode</Text>
+                  <TextInput
+                    style={styles.inputBox}
+                    value={passcodeConfirmDraft}
+                    onChangeText={v => {
+                      setPasscodeError('');
+                      setPasscodeConfirmDraft(v.replace(/\D/g, '').slice(0, 4));
+                    }}
+                    keyboardType="number-pad"
+                    maxLength={4}
+                    secureTextEntry
+                    placeholder="••••"
+                    placeholderTextColor="#6b7280"
+                  />
+                </View>
+                {passcodeError ? (
+                  <Text style={{ color: '#f87171', fontSize: 12, fontWeight: '600' }}>{passcodeError}</Text>
+                ) : null}
+              </View>
+            )}
+          </View>
+
+          {onReplayOnboarding && (
+            <TouchableOpacity
+              style={[
+                styles.autoTestBtn,
+                { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
+              ]}
+              onPress={() => {
+                setActiveModal(null);
+                onReplayOnboarding();
+              }}
+              activeOpacity={0.8}
+            >
+              <Sparkles size={14} color={palette.accent} style={{ marginRight: 6 }} />
+              <Text style={[styles.autoTestBtnText, { color: palette.accent }]}>
+                Replay First-Time Setup & Tour
+              </Text>
+            </TouchableOpacity>
+          )}
+        </ScrollView>
+
+        <View style={styles.modalFooter}>
+          <TouchableOpacity
+            style={styles.saveBtn}
+            onPress={async () => {
+              if (passcodeEnabledDraft) {
+                if (!/^\d{4}$/.test(passcodePinDraft)) {
+                  setPasscodeError('Please enter a 4-digit numeric passcode.');
+                  return;
+                }
+                if (passcodePinDraft !== passcodeConfirmDraft) {
+                  setPasscodeError('Passcodes do not match.');
+                  return;
+                }
+              }
+              const updated: AppSettings = {
+                ...settings,
+                passcodeEnabled: passcodeEnabledDraft,
+                passcodePin: passcodeEnabledDraft ? passcodePinDraft : '',
+              };
+              await storageService.saveSettings(updated);
+              onUpdateSettings(updated);
+              setActiveModal(null);
+            }}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.saveBtnText}>Save Passcode Settings</Text>
           </TouchableOpacity>
         </View>
       </BottomSheetModal>
@@ -1997,14 +2165,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   <NekoLogoSvg size={48} color={colors.lime} />
                 </View>
                 <Text style={styles.aboutTitle}>NekoChat</Text>
-                <Text style={styles.aboutVersion}>v0.1.6-beta • Free & Open-Source</Text>
+                <Text style={styles.aboutVersion}>v0.1.7-beta • Open-Source</Text>
                 <Text style={styles.aboutDesc}>
-                  Mobile-first, zero-telemetry, ultra-responsive roleplay companion client built on Pure React Native.
+                  Yet another AI roleplay app. Built with Expo and React Native for people who want a local, bring-your-own-key chat client.
                 </Text>
 
                 <TouchableOpacity
                   style={styles.repoLinkBtn}
-                  onPress={() => Linking.openURL('https://github.com/').catch(() => {})}
+                  onPress={() => Linking.openURL('https://github.com/JustBadThinker/nekochat').catch(() => {})}
                   activeOpacity={0.8}
                 >
                   <ExternalLink size={13} color="#000000" style={{ marginRight: 5 }} />

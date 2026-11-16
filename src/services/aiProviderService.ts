@@ -654,35 +654,58 @@ export const aiProviderService = {
   /**
    * Pings an endpoint to test connection latency in milliseconds (legacy).
    */
-  async pingService(type: 'gemini' | 'chub' | 'datacat' | 'openrouter', apiKey?: string): Promise<{ ok: boolean; latencyMs: number }> {
+  async pingService(
+    type: 'gemini' | 'chub' | 'datacat' | 'openrouter',
+    apiKey?: string,
+    model?: string
+  ): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
     const start = Date.now();
     try {
       if (type === 'chub') {
         const res = await fetch('https://api.chub.ai/api/characters/search?first=1', { method: 'GET' });
-        return { ok: res.ok, latencyMs: Date.now() - start };
+        return { ok: res.ok, latencyMs: Date.now() - start, error: res.ok ? undefined : `HTTP ${res.status}` };
       }
       if (type === 'datacat') {
         const res = await fetch('https://datacat.cc/health', { method: 'GET' });
-        return { ok: res.ok, latencyMs: Date.now() - start };
+        return { ok: res.ok, latencyMs: Date.now() - start, error: res.ok ? undefined : `HTTP ${res.status}` };
       }
       if (type === 'openrouter') {
         const res = await fetch('https://openrouter.ai/api/v1/models', {
           headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
         });
-        return { ok: res.ok, latencyMs: Date.now() - start };
+        return { ok: res.ok, latencyMs: Date.now() - start, error: res.ok ? undefined : `HTTP ${res.status}` };
       }
-      // Gemini ping
-      if (apiKey) {
-        const ai = new GoogleGenAI({ apiKey });
-        await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: 'ping',
-        });
-        return { ok: true, latencyMs: Date.now() - start };
+      // Gemini ping via official REST API using platformFetch
+      const cleanKey = (apiKey || '').trim();
+      if (!cleanKey) {
+        return { ok: false, latencyMs: 0, error: 'Missing Gemini API Key' };
       }
-      return { ok: false, latencyMs: 0 };
-    } catch {
-      return { ok: false, latencyMs: Date.now() - start };
+      const targetModel = encodeURIComponent((model || 'gemini-2.5-flash').trim());
+      const res = await platformFetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${encodeURIComponent(cleanKey)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+            generationConfig: { maxOutputTokens: 4 },
+          }),
+        }
+      );
+      const latency = Date.now() - start;
+      if (res.ok) {
+        return { ok: true, latencyMs: Math.max(latency, 12) };
+      }
+      let errMsg = `HTTP ${res.status}`;
+      try {
+        const errJson = await res.json();
+        if (errJson?.error?.message) {
+          errMsg = errJson.error.message;
+        }
+      } catch {}
+      return { ok: false, latencyMs: latency, error: errMsg };
+    } catch (err: any) {
+      return { ok: false, latencyMs: Date.now() - start, error: err?.message || 'Network Error' };
     }
   },
 

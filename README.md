@@ -1,39 +1,40 @@
-# 🐾 NekoChat (Beta)
+# NekoChat (Beta)
 
-> **Free & Open-Source AI Roleplay & Companion Client**  
-> *Mobile-first, local-first AI roleplay app built with Expo, React Native, and TypeScript.*
-
----
-
-## ✨ Implemented Features
-
-### 💬 Chats & Immersion (`ChatsScreen` & `ChatRoomScreen`)
-- **2-Column Bento Chat Grid**: Active companion cards with progressive dark gradients, frosted glassmorphism, and quick multi-session resume.
-- **Trending 24h Stories**: Story tray and viewer modal to jump straight into trending community characters.
-- **Novel Mode & Bubble Mode**: Toggle between full-width visual novel reading and messenger-style chat bubbles, with clickable profile avatars and a fullscreen image lightbox.
-- **Roleplay Formatting & Macros**: Custom colors for spoken dialogue, italicized actions, and thoughts, plus dynamic `{{user}}` and `{{char}}` macro replacement and character RP name extraction (`chat_name`).
-- **Reasoning Isolation & Word Reveal**: Keeps `<think>` / `<thought>` / `<reasoning>` blocks out of the visible reply inside a collapsible `Thinking` peek window, with smooth word-by-word reveal.
-- **Chat Controls**: Multi-session switching, scenario & alternate greeting cycling, `<memory>` story checkpoints, custom chat wallpaper/blur/overlay settings, in-chat message editing/regeneration/continuation, and text-to-speech (`expo-speech`).
-- **Desk Neko & Opt-In Fidget**: A 4×4 pixel Neko pet perched on the input bar (walking, idling, paw-licking, and reacting while you type) — tap her anytime to open the compact timing fidget & 4×1 interactive Neko card.
-
-### 🧭 Discover (`DiscoverScreen`)
-- **Catalog Grid**: Browse live community characters and creators (JanitorAI / Datacat & Chub.ai) with infinite scroll, tag drawer filtering, `Trending` / `Popular` / `Latest` sorting, `All` / `Following` / `Favorites` scope, and `NSFW` / `SFW` toggle.
-- **Rich Character & Creator Profiles**: Renders creator HTML bios, inline description artwork (also collected in the Gallery tab), and merged greeting + alternate greetings accordion.
-- **Match Mode (`TinderDeck`)**: One-hand swipe-to-match character deck with Undo/Rewind, Favorite, Info, and instant Chat, backed by local seen-ID tracking and tag affinity scoring.
-
-### 🛠️ Studio & Settings (`UserStudioScreen` & `SettingsScreen`)
-- **User Studio**: Create, edit, and import character cards, manage multiple User Personas (with quick in-chat switching), and create Codex Lorebooks.
-- **BYOK AI Engine**: Connect your own API keys/endpoints (Google Gemini, OpenRouter, DeepSeek, or custom OpenAI-compatible endpoints) stored locally on your device via `AsyncStorage`.
-- **Dark OLED Themes**: Switch between `Midnight Cyber`, `Sakura Dusk`, `Warm Slate`, and `Cyan`.
+> **Yet another AI roleplay app.**  
+> *An open-source, bring-your-own-key (BYOK) roleplay chat client built with Expo, React Native, and TypeScript. All chats, character cards, personas, and API keys are stored locally on your device.*
 
 ---
 
-## 🚀 Getting Started
+## Implemented Features
+
+### Chats & Chat Room (`ChatsScreen` & `ChatRoomScreen`)
+- **Bento Grid & Dropdown Accordion**: Switch between a 2-column character grid and a single-focus accordion list, with multi-session support per character.
+- **Trending 24h Stories**: Story tray and viewer modal for jumping into trending community characters.
+- **Novel Mode & Bubble Mode**: Switch between full-width text layout and chat-bubble layout, with clickable avatars and a fullscreen image viewer.
+- **Roleplay Formatting & Macros**: Configurable colors for dialogue, actions, and thoughts, `{{user}}` / `{{char}}` replacement, and character RP name extraction.
+- **Reasoning Block Separation**: Moves `<think>` / `<thought>` / `<reasoning>` blocks into a collapsible `Thinking` section, with word-by-word text reveal.
+- **Chat Controls**: Session switching, alternate greeting cycling, `<memory>` checkpoints, custom chat wallpaper/blur/overlay settings, message editing/regeneration/continuation, and text-to-speech (`expo-speech`).
+- **Desk Neko**: Optional pixel Neko sprite on the input bar with an inline timing mini-game.
+
+### Discover (`DiscoverScreen`)
+- **Catalog Grid**: Browse community characters and creators from JanitorAI (Datacat) and Chub.ai with infinite scroll, tag filtering, `Trending` / `Popular` / `Latest` sorting, `All` / `Following` / `Favorites` scope, and `NSFW` / `SFW` toggle.
+- **Character & Creator Profiles**: HTML/Markdown description rendering, inline gallery extraction, and alternate greetings preview.
+- **Match Mode (`TinderDeck`)**: Swipe-to-match character deck with Undo, Favorite, Info, and direct Chat.
+
+### Studio, Onboarding & Settings (`UserStudioScreen`, `OnboardingFlow`, `SettingsScreen`)
+- **First-Time Setup & Tour**: Step-by-step setup for UI language, AI provider/API key (with presets for Gemini, OpenRouter, OpenAI, Anoman, Sumopod, and local LAN servers), optional 4-digit passcode lock, and a skippable feature tour.
+- **User Studio**: Create, edit, and import character cards (`.json` / `.png` SillyTavern cards), manage User Personas, and create keyword-triggered Codex Lorebooks.
+- **BYOK AI Engine**: Connect Google Gemini, OpenRouter, OpenAI, or custom OpenAI-compatible endpoints (remote proxies or local phone/LAN models).
+- **Multi-Language UI & Themes**: UI translations (`en`, `id`, `ja`, `es`, `zh`, `ko`) with optional AI response language prompts, plus dark themes (`Midnight Cyber`, `Sakura Dusk`, `Warm Slate`, `Cyan`).
+
+---
+
+## Getting Started
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) (v18 or newer)
+- [Node.js](https://nodejs.org/) (v20 or newer)
 - npm
-- [Expo Go](https://expo.dev/go) on Android or iOS (optional, for testing on a physical device)
+- [Expo Go](https://expo.dev/go) on Android or iOS (or an Android/iOS development build)
 
 ### Installation & Running
 
@@ -48,15 +49,23 @@ npm run proxy
 npm start
 ```
 
-### Platform Commands
-- **Android:** `npm run android` (or scan the Expo Go QR code)
-- **iOS:** `npm run ios` (or scan the Expo Go QR code)
+### Platform & Check Commands
+- **Android:** `npm run android`
+- **iOS:** `npm run ios`
 - **Web:** `npm run web`
-- **Lint:** `npm run lint`
+- **Lint:** `npm run lint` (or `npx expo lint`)
+- **Typecheck:** `npx tsc --noEmit`
 
 ---
 
-## 📜 License & Attribution
+## Contributing
 
-This project is open-source under the terms of the MIT License with Attribution.  
-You are free to fork, modify, and redistribute this software, provided that clear attribution to the **NekoChat Project** is preserved.
+Contributions, bug reports, and translations are welcome.  
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup details, coding guidelines, and how to open a pull request using [our PR template](.github/pull_request_template.md).
+
+---
+
+## License & Attribution
+
+This project is open-source under the terms of the MIT License with Attribution (see [LICENSE](LICENSE)).  
+You are free to fork, modify, and redistribute this software, provided that attribution to the **NekoChat Project** is preserved.

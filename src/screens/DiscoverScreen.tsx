@@ -1804,12 +1804,13 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         onRequestClose={() => setForYouReadMoreChar(null)}
       >
         <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: 18, paddingVertical: 36 }}>
-          <BlurView
-            intensity={38}
-            tint="dark"
-            experimentalBlurMethod="dimezisBlurView"
-            style={StyleSheet.absoluteFill}
-          />
+          {Platform.OS !== 'android' && (
+            <BlurView
+              intensity={38}
+              tint="dark"
+              style={StyleSheet.absoluteFill}
+            />
+          )}
           <View
             style={[
               StyleSheet.absoluteFill,

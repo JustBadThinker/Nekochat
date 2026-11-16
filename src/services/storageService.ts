@@ -55,6 +55,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   uiLanguage: 'en',
   autoLanguagePrompt: false,
   languageCustomPrompt: '',
+  hasCompletedOnboarding: false,
+  passcodeEnabled: false,
+  passcodePin: '',
 };
 
 const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
