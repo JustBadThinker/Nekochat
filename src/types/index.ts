@@ -397,6 +397,9 @@ export interface AppSettings {
   showTokenCounter: boolean;
   currency: 'IDR' | 'USD';
   language: string;
+  uiLanguage?: 'en' | 'ja' | 'fr' | 'id';
+  autoLanguagePrompt?: boolean;
+  languageCustomPrompt?: string;
   activePersonaId?: string;
   customProxyUrl?: string;
 }

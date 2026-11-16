@@ -64,6 +64,7 @@ import {
 import { storageService } from '../services/storageService';
 import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
+import { useTranslation } from '../i18n/LanguageContext';
 import { ThemePalette } from '../theme/colors';
 
 interface DiscoverScreenProps {
@@ -91,6 +92,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   onMatchModeChange,
 }) => {
   const { palette } = useTheme();
+  const { t } = useTranslation();
   const styles = useMemo(() => createStyles(palette), [palette]);
   const insets = useSafeAreaInsets();
   // Top Primary Switcher: Catalog Grid / For You / Match Mode
@@ -621,7 +623,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         <Search size={15} color="#9ca3af" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search anime companions, tags, tropes (@creator)..."
+          placeholder={t('discover.searchPlaceholder')}
           placeholderTextColor="#6b7280"
           value={communitySearchInput}
           onChangeText={setCommunitySearchInput}
@@ -681,7 +683,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                   (topMode === 'catalog' || topMode === 'foryou') && styles.topPrimaryBtnTextActive,
                 ]}
               >
-                {topMode === 'foryou' ? 'For You' : 'Catalog Grid'}
+                {topMode === 'foryou' ? t('discover.forYou') : t('discover.catalogGrid')}
               </Text>
               <ChevronDown
                 size={13}
@@ -706,7 +708,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             >
               <Flame size={13} color={topMode === 'match' ? '#000000' : palette.accent} style={{ marginRight: 5 }} />
               <Text style={[styles.topPrimaryBtnText, topMode === 'match' && styles.topPrimaryBtnTextActive]}>
-                Match Mode
+                {t('discover.matchMode')}
               </Text>
             </TouchableOpacity>
           </View>
@@ -786,7 +788,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                 >
                   <Compass size={13} color={activeTab === 'community' ? '#000000' : '#FFFFFF'} style={{ marginRight: 5 }} />
                   <Text style={[styles.viewTabBtnText, activeTab === 'community' && styles.viewTabBtnTextActive]}>
-                    Explore All
+                    {t('discover.exploreAll')}
                   </Text>
                   <View style={styles.greenPulseDot} />
                 </TouchableOpacity>
@@ -798,7 +800,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                 >
                   <Bookmark size={13} color={activeTab === 'library' ? '#000000' : '#9ca3af'} style={{ marginRight: 5 }} />
                   <Text style={[styles.viewTabBtnText, activeTab === 'library' ? styles.viewTabBtnTextActive : { color: '#9ca3af' }]}>
-                    My Library
+                    {t('discover.myLibrary')}
                   </Text>
                   <View style={styles.libraryCountPill}>
                     <Text style={styles.libraryCountText}>{characters.length}</Text>
@@ -941,7 +943,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                 entityMode === 'characters' && styles.pillSegmentTextActive,
               ]}
             >
-              Characters
+              {t('discover.characters')}
             </Text>
           </TouchableOpacity>
 
@@ -958,7 +960,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                 entityMode === 'creators' && styles.pillSegmentTextActive,
               ]}
             >
-              Creators
+              {t('discover.creators')}
             </Text>
           </TouchableOpacity>
         </View>
@@ -1030,7 +1032,12 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           ) : (
             (['trending', 'popular', 'latest'] as CatalogSort[]).map(s => {
               const isActive = communitySort === s;
-              const label = s === 'trending' ? '🔥 Trending' : s === 'popular' ? '❤️ Popular' : '✨ Latest';
+              const label =
+                s === 'trending'
+                  ? `🔥 ${t('discover.trending')}`
+                  : s === 'popular'
+                  ? `❤️ ${t('discover.popular')}`
+                  : `✨ ${t('discover.latest')}`;
               return (
                 <TouchableOpacity
                   key={s}
@@ -1564,6 +1571,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         </View>
       ) : entityMode === 'creators' ? (
         <FlatList
+          key="creators-list"
           data={
             activeTab === 'library'
               ? creatorProfiles.filter(cr =>
@@ -1659,6 +1667,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         />
       ) : (
         <FlatList
+          key="characters-grid"
           data={displayedCharacters}
           keyExtractor={item => item.id}
           numColumns={2}

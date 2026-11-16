@@ -11,14 +11,16 @@ import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MessageSquare, Compass, User, Settings } from 'lucide-react-native';
 import { useTheme } from '../theme/ThemeContext';
+import { useTranslation } from '../i18n/LanguageContext';
+import { TranslationKey } from '../i18n/translations';
 
 export type TabScreen = 'chats' | 'discover' | 'studio' | 'settings';
 
-const TAB_ITEMS: { key: TabScreen; label: string; Icon: React.ComponentType<any> }[] = [
-  { key: 'chats', label: 'Chats', Icon: MessageSquare },
-  { key: 'discover', label: 'Discover', Icon: Compass },
-  { key: 'studio', label: 'Studio', Icon: User },
-  { key: 'settings', label: 'Settings', Icon: Settings },
+const TAB_ITEMS: { key: TabScreen; labelKey: TranslationKey; Icon: React.ComponentType<any> }[] = [
+  { key: 'chats', labelKey: 'nav.chats', Icon: MessageSquare },
+  { key: 'discover', labelKey: 'nav.discover', Icon: Compass },
+  { key: 'studio', labelKey: 'nav.studio', Icon: User },
+  { key: 'settings', labelKey: 'nav.settings', Icon: Settings },
 ];
 
 const ITEM_WIDTH = 70;
@@ -34,6 +36,7 @@ interface CapsuleDockProps {
 export const CapsuleDock: React.FC<CapsuleDockProps> = ({ activeTab, onTabChange, blurTargetRef }) => {
   const insets = useSafeAreaInsets();
   const { palette } = useTheme();
+  const { t } = useTranslation();
   const activeIdx = Math.max(0, TAB_ITEMS.findIndex(t => t.key === activeTab));
   const [slideAnim] = useState(() => new Animated.Value(activeIdx * STEP_WIDTH));
   const [scaleAnims] = useState(() => TAB_ITEMS.map((_, i) => new Animated.Value(i === activeIdx ? 1.08 : 1)));
@@ -116,7 +119,7 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({ activeTab, onTabChange
           ]}
         />
 
-        {TAB_ITEMS.map(({ key, label, Icon }, idx) => {
+        {TAB_ITEMS.map(({ key, labelKey, Icon }, idx) => {
           const isActive = activeTab === key;
           return (
             <TouchableOpacity
@@ -132,7 +135,7 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({ activeTab, onTabChange
                   style={{ opacity: isActive ? 1 : 0.45 }}
                 />
                 <Text style={[isActive ? styles.dockLabelActive : styles.dockLabelInactive, isActive && { color: palette.accent }]}>
-                  {label}
+                  {t(labelKey)}
                 </Text>
                 <View style={[styles.activeDot, { backgroundColor: palette.accent, opacity: isActive ? 1 : 0 }]} />
               </Animated.View>

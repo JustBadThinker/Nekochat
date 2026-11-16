@@ -43,6 +43,7 @@ import {
   Volume2,
   ChevronDown,
   Image as ImageIcon,
+  Globe,
 } from 'lucide-react-native';
 import { ProviderConfig, AppSettings, Persona } from '../types';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -56,8 +57,11 @@ import { ttsService, VOICE_PROFILES, TtsConfig, DEFAULT_TTS_CONFIG } from '../se
 import { imageGenService, IMAGE_STYLE_OPTIONS, ImageGenConfig, DEFAULT_IMAGE_GEN_CONFIG, ImageStylePreset } from '../services/imageGenService';
 import { colors, applyThemePalette, ThemeId, ThemePalette } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
+import { useTranslation } from '../i18n/LanguageContext';
+import { LANGUAGE_OPTIONS, UiLanguage, getDefaultLanguagePrompt } from '../i18n/translations';
 import { NekoLogoSvg } from '../components/NekoLogoSvg';
 import { BottomSheetModal } from '../components/BottomSheetModal';
+import { NekoSwitch } from '../components/NekoSwitch';
 
 interface SettingsScreenProps {
   config: ProviderConfig;
@@ -73,11 +77,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onUpdateSettings,
 }) => {
   const { palette } = useTheme();
+  const { t } = useTranslation();
   const styles = useMemo(() => createStyles(palette), [palette]);
   // Modal Visibility State
   const [activeModal, setActiveModal] = useState<
-    'api' | 'theming' | 'vault' | 'personas' | 'tokens' | 'about' | 'voice' | 'image' | null
+    'api' | 'theming' | 'language' | 'vault' | 'personas' | 'tokens' | 'about' | 'voice' | 'image' | null
   >(null);
+
+  const [selectedUiLang, setSelectedUiLang] = useState<UiLanguage>(settings.uiLanguage || 'en');
+  const [autoLangPrompt, setAutoLangPrompt] = useState<boolean>(!!settings.autoLanguagePrompt);
+  const [langCustomPrompt, setLangCustomPrompt] = useState<string>(
+    settings.languageCustomPrompt || getDefaultLanguagePrompt(settings.uiLanguage || 'en')
+  );
 
   // Health Monitor State (100% Genuine Probes — Zero Mock Data)
   const [testingHealth, setTestingHealth] = useState(false);
@@ -448,6 +459,37 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     setActiveModal(null);
   };
 
+  const handleSelectUiLanguage = async (lang: UiLanguage) => {
+    const prevDefault = getDefaultLanguagePrompt(selectedUiLang);
+    const isUsingDefault =
+      !langCustomPrompt.trim() || langCustomPrompt.trim() === prevDefault.trim();
+    const nextPrompt = isUsingDefault ? getDefaultLanguagePrompt(lang) : langCustomPrompt;
+
+    setSelectedUiLang(lang);
+    setLangCustomPrompt(nextPrompt);
+
+    const updated: AppSettings = {
+      ...settings,
+      uiLanguage: lang,
+      autoLanguagePrompt: autoLangPrompt,
+      languageCustomPrompt: nextPrompt,
+    };
+    await storageService.saveSettings(updated);
+    onUpdateSettings(updated);
+  };
+
+  const handleSaveLanguageSettings = async () => {
+    const updated: AppSettings = {
+      ...settings,
+      uiLanguage: selectedUiLang,
+      autoLanguagePrompt: autoLangPrompt,
+      languageCustomPrompt: langCustomPrompt.trim() || getDefaultLanguagePrompt(selectedUiLang),
+    };
+    await storageService.saveSettings(updated);
+    onUpdateSettings(updated);
+    setActiveModal(null);
+  };
+
   const handleCopyVault = () => {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
       navigator.clipboard.writeText(vaultJson);
@@ -490,7 +532,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         <View style={styles.healthCardHeader}>
           <View style={styles.healthTitleRow}>
             <Activity size={18} color={palette.accent} style={{ marginRight: 8 }} />
-            <Text style={styles.healthTitle}>Service Health & Latency Monitor</Text>
+            <Text style={styles.healthTitle}>{t('settings.healthTitle')}</Text>
           </View>
 
           <TouchableOpacity
@@ -629,7 +671,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* 2. 2-COLUMN BENTO GRID: TILES THAT OPEN MODAL POP-UPS              */}
       {/* ══════════════════════════════════════════════════════════════════ */}
-      <Text style={styles.gridSectionHeading}>SETTINGS & CONTROL PANEL</Text>
+      <Text style={styles.gridSectionHeading}>{t('settings.controlPanel')}</Text>
 
       <View style={styles.bentoTwoGrid}>
         {/* Tile 1: Unified AI Engine Suite (LLM, Scene Art & Voice TTS) */}
@@ -644,8 +686,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.tileIconCircle}>
             <Key size={18} color={palette.accent} />
           </View>
-          <Text style={styles.tileTitle}>AI Engine Suite</Text>
-          <Text style={styles.tileSubtitle}>LLM Brain, Scene Art & Voice</Text>
+          <Text style={styles.tileTitle}>{t('settings.aiEngine')}</Text>
+          <Text style={styles.tileSubtitle}>{t('settings.aiEngineSub')}</Text>
           <View style={styles.tileBadgeLime}>
             <Text style={styles.tileBadgeLimeText}>3 Engines Active</Text>
           </View>
@@ -660,8 +702,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.tileIconCircle}>
             <Palette size={18} color={palette.accent} />
           </View>
-          <Text style={styles.tileTitle}>Theming</Text>
-          <Text style={styles.tileSubtitle}>Palette & UI Accents</Text>
+          <Text style={styles.tileTitle}>{t('settings.theming')}</Text>
+          <Text style={styles.tileSubtitle}>{t('settings.themingSub')}</Text>
           <View style={styles.tileBadge}>
             <Text style={styles.tileBadgeText}>
               {selectedTheme.charAt(0).toUpperCase() + selectedTheme.slice(1)}
@@ -680,8 +722,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.tileIconCircle}>
             <ShieldCheck size={18} color={palette.accent} />
           </View>
-          <Text style={styles.tileTitle}>Data Vault</Text>
-          <Text style={styles.tileSubtitle}>Zero-key backup & import</Text>
+          <Text style={styles.tileTitle}>{t('settings.dataVault')}</Text>
+          <Text style={styles.tileSubtitle}>{t('settings.dataVaultSub')}</Text>
           <View style={styles.tileBadge}>
             <Text style={styles.tileBadgeText}>Sanitized</Text>
           </View>
@@ -696,10 +738,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.tileIconCircle}>
             <Users size={18} color={palette.accent} />
           </View>
-          <Text style={styles.tileTitle}>User Personas</Text>
-          <Text style={styles.tileSubtitle}>Manage profiles & switch</Text>
+          <Text style={styles.tileTitle}>{t('settings.personas')}</Text>
+          <Text style={styles.tileSubtitle}>{t('settings.personasSub')}</Text>
           <View style={styles.tileBadge}>
-            <Text style={styles.tileBadgeText}>{personas.length} Personas</Text>
+            <Text style={styles.tileBadgeText}>{personas.length} {t('studio.personas')}</Text>
           </View>
         </TouchableOpacity>
 
@@ -712,14 +754,33 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.tileIconCircle}>
             <Cpu size={18} color={palette.accent} />
           </View>
-          <Text style={styles.tileTitle}>Token & Sampling</Text>
-          <Text style={styles.tileSubtitle}>Context limit & parameters</Text>
+          <Text style={styles.tileTitle}>{t('settings.tokens')}</Text>
+          <Text style={styles.tileSubtitle}>{t('settings.tokensSub')}</Text>
           <View style={styles.tileBadge}>
             <Text style={styles.tileBadgeText}>{contextLimit} BPE</Text>
           </View>
         </TouchableOpacity>
 
-        {/* Tile 6: About NekoChat */}
+        {/* Tile 6: Language & AI Prompt */}
+        <TouchableOpacity
+          style={styles.bentoTile}
+          onPress={() => setActiveModal('language')}
+          activeOpacity={0.8}
+        >
+          <View style={styles.tileIconCircle}>
+            <Globe size={18} color={palette.accent} />
+          </View>
+          <Text style={styles.tileTitle}>{t('nav.settings') === 'Pengaturan' ? 'Bahasa' : t('nav.settings') === '設定' ? '言語' : t('nav.settings') === 'Paramètres' ? 'Langue' : 'Language'}</Text>
+          <Text style={styles.tileSubtitle}>{t('settings.languageSub')}</Text>
+          <View style={styles.tileBadge}>
+            <Text style={styles.tileBadgeText}>
+              {(LANGUAGE_OPTIONS.find(l => l.id === selectedUiLang) || LANGUAGE_OPTIONS[0]).flag}{' '}
+              {(LANGUAGE_OPTIONS.find(l => l.id === selectedUiLang) || LANGUAGE_OPTIONS[0]).nativeName}
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* Tile 7: About NekoChat */}
         <TouchableOpacity
           style={styles.bentoTile}
           onPress={() => setActiveModal('about')}
@@ -728,8 +789,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.tileIconCircle}>
             <Sparkles size={18} color={palette.accent} />
           </View>
-          <Text style={styles.tileTitle}>About Neko</Text>
-          <Text style={styles.tileSubtitle}>v0.1.0-alpha • Free & Open</Text>
+          <Text style={styles.tileTitle}>{t('settings.about')}</Text>
+          <Text style={styles.tileSubtitle}>v0.1.6-beta • Free & Open</Text>
           <View style={styles.tileBadge}>
             <Text style={styles.tileBadgeText}>FOSS</Text>
           </View>
@@ -745,7 +806,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleRow}>
                 <Key size={16} color={palette.accent} style={{ marginRight: 6 }} />
-                <Text style={styles.modalTitle}>AI Engine & Media Setup</Text>
+                <Text style={styles.modalTitle}>{t('settings.aiModalTitle')}</Text>
               </View>
               <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
                 <X size={16} color="#9ca3af" />
@@ -755,9 +816,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             {/* AI Engine Sub-Tabs: [ 🧠 Text LLM ] | [ 🎨 Scene Art ] | [ 🎙️ Voice TTS ] */}
             <View style={{ flexDirection: 'row', gap: 6, marginHorizontal: 20, marginBottom: 12, marginTop: 4 }}>
               {[
-                { id: 'llm', label: '🧠 Text LLM' },
-                { id: 'image', label: '🎨 Scene Art' },
-                { id: 'voice', label: '🎙️ Voice TTS' },
+                { id: 'llm', label: `🧠 ${t('settings.textLlm')}` },
+                { id: 'image', label: `🎨 ${t('settings.sceneArt')}` },
+                { id: 'voice', label: `🎙️ ${t('settings.voiceTts')}` },
               ].map(tb => {
                 const isActive = aiModalTab === tb.id;
                 return (
@@ -786,7 +847,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <ScrollView style={styles.modalBody}>
               {aiModalTab === 'llm' && (
                 <>
-                  <Text style={styles.inputLabel}>Select Provider Profile</Text>
+                  <Text style={styles.inputLabel}>{t('settings.selectProvider')}</Text>
                   <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14 }}>
                     {[
                       { id: 'prov_gemini', name: 'Gemini' },
@@ -819,7 +880,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
                   {selectedProviderId !== 'prov_gemini' && (
                     <>
-                      <Text style={styles.inputLabel}>Base URL (Endpoint)</Text>
+                      <Text style={styles.inputLabel}>{t('settings.baseUrl')}</Text>
                       <TextInput
                         style={styles.inputBox}
                         value={customEndpoint}
@@ -831,7 +892,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     </>
                   )}
 
-                  <Text style={styles.inputLabel}>API Secret Key</Text>
+                  <Text style={styles.inputLabel}>{t('settings.apiKey')}</Text>
                   <View style={styles.inputPasswordRow}>
                     <TextInput
                       style={styles.inputPasswordText}
@@ -848,7 +909,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   </View>
 
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
-                    <Text style={styles.inputLabel}>Model Identifier</Text>
+                    <Text style={styles.inputLabel}>{t('settings.modelId')}</Text>
                     <TouchableOpacity
                       style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
                       onPress={handleFetchModels}
@@ -859,7 +920,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                       ) : (
                         <>
                           <RefreshCw size={12} color={palette.accent} />
-                          <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>Fetch Models</Text>
+                          <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>{t('settings.fetchModels')}</Text>
                         </>
                       )}
                     </TouchableOpacity>
@@ -909,7 +970,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   >
                     <Zap size={14} color="#000000" style={{ marginRight: 6 }} />
                     <Text style={styles.autoTestBtnText}>
-                      {testingPing ? 'Pinging Endpoint...' : '⚡ Auto-Test Connection'}
+                      {testingPing ? 'Pinging...' : `⚡ ${t('settings.testConn')}`}
                     </Text>
                   </TouchableOpacity>
 
@@ -1104,7 +1165,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 activeOpacity={0.8}
               >
                 <Text style={styles.saveBtnText}>
-                  {aiModalTab === 'llm' ? 'Save API Configuration' : 'Save & Done'}
+                  {aiModalTab === 'llm' ? t('settings.saveApi') : t('chats.done')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1123,7 +1184,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
 
             <ScrollView style={styles.modalBody}>
-              <Text style={styles.sectionSub}>Select Theme Preset (Applies Instantly)</Text>
+              <Text style={styles.sectionSub}>{t('settings.selectThemeSub')}</Text>
               {[
                 { id: 'midnight', name: '⚡ Midnight Cyber', desc: 'True OLED Black (#0c0e14) + Acid Lime (#d4ff00)', accent: palette.accent, bg: palette.bgDark },
                 { id: 'sakura', name: '🌸 Sakura Dusk', desc: 'Deep Charcoal (#120d14) + Pastel Rose (#fb7185)', accent: '#FB7185', bg: '#120d14' },
@@ -1175,9 +1236,125 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 onPress={handleApplyTheme}
                 activeOpacity={0.8}
               >
-                <Text style={styles.saveBtnText}>Apply Theme</Text>
+                <Text style={styles.saveBtnText}>{t('settings.applyTheme')}</Text>
               </TouchableOpacity>
             </View>
+      </BottomSheetModal>
+
+      {/* MODAL: Language & AI Auto-Prompt */}
+      <BottomSheetModal visible={activeModal === 'language'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
+        <View style={styles.modalHeader}>
+          <View style={styles.modalTitleRow}>
+            <Globe size={16} color={palette.accent} style={{ marginRight: 6 }} />
+            <Text style={styles.modalTitle}>{t('settings.languageTitle')}</Text>
+          </View>
+          <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+            <X size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <Text style={styles.sectionSub}>{t('settings.languageSub')}</Text>
+
+          {/* 4 Language Options: English, Japanese, French, Indonesian */}
+          <View style={{ gap: 8, marginBottom: 16 }}>
+            {LANGUAGE_OPTIONS.map(opt => {
+              const isSelected = selectedUiLang === opt.id;
+              return (
+                <TouchableOpacity
+                  key={opt.id}
+                  style={[
+                    styles.themeOptionCard,
+                    isSelected && [styles.themeOptionActive, { borderColor: palette.accent, backgroundColor: `rgba(${palette.accentRgb}, 0.1)` }],
+                  ]}
+                  onPress={() => handleSelectUiLanguage(opt.id)}
+                  activeOpacity={0.8}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Text style={{ fontSize: 18 }}>{opt.flag}</Text>
+                    <View>
+                      <Text style={[styles.themeOptionName, isSelected && { color: palette.accent }]}>{opt.nativeName}</Text>
+                      <Text style={styles.themeOptionDesc}>{opt.name}</Text>
+                    </View>
+                  </View>
+                  {isSelected && <Check size={16} color={palette.accent} />}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Auto-add language prompt toggle */}
+          <View
+            style={{
+              backgroundColor: 'rgba(255,255,255,0.04)',
+              borderRadius: 14,
+              padding: 14,
+              borderWidth: 1,
+              borderColor: 'rgba(255,255,255,0.08)',
+              marginBottom: 14,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#f8fafc', fontSize: 13.5, fontWeight: '700' }}>
+                  {t('settings.autoPromptLabel')}
+                </Text>
+                <Text style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 3, lineHeight: 16 }}>
+                  {t('settings.autoPromptHint')}
+                </Text>
+              </View>
+              <NekoSwitch
+                value={autoLangPrompt}
+                onValueChange={async val => {
+                  setAutoLangPrompt(val);
+                  const updated: AppSettings = {
+                    ...settings,
+                    uiLanguage: selectedUiLang,
+                    autoLanguagePrompt: val,
+                    languageCustomPrompt: langCustomPrompt.trim() || getDefaultLanguagePrompt(selectedUiLang),
+                  };
+                  await storageService.saveSettings(updated);
+                  onUpdateSettings(updated);
+                }}
+              />
+            </View>
+
+            {/* Editable Custom Prompt for Language */}
+            <View style={{ marginTop: 12 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <Text style={[styles.inputLabel, { marginBottom: 0 }]}>
+                  {t('settings.customPromptLabel')}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setLangCustomPrompt(getDefaultLanguagePrompt(selectedUiLang))}
+                  activeOpacity={0.75}
+                >
+                  <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>
+                    {t('settings.resetPrompt')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <TextInput
+                style={[styles.inputBox, { minHeight: 76, textAlignVertical: 'top' }]}
+                multiline
+                placeholder={getDefaultLanguagePrompt(selectedUiLang)}
+                placeholderTextColor="rgba(255,255,255,0.3)"
+                value={langCustomPrompt}
+                onChangeText={setLangCustomPrompt}
+              />
+            </View>
+          </View>
+        </ScrollView>
+
+        <View style={styles.modalFooter}>
+          <TouchableOpacity
+            style={styles.saveBtn}
+            onPress={handleSaveLanguageSettings}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.saveBtnText}>{t('settings.saveLanguage')}</Text>
+          </TouchableOpacity>
+        </View>
       </BottomSheetModal>
 
       {/* MODAL 3: Data Vault & Sanitizer */}
@@ -1412,10 +1589,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   </View>
 
                   {/* Max Output Tokens */}
-                  <Text style={styles.inputLabel}>Max Generation Output Tokens</Text>
+                  <Text style={styles.inputLabel}>{t('settings.maxOutputTokens')}</Text>
                   <View style={[styles.tokenPillRow, { marginBottom: 12 }]}>
                     {[
-                      { val: '0', label: 'Unlimited' },
+                      { val: '0', label: t('settings.unlimited') },
                       { val: '2048', label: '2k' },
                       { val: '4096', label: '4k' },
                       { val: '8192', label: '8k' },
@@ -1820,7 +1997,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   <NekoLogoSvg size={48} color={colors.lime} />
                 </View>
                 <Text style={styles.aboutTitle}>NekoChat</Text>
-                <Text style={styles.aboutVersion}>v0.1.0-alpha • Free & Open-Source</Text>
+                <Text style={styles.aboutVersion}>v0.1.6-beta • Free & Open-Source</Text>
                 <Text style={styles.aboutDesc}>
                   Mobile-first, zero-telemetry, ultra-responsive roleplay companion client built on Pure React Native.
                 </Text>

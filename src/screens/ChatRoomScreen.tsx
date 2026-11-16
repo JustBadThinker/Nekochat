@@ -86,6 +86,7 @@ import {
 } from '../types';
 import { colors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
+import { useTranslation } from '../i18n/LanguageContext';
 import { imageGenService, IMAGE_STYLE_OPTIONS, ImageStylePreset } from '../services/imageGenService';
 import { ttsService, TtsPlaybackState } from '../services/ttsService';
 import { aiProviderService, extractCleanCharacterName } from '../services/aiProviderService';
@@ -117,6 +118,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   initialConversationId,
 }) => {
   const { palette } = useTheme();
+  const { t } = useTranslation();
   const styles = useMemo(() => createStyles(palette), [palette]);
   // Session & Message State
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -3221,7 +3223,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             <View style={styles.appearanceHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <MoreHorizontal size={18} color={palette.accent} />
-                <Text style={styles.modalTitle}>Chat Control & Context</Text>
+                <Text style={styles.modalTitle}>{t('chat.controlTitle')}</Text>
               </View>
               <TouchableOpacity onPress={() => setShowChatControlModal(false)}>
                 <X size={20} color="#FFFFFF" />
@@ -3231,9 +3233,9 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             {/* Sub-Tabs: [ ⚙️ Settings ] | [ 🧠 Memory ] | [ 🎨 Customize ] */}
             <View style={{ flexDirection: 'row', gap: 6, marginHorizontal: 20, marginBottom: 14, marginTop: 4 }}>
               {[
-                { id: 'model', label: '⚙️ Settings' },
-                { id: 'memory', label: '🧠 Memory' },
-                { id: 'syntax', label: '🎨 Customize' },
+                { id: 'model', label: `⚙️ ${t('chat.settings')}` },
+                { id: 'memory', label: `🧠 ${t('chat.memory')}` },
+                { id: 'syntax', label: `🎨 ${t('chat.customize')}` },
               ].map(tb => (
                 <TouchableOpacity
                   key={tb.id}
@@ -3507,7 +3509,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         activeOpacity={0.75}
                       >
                         <View>
-                          <Text style={styles.settingsCardTitle}>Generation controls</Text>
+                          <Text style={styles.settingsCardTitle}>{t('chat.generationControls')}</Text>
                           <Text style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>
                             Temperature {chatTemperature.toFixed(1)} · Max tokens {chatMaxTokens === 0 ? 'Unlimited' : chatMaxTokens}
                           </Text>
@@ -3576,7 +3578,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         activeOpacity={0.75}
                       >
                         <ChevronLeft size={18} color="#f8fafc" />
-                        <Text style={styles.settingsSubHeaderTitle}>Generation controls</Text>
+                        <Text style={styles.settingsSubHeaderTitle}>{t('chat.generationControls')}</Text>
                       </TouchableOpacity>
 
                       <View style={styles.settingsBentoCard}>
@@ -3972,7 +3974,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.settingsCardTitle}>Enable autoscroll</Text>
+                        <Text style={styles.settingsCardTitle}>{t('chat.autoscroll')}</Text>
                         <Text style={styles.settingsHelperText}>
                           {"When off, the chat won't follow replies as they're being generated."}
                         </Text>
@@ -4006,7 +4008,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 
                     <View style={[styles.settingsHairline, { marginVertical: 12 }]} />
 
-                    <Text style={[styles.settingsCardTitle, { marginBottom: 8 }]}>Reading layout</Text>
+                    <Text style={[styles.settingsCardTitle, { marginBottom: 8 }]}>{t('chat.readingLayout')}</Text>
                     <View
                       style={{
                         flexDirection: 'row',
@@ -4370,7 +4372,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               }}
               activeOpacity={0.8}
             >
-              <Text style={[styles.appearanceDoneText, { color: palette.bgDark }]}>Apply & Close</Text>
+              <Text style={[styles.appearanceDoneText, { color: palette.bgDark }]}>{t('chat.applyClose')}</Text>
             </TouchableOpacity>
       </BottomSheetModal>
     </SafeAreaView>

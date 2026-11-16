@@ -22,8 +22,11 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
+import { useTranslation } from '../i18n/LanguageContext';
 import { BottomSheetModal } from '../components/BottomSheetModal';
 import {
   Sparkles,
@@ -65,6 +68,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
 }) => {
   const { palette } = useTheme();
   const styles = useMemo(() => createStyles(palette), [palette]);
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<'cards' | 'personas' | 'lorebooks'>('cards');
   const [userCharacters, setUserCharacters] = useState<Character[]>([]);
   const [personas, setPersonas] = useState<Persona[]>([]);
@@ -118,6 +122,79 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
   const [importLoading, setImportLoading] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
 
+  const applyImportedCardData = (data: any) => {
+    setCharName(data.name);
+    setCharTagline(data.subtitle || data.shortDescription || 'Roleplay Companion');
+    setCharAvatar(data.avatarUrl || ANIME_DEFAULT_FALLBACK);
+    setCharPersonality(data.personality);
+    setCharScenario(data.background);
+    setCharFirstMessage(data.firstMessage);
+    setCharTags((data.tags || []).join(', '));
+    setCharRating(data.contentRating);
+    setEditingCharId(null);
+
+    setImportModalVisible(false);
+    setImportRawText('');
+    setImportUrl('');
+    setCharModalVisible(true);
+  };
+
+  const handlePickCharacterFile = async () => {
+    setImportError(null);
+    setImportLoading(true);
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({
+        type: ['application/json', 'image/png', 'text/plain', '*/*'],
+        copyToCacheDirectory: true,
+      });
+      if (picked.canceled || !picked.assets?.[0]) {
+        return;
+      }
+      const file = picked.assets[0];
+      const lowerName = (file.name || '').toLowerCase();
+      const isPng = lowerName.endsWith('.png') || file.mimeType === 'image/png';
+
+      let res;
+      if (isPng) {
+        if (Platform.OS === 'web' && (file as any).file) {
+          res = await characterImportService.parsePngCard((file as any).file);
+        } else if (file.uri) {
+          const base64 = await FileSystem.readAsStringAsync(file.uri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          res = await characterImportService.parsePngCard(base64);
+        } else {
+          setImportError('Unable to read selected PNG file.');
+          return;
+        }
+      } else {
+        let content = '';
+        if (Platform.OS === 'web' && (file as any).file) {
+          content = await (file as any).file.text();
+        } else if (file.uri) {
+          content = await FileSystem.readAsStringAsync(file.uri, {
+            encoding: FileSystem.EncodingType.UTF8,
+          });
+        }
+        if (!content.trim()) {
+          setImportError('Selected file is empty.');
+          return;
+        }
+        res = characterImportService.parseManualText(content.trim());
+      }
+
+      if (res.success && res.data) {
+        applyImportedCardData(res.data);
+      } else {
+        setImportError(res.error || 'Failed to parse character file.');
+      }
+    } catch (err: any) {
+      setImportError(err?.message || 'Error reading character file.');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
   const handleImportSubmit = async () => {
     setImportError(null);
     setImportLoading(true);
@@ -140,20 +217,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
       }
 
       if (res.success && res.data) {
-        setCharName(res.data.name);
-        setCharTagline(res.data.subtitle || res.data.shortDescription || 'Roleplay Companion');
-        setCharAvatar(res.data.avatarUrl || ANIME_DEFAULT_FALLBACK);
-        setCharPersonality(res.data.personality);
-        setCharScenario(res.data.background);
-        setCharFirstMessage(res.data.firstMessage);
-        setCharTags(res.data.tags.join(', '));
-        setCharRating(res.data.contentRating);
-        setEditingCharId(null);
-
-        setImportModalVisible(false);
-        setImportRawText('');
-        setImportUrl('');
-        setCharModalVisible(true);
+        applyImportedCardData(res.data);
       } else {
         setImportError(res.error || 'Failed to parse character data.');
       }
@@ -551,8 +615,8 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
       {/* Screen Title & Segmented Navigation */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Studio</Text>
-          <Text style={styles.headerSubtitle}>User Cards & Personas</Text>
+          <Text style={styles.headerTitle}>{t('studio.title')}</Text>
+          <Text style={styles.headerSubtitle}>{t('studio.subtitle')}</Text>
         </View>
 
         {/* Tab Segment Switcher */}
@@ -563,7 +627,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
           >
             <Layers size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
             <Text style={[styles.segmentText, activeTab === 'cards' && styles.segmentTextActive]}>
-              Cards ({userCharacters.length})
+              {t('studio.cards')} ({userCharacters.length})
             </Text>
           </TouchableOpacity>
 
@@ -573,7 +637,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
           >
             <User size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
             <Text style={[styles.segmentText, activeTab === 'personas' && styles.segmentTextActive]}>
-              Personas ({personas.length})
+              {t('studio.personas')} ({personas.length})
             </Text>
           </TouchableOpacity>
 
@@ -583,7 +647,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
           >
             <BookOpen size={13} color="#FFFFFF" style={{ marginRight: 5 }} />
             <Text style={[styles.segmentText, activeTab === 'lorebooks' && styles.segmentTextActive]}>
-              Codex ({lorebooks.length})
+              {t('studio.codex')} ({lorebooks.length})
             </Text>
           </TouchableOpacity>
         </View>
@@ -596,8 +660,8 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
             {/* Action Row */}
             <View style={styles.sectionHeaderRow}>
               <View>
-                <Text style={styles.sectionHeading}>My Character Cards</Text>
-                <Text style={styles.sectionDesc}>Custom characters created by you</Text>
+                <Text style={styles.sectionHeading}>{t('studio.myCards')}</Text>
+                <Text style={styles.sectionDesc}>{t('studio.myCardsSub')}</Text>
               </View>
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 <TouchableOpacity
@@ -606,7 +670,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                   activeOpacity={0.8}
                 >
                   <Download size={15} color={palette.accent} style={{ marginRight: 6 }} />
-                  <Text style={styles.importButtonText}>Import</Text>
+                  <Text style={styles.importButtonText}>{t('studio.import')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.createButton}
@@ -614,7 +678,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                   activeOpacity={0.8}
                 >
                   <Plus size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                  <Text style={styles.createButtonText}>Create Card</Text>
+                  <Text style={styles.createButtonText}>{t('studio.createCard')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -625,9 +689,9 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                 <View style={styles.emptyIconCircle}>
                   <Sparkles size={28} color="#FFFFFF" />
                 </View>
-                <Text style={styles.emptyTitle}>No Custom Cards Yet</Text>
+                <Text style={styles.emptyTitle}>{t('studio.noCards')}</Text>
                 <Text style={styles.emptyDesc}>
-                  Create your own anime roleplay companion with custom world lore, personality traits, and first messages.
+                  {t('studio.noCardsSub')}
                 </Text>
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
                   <TouchableOpacity
@@ -635,14 +699,14 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                     onPress={handleOpenCreateChar}
                   >
                     <Plus size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.emptyActionBtnText}>Create Card</Text>
+                    <Text style={styles.emptyActionBtnText}>{t('studio.createCard')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.emptyActionBtn, { backgroundColor: `rgba(${palette.accentRgb}, 0.12)`, borderColor: `rgba(${palette.accentRgb}, 0.3)` }]}
                     onPress={() => setImportModalVisible(true)}
                   >
                     <Download size={16} color={palette.accent} style={{ marginRight: 6 }} />
-                    <Text style={[styles.emptyActionBtnText, { color: palette.accent }]}>Import Card</Text>
+                    <Text style={[styles.emptyActionBtnText, { color: palette.accent }]}>{t('studio.importCard')}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -801,8 +865,8 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
           <View>
             <View style={styles.sectionHeaderRow}>
               <View>
-                <Text style={styles.sectionHeading}>Codex Lorebooks</Text>
-                <Text style={styles.sectionDesc}>World lore & keyword-triggered memories</Text>
+                <Text style={styles.sectionHeading}>{t('studio.codexTitle')}</Text>
+                <Text style={styles.sectionDesc}>{t('studio.codexSub')}</Text>
               </View>
               <TouchableOpacity
                 style={styles.createButton}
@@ -810,7 +874,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                 activeOpacity={0.8}
               >
                 <Plus size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.createButtonText}>Add Lorebook</Text>
+                <Text style={styles.createButtonText}>{t('studio.addLorebook')}</Text>
               </TouchableOpacity>
             </View>
 
@@ -819,15 +883,15 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                 <View style={styles.emptyIconCircle}>
                   <BookOpen size={28} color="#FFFFFF" />
                 </View>
-                <Text style={styles.emptyTitle}>No Lorebooks Created</Text>
+                <Text style={styles.emptyTitle}>{t('studio.noLorebooks')}</Text>
                 <Text style={styles.emptyDesc}>
-                  Lorebooks inject worldbuilding lore, character history, and specific rules dynamically when matching keywords appear in chat.
+                  {t('studio.codexSub')}
                 </Text>
                 <TouchableOpacity
                   style={[styles.createButton, { marginTop: 12 }]}
                   onPress={handleOpenCreateLorebook}
                 >
-                  <Text style={styles.createButtonText}>Create First Lorebook</Text>
+                  <Text style={styles.createButtonText}>{t('studio.createFirstLorebook')}</Text>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -882,7 +946,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
             <View style={styles.modalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Download size={18} color={palette.accent} />
-                <Text style={styles.modalTitle}>Import Character Card</Text>
+                <Text style={styles.modalTitle}>{t('studio.importModalTitle')}</Text>
               </View>
               <TouchableOpacity onPress={() => setImportModalVisible(false)}>
                 <X size={20} color="#FFFFFF" />
@@ -914,7 +978,27 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
 
               {importMode === 'text' ? (
                 <View style={{ marginTop: 16 }}>
-                  <Text style={styles.fieldLabel}>Card JSON or W++ Prompt Text</Text>
+                  <TouchableOpacity
+                    style={[
+                      styles.saveSubmitBtn,
+                      {
+                        marginBottom: 14,
+                        backgroundColor: `rgba(${palette.accentRgb}, 0.14)`,
+                        borderWidth: 1,
+                        borderColor: `rgba(${palette.accentRgb}, 0.45)`,
+                      },
+                    ]}
+                    onPress={handlePickCharacterFile}
+                    disabled={importLoading}
+                    activeOpacity={0.8}
+                  >
+                    <Upload size={16} color={palette.accent} style={{ marginRight: 8 }} />
+                    <Text style={[styles.saveSubmitBtnText, { color: palette.accent }]}>
+                      {t('studio.uploadFileBtn')}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <Text style={styles.fieldLabel}>{t('studio.orPaste')}</Text>
                   <TextInput
                     style={[styles.textInput, { height: 160, textAlignVertical: 'top' }]}
                     placeholder={`Paste Character Card JSON (V1, V2, V3, Tavern, Warden) or manual W++ text:\n\nName: Luna\nPersonality: Playful and energetic...\nScenario: Lost in the cyber city...\nFirst Message: "Hey there! Need a hand?"`}
@@ -964,7 +1048,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                   <>
                     <Download size={16} color="#000000" style={{ marginRight: 6 }} />
                     <Text style={[styles.saveSubmitBtnText, { color: '#000000' }]}>
-                      Parse & Load into Studio
+                      {t('studio.parseLoad')}
                     </Text>
                   </>
                 )}
@@ -980,7 +1064,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
       >
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
-                {editingCharId ? 'Edit Character Card' : 'Create New Character'}
+                {editingCharId ? 'Edit Character Card' : t('studio.charModalNew')}
               </Text>
               <TouchableOpacity onPress={() => setCharModalVisible(false)}>
                 <X size={20} color="#FFFFFF" />
@@ -992,14 +1076,14 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
               <View style={styles.uploadRow}>
                 <Image source={{ uri: charAvatar || ANIME_DEFAULT_FALLBACK }} style={styles.uploadPreview} />
                 <View style={{ flex: 1, marginLeft: 14 }}>
-                  <Text style={styles.fieldLabel}>Character Avatar</Text>
+                  <Text style={styles.fieldLabel}>{t('studio.charAvatar')}</Text>
                   <TouchableOpacity
                     style={styles.uploadButton}
                     onPress={() => handleTriggerUpload('char')}
                   >
                     <Upload size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
                     <Text style={styles.uploadButtonText}>
-                      {isUploading ? 'Compressing...' : 'Upload Image'}
+                      {isUploading ? 'Compressing...' : t('studio.uploadImage')}
                     </Text>
                   </TouchableOpacity>
                   <TextInput
@@ -1013,7 +1097,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
               </View>
 
               {/* Name */}
-              <Text style={styles.fieldLabel}>Character Name *</Text>
+              <Text style={styles.fieldLabel}>{t('studio.charName')}</Text>
               <TextInput
                 style={styles.textInput}
                 placeholder="e.g. Kuroha Raven"
@@ -1023,7 +1107,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
               />
 
               {/* Tagline */}
-              <Text style={styles.fieldLabel}>Tagline / Title</Text>
+              <Text style={styles.fieldLabel}>{t('studio.tagline')}</Text>
               <TextInput
                 style={styles.textInput}
                 placeholder="e.g. The Reserved Senior with a Secret Warmth"
@@ -1033,7 +1117,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
               />
 
               {/* Scenario */}
-              <Text style={styles.fieldLabel}>Scenario & Initial Context</Text>
+              <Text style={styles.fieldLabel}>{t('studio.scenario')}</Text>
               <TextInput
                 style={[styles.textInput, styles.textArea]}
                 placeholder="Describe where and when you encounter this companion..."
@@ -1045,7 +1129,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
               />
 
               {/* Personality */}
-              <Text style={styles.fieldLabel}>Personality & Behavioral Traits</Text>
+              <Text style={styles.fieldLabel}>{t('studio.personality')}</Text>
               <TextInput
                 style={[styles.textInput, styles.textArea]}
                 placeholder="e.g. Tsundere, protective, sarcastic, soft when alone with user..."
@@ -1057,7 +1141,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
               />
 
               {/* First Message */}
-              <Text style={styles.fieldLabel}>First Greeting Message</Text>
+              <Text style={styles.fieldLabel}>{t('studio.firstMsg')}</Text>
               <TextInput
                 style={[styles.textInput, styles.textArea]}
                 placeholder="*He looks at you quietly.* 'Took you long enough.'"
@@ -1069,7 +1153,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
               />
 
               {/* Tags */}
-              <Text style={styles.fieldLabel}>Tags (comma-separated)</Text>
+              <Text style={styles.fieldLabel}>{t('studio.tagsLabel')}</Text>
               <TextInput
                 style={styles.textInput}
                 placeholder="Anime, Romance, Fantasy, Tsundere"
@@ -1351,25 +1435,24 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                 <View style={{ flexDirection: 'row', gap: 6 }}>
                   <TouchableOpacity
                     style={[styles.addMiniBtn, { backgroundColor: `rgba(${palette.accentRgb}, 0.12)`, borderColor: `rgba(${palette.accentRgb}, 0.4)` }]}
-                    onPress={() => {
-                      if (Platform.OS === 'web' && typeof document !== 'undefined') {
-                        const input = document.createElement('input');
-                        input.type = 'file';
-                        input.accept = '.json,application/json';
-                        input.onchange = (e: any) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          const reader = new FileReader();
-                          reader.onload = (re: any) => {
-                            handleImportLorebookJson(re.target.result);
-                          };
-                          reader.readAsText(file);
-                        };
-                        input.click();
-                      } else {
-                        const promptJson = prompt('Paste JanitorAI or SillyTavern Lorebook JSON:');
-                        if (promptJson) handleImportLorebookJson(promptJson);
-                      }
+                    onPress={async () => {
+                      try {
+                        const picked = await DocumentPicker.getDocumentAsync({
+                          type: ['application/json', '*/*'],
+                          copyToCacheDirectory: true,
+                        });
+                        if (picked.canceled || !picked.assets?.[0]) return;
+                        const file = picked.assets[0];
+                        let content = '';
+                        if (Platform.OS === 'web' && (file as any).file) {
+                          content = await (file as any).file.text();
+                        } else if (file.uri) {
+                          content = await FileSystem.readAsStringAsync(file.uri, {
+                            encoding: FileSystem.EncodingType.UTF8,
+                          });
+                        }
+                        if (content) handleImportLorebookJson(content);
+                      } catch {}
                     }}
                     activeOpacity={0.8}
                     accessibilityLabel="Import JanitorAI or SillyTavern Lorebook JSON"

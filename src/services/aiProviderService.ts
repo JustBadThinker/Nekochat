@@ -8,6 +8,8 @@ import { Platform } from 'react-native';
 import { fetch as expoFetch } from 'expo/fetch';
 import { Character, CharacterScenario, ChatMessage, Lorebook, Persona, ProviderConfig } from '../types';
 import { isOocMessage, cleanOocContent, estimateTokens } from './tokenOptimizerService';
+import { storageService } from './storageService';
+import { getDefaultLanguagePrompt } from '../i18n/translations';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Provider Routing — single source of truth used by EVERY AI feature
@@ -795,6 +797,16 @@ export const aiProviderService = {
       sections.push(`[USER SYSTEM PROMPT]\n${applyMacros(config.customPrompt.trim(), chatCharName, userName)}`);
     }
 
+    try {
+      const appSettings = await storageService.getSettings();
+      if (appSettings?.autoLanguagePrompt) {
+        const langPrompt =
+          (appSettings.languageCustomPrompt || '').trim() ||
+          getDefaultLanguagePrompt(appSettings.uiLanguage || 'en');
+        sections.push(`[LANGUAGE DIRECTIVE]\n${applyMacros(langPrompt, chatCharName, userName)}`);
+      }
+    } catch {}
+
     if (options?.isContinue) {
       sections.push(
         `[DIRECTIVE: SCENE CONTINUATION]\n` +
@@ -840,27 +852,91 @@ export const aiProviderService = {
           throw new Error('Google Gemini API Key is missing. Please set your key or switch to your Custom Endpoint in Settings → AI Engine.');
         }
 
-        const ai = new GoogleGenAI({ apiKey: route.apiKey });
         const contents = toGeminiContents(turns);
-
-        const responseStream = await ai.models.generateContentStream({
-          model: route.model,
+        const generationConfig: Record<string, any> = {
+          temperature: typeof config.temperature === 'number' ? config.temperature : 0.85,
+          topP: typeof config.topP === 'number' ? config.topP : 0.95,
+          ...(maxOutputTokens > 0 ? { maxOutputTokens } : {}),
+        };
+        const geminiBody = JSON.stringify({
+          systemInstruction: { parts: [{ text: systemInstruction }] },
           contents,
-          config: {
-            systemInstruction,
-            temperature: typeof config.temperature === 'number' ? config.temperature : 0.85,
-            topP: typeof config.topP === 'number' ? config.topP : 0.95,
-            ...(maxOutputTokens > 0 ? { maxOutputTokens } : {}),
-          },
+          generationConfig,
         });
 
+        const modelName = encodeURIComponent(route.model || 'gemini-2.5-flash');
+        const sseUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:streamGenerateContent?alt=sse&key=${encodeURIComponent(route.apiKey)}`;
+        const response = await platformFetch(sseUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'text/event-stream',
+          },
+          body: geminiBody,
+          signal,
+        });
+
+        if (!response.ok) {
+          const errText = await response.text().catch(() => '');
+          throw new Error(`Gemini API HTTP ${response.status}: ${errText.slice(0, 220)}`);
+        }
+
         let fullText = '';
-        for await (const chunk of responseStream) {
-          if (signal.aborted) break;
-          const text = chunk.text || '';
-          if (text) {
-            fullText += text;
-            callbacks.onChunk(text);
+        if (response.body && typeof response.body.getReader === 'function') {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder('utf-8');
+          let buffer = '';
+
+          while (true) {
+            if (signal.aborted) break;
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith('data:')) continue;
+              const dataStr = trimmed.slice(5).trim();
+              if (!dataStr || dataStr === '[DONE]') continue;
+              try {
+                const parsed = JSON.parse(dataStr);
+                const parts = parsed?.candidates?.[0]?.content?.parts || [];
+                let chunkText = '';
+                for (const p of parts) {
+                  if (p?.text) {
+                    chunkText += p.thought ? `<think>${p.text}</think>` : p.text;
+                  }
+                }
+                if (chunkText) {
+                  fullText += chunkText;
+                  callbacks.onChunk(chunkText);
+                }
+              } catch {}
+            }
+          }
+        } else {
+          // Non-streaming fallback if runtime has no ReadableStream
+          const nonStreamUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(route.apiKey)}`;
+          const fallbackRes = await platformFetch(nonStreamUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: geminiBody,
+            signal,
+          });
+          if (!fallbackRes.ok) {
+            const errText = await fallbackRes.text().catch(() => '');
+            throw new Error(`Gemini API HTTP ${fallbackRes.status}: ${errText.slice(0, 220)}`);
+          }
+          const json = await fallbackRes.json();
+          const parts = json?.candidates?.[0]?.content?.parts || [];
+          for (const p of parts) {
+            if (p?.text) {
+              const t = p.thought ? `<think>${p.text}</think>` : p.text;
+              fullText += t;
+              callbacks.onChunk(t);
+            }
           }
         }
 

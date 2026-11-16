@@ -52,6 +52,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   showTokenCounter: true,
   currency: 'IDR',
   language: 'en-US',
+  uiLanguage: 'en',
+  autoLanguagePrompt: false,
+  languageCustomPrompt: '',
 };
 
 const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
@@ -219,6 +222,13 @@ export const storageService = {
     char.isFavorite = !char.isFavorite;
     await this.saveCharacters(list);
     return !!char.isFavorite;
+  },
+
+  async deleteCharacter(characterId: string): Promise<void> {
+    const list = await this.getCharacters();
+    await this.saveCharacters(list.filter(c => c.id !== characterId));
+    const convs = await this.getConversations();
+    await this.saveConversations(convs.filter(c => c.characterId !== characterId));
   },
 
   // ═══════════════════════════════════════════════════════════════════════

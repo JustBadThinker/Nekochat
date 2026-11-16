@@ -101,7 +101,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish, isReady = 
           },
         ]}
       >
-        v0.1.0-alpha • Powered by Warden Core
+        v0.1.6-beta • Powered by Warden Core
       </Text>
 
       <View style={styles.loaderBarContainer}>

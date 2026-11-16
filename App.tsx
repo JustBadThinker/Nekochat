@@ -11,6 +11,7 @@ import { BlurTargetView } from 'expo-blur';
 import { Character, Persona, ProviderConfig, AppSettings } from './src/types';
 import { colors, applyThemePalette, getThemePalette } from './src/theme/colors';
 import { ThemeProvider } from './src/theme/ThemeContext';
+import { LanguageProvider } from './src/i18n/LanguageContext';
 import { storageService } from './src/services/storageService';
 import { characterService } from './src/services/characterService';
 import { communityCatalogService } from './src/services/communityCatalogService';
@@ -182,6 +183,12 @@ export default function App() {
     setCharacters(updated);
   };
 
+  const handleDeleteCharacter = async (characterId: string) => {
+    await storageService.deleteCharacter(characterId);
+    const updated = await storageService.getCharacters();
+    setCharacters(updated);
+  };
+
   const handleStartChat = async (character: any, detail?: any, conversationId?: string) => {
     let resolvedDetail = detail;
     const rawFirst = String(detail?.firstMessage || character.firstMessage || '').trim();
@@ -285,6 +292,7 @@ export default function App() {
     return (
       <SafeAreaProvider>
       <ThemeProvider themeId={currentTheme}>
+      <LanguageProvider language={settings?.uiLanguage || 'en'}>
       <View style={[styles.webFrame, { backgroundColor: webFrameBg }]}>
         <Animated.View
           style={[
@@ -321,6 +329,7 @@ export default function App() {
           />
         </Animated.View>
       </View>
+      </LanguageProvider>
       </ThemeProvider>
       </SafeAreaProvider>
     );
@@ -329,6 +338,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
     <ThemeProvider themeId={currentTheme}>
+    <LanguageProvider language={settings?.uiLanguage || 'en'}>
     <View style={[styles.webFrame, { backgroundColor: webFrameBg }]}>
       <SafeAreaView
         edges={['top', 'left', 'right']}
@@ -377,6 +387,7 @@ export default function App() {
                 userPersona={activePersona}
                 onSelectCharacter={handleStartChat}
                 onToggleFavorite={handleToggleFavorite}
+                onDeleteCharacter={handleDeleteCharacter}
                 onNavigateDiscover={() => handleTabChange('discover')}
                 onNavigateStudio={() => handleTabChange('studio')}
               />
@@ -421,6 +432,7 @@ export default function App() {
         )}
       </SafeAreaView>
     </View>
+    </LanguageProvider>
     </ThemeProvider>
     </SafeAreaProvider>
   );
