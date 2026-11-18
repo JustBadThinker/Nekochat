@@ -2,7 +2,7 @@
 
 # 🐾 NekoChat `(Beta)`
 
-### **Your AI Roleplay World — 100% Local, Pure BYOK, Zero Login.**
+### **Your AI Roleplay World**
 
 *An open-source mobile-first roleplay chat client built with Expo, React Native, and TypeScript.*  
 *No accounts. No remote database. Your chats, memories, character cards, and API keys never leave your device.*
