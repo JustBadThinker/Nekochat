@@ -71,6 +71,7 @@ import {
   Cpu,
   Coins,
   Bookmark,
+  GitBranch,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { compressImageFile } from '../utils/imageUtils';
@@ -91,6 +92,7 @@ import { imageGenService, IMAGE_STYLE_OPTIONS, ImageStylePreset } from '../servi
 import { ttsService, TtsPlaybackState } from '../services/ttsService';
 import { aiProviderService, extractCleanCharacterName } from '../services/aiProviderService';
 import { storageService } from '../services/storageService';
+import { getSqliteConversationRepository, resolveBranchCheckpointState } from '../services/sqliteDatabase';
 import { calculateCost, estimateTokens } from '../services/tokenOptimizerService';
 import { tokenPriceService } from '../services/tokenPriceService';
 import { NekoPulseLoader } from '../components/NekoPulseLoader';
@@ -341,17 +343,73 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     } catch {}
   };
 
-  const loadChatMemoryAndSettings = async () => {
-    try {
-      const savedMemory = await AsyncStorage.getItem(`@nekochat:chat_memory_${character.id}`);
-      if (savedMemory) {
-        const hasContent = savedMemory.replace(/<memory>|<\/memory>/gi, '').trim().length > 0;
-        setChatMemory(hasContent ? savedMemory : '');
-      }
+  const getSessionMemoryKey = (convId: string) => `@nekochat:chat_memory_${convId}`;
+  const getSessionCheckpointKey = (convId: string) => `@nekochat:chat_checkpoint_idx_${convId}`;
 
-      const savedLastIdx = await AsyncStorage.getItem(`@nekochat:chat_checkpoint_idx_${character.id}`);
-      if (savedLastIdx !== null) {
-        setLastCheckpointIndex(parseInt(savedLastIdx, 10));
+  const persistSessionMemory = async (convId: string | null, memText: string, checkpointIdx?: number) => {
+    if (!convId) return;
+    await AsyncStorage.setItem(getSessionMemoryKey(convId), memText);
+    if (typeof checkpointIdx === 'number') {
+      await AsyncStorage.setItem(getSessionCheckpointKey(convId), String(checkpointIdx));
+    }
+  };
+
+  const loadChatMemoryAndSettings = async (targetConvId?: string | null) => {
+    try {
+      const convId = targetConvId ?? activeConversationId;
+      if (convId) {
+        let savedMemory = await AsyncStorage.getItem(getSessionMemoryKey(convId));
+        let savedLastIdx = await AsyncStorage.getItem(getSessionCheckpointKey(convId));
+
+        // Conservative one-time check for legacy character-scoped memory
+        if (savedMemory === null) {
+          const legacyMemoryKey = `@nekochat:chat_memory_${character.id}`;
+          const legacyIdxKey = `@nekochat:chat_checkpoint_idx_${character.id}`;
+          const legacyMem = await AsyncStorage.getItem(legacyMemoryKey);
+
+          if (legacyMem && legacyMem.replace(/<memory>|<\/memory>/gi, '').trim().length > 0) {
+            const charConvs = await storageService.getConversationsForCharacter(character.id);
+            if (charConvs.length <= 1) {
+              // Unambiguous: migrate legacy memory to this single session
+              savedMemory = legacyMem;
+              await AsyncStorage.setItem(getSessionMemoryKey(convId), legacyMem);
+              await AsyncStorage.removeItem(legacyMemoryKey);
+
+              const legacyIdx = await AsyncStorage.getItem(legacyIdxKey);
+              if (legacyIdx !== null) {
+                const parsedIdx = parseInt(legacyIdx, 10);
+                const msgLen = charConvs[0]?.messages?.length ?? 0;
+                if (!isNaN(parsedIdx) && parsedIdx >= 0 && parsedIdx < msgLen) {
+                  savedLastIdx = String(parsedIdx);
+                  await AsyncStorage.setItem(getSessionCheckpointKey(convId), savedLastIdx);
+                }
+                await AsyncStorage.removeItem(legacyIdxKey);
+              }
+            } else {
+              // Ambiguous across multiple sessions: preserve in non-injected legacy key without contaminating sessions
+              await AsyncStorage.setItem(`@nekochat:legacy_ambiguous_memory_${character.id}`, legacyMem);
+              await AsyncStorage.removeItem(legacyMemoryKey);
+              await AsyncStorage.removeItem(legacyIdxKey);
+            }
+          }
+        }
+
+        if (savedMemory) {
+          const hasContent = savedMemory.replace(/<memory>|<\/memory>/gi, '').trim().length > 0;
+          setChatMemory(hasContent ? savedMemory : '');
+        } else {
+          setChatMemory('');
+        }
+
+        if (savedLastIdx !== null) {
+          const parsed = parseInt(savedLastIdx, 10);
+          setLastCheckpointIndex(isNaN(parsed) ? -1 : parsed);
+        } else {
+          setLastCheckpointIndex(-1);
+        }
+      } else {
+        setChatMemory('');
+        setLastCheckpointIndex(-1);
       }
 
       const savedModel = await AsyncStorage.getItem(`@nekochat:chat_model_${character.id}`);
@@ -406,8 +464,8 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 
   useEffect(() => {
     loadPersonas();
-    loadChatMemoryAndSettings();
-  }, [character.id, persona?.id]);
+    loadChatMemoryAndSettings(activeConversationId);
+  }, [character.id, persona?.id, activeConversationId]);
 
   const hasValidMemory = (mem: string) => {
     return mem.replace(/<memory>|<\/memory>/gi, '').trim().length > 0;
@@ -467,8 +525,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       const newLastIdx = messages.length - 1;
       setLastCheckpointIndex(newLastIdx);
 
-      await AsyncStorage.setItem(`@nekochat:chat_memory_${character.id}`, updated);
-      await AsyncStorage.setItem(`@nekochat:chat_checkpoint_idx_${character.id}`, String(newLastIdx));
+      await persistSessionMemory(activeConversationId, updated, newLastIdx);
 
       setMemoryNoticeText(
         isFirstRun
@@ -510,8 +567,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       const newLastIdx = messages.length - 1;
       setLastCheckpointIndex(newLastIdx);
 
-      await AsyncStorage.setItem(`@nekochat:chat_memory_${character.id}`, masterCheckpoint);
-      await AsyncStorage.setItem(`@nekochat:chat_checkpoint_idx_${character.id}`, String(newLastIdx));
+      await persistSessionMemory(activeConversationId, masterCheckpoint, newLastIdx);
 
       setMemoryNoticeText(`✓ Master Checkpoint synthesized from start to finish!`);
     } catch (err: any) {
@@ -531,7 +587,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     if (!chatMemory.includes(cleanBlock)) {
       const updated = chatMemory.trim() ? `${chatMemory.trim()}\n\n${cleanBlock}` : cleanBlock;
       setChatMemory(updated);
-      await AsyncStorage.setItem(`@nekochat:chat_memory_${character.id}`, updated);
+      await persistSessionMemory(activeConversationId, updated);
     }
     setMemorySavedNotice(true);
     setTimeout(() => setMemorySavedNotice(false), 2000);
@@ -599,9 +655,10 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     return fullHistory;
   };
 
+  // Note: Session memory is injected once via aiProviderService.streamChat(..., { memory: chatMemory }),
+  // never duplicated into effectiveChar.scenario here.
   const buildExtraContext = () =>
     [
-      chatMemory.trim() ? `[Permanent Roleplay Memory Notes: ${chatMemory.trim()}]` : '',
       customPrompt.trim() ? `[Custom Chat Rules & Prompt: ${customPrompt.trim()}]` : '',
       responseLength === 'shorter'
         ? '[Response Length: Keep replies concise and shorter (1-2 focused paragraphs).]'
@@ -625,11 +682,15 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         : baseCfg.model || baseCfg.defaultModel || 'gpt-4o-mini';
     const rawTokens = chatMaxTokens === 0 ? 0 : (chatMaxTokens ?? baseCfg.maxTokens ?? 4096);
     const effectiveTokens = responseLength === 'shorter' ? (rawTokens > 0 ? Math.min(rawTokens, 600) : 600) : rawTokens;
+    const isPerChatOverride =
+      responseLength === 'shorter' ||
+      (typeof chatMaxTokens === 'number' && chatMaxTokens !== (baseCfg.maxTokens ?? 4096));
     return {
       ...baseCfg,
       model: effectiveModel,
       temperature: chatTemperature ?? baseCfg.temperature,
       maxTokens: effectiveTokens,
+      userConfiguredMaxTokens: isPerChatOverride ? true : baseCfg.userConfiguredMaxTokens,
     };
   };
 
@@ -881,29 +942,6 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 
   const handleCycleGreeting = () => handleStepGreeting(1);
 
-  // --- Branch from Here (Timeline Forking) ---
-  const handleBranchFromMessage = async (msgIndex: number) => {
-    if (isStreaming || msgIndex < 0 || msgIndex >= messages.length) return;
-    setSelectedMessageId(null);
-    const branchedMessages = messages.slice(0, msgIndex + 1).map(m => ({ ...m }));
-    const newConv = await storageService.createConversation(
-      character,
-      persona.id,
-      config.id || 'prov_gemini',
-      activeScenarioId || undefined,
-      `Branch @ turn ${msgIndex + 1}`
-    );
-    const branchedConv: Conversation = {
-      ...newConv,
-      messages: branchedMessages,
-      customPrompt: customPrompt || newConv.customPrompt,
-    };
-    await storageService.updateConversation(branchedConv);
-    setConversations(prev => [branchedConv, ...prev]);
-    setActiveConversationId(branchedConv.id);
-    setMessages(branchedMessages);
-  };
-
   // --- Non-Destructive Reply Alternatives (< 1 / N >) ---
   const handleSwipeAlternative = async (dir: -1 | 1) => {
     if (isStreaming || messages.length === 0) return;
@@ -1093,6 +1131,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         },
       },
       {
+        conversationId: activeConversationId || undefined,
         scenario: currentScenario,
         lorebooks,
         memory: chatMemory,
@@ -1110,6 +1149,63 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     setTimeout(() => setCopiedId(null), 1800);
   };
 
+  const invalidateSessionMemoriesForTurn = async (
+    affectedIds: string[],
+    minAffectedIdx: number,
+    action: 'edit' | 'delete' | 'regenerate'
+  ) => {
+    if (!activeConversationId) return;
+    if (lastCheckpointIndex >= minAffectedIdx && minAffectedIdx >= 0) {
+      const nextIdx = Math.max(-1, minAffectedIdx - 1);
+      setLastCheckpointIndex(nextIdx);
+      await AsyncStorage.setItem(getSessionCheckpointKey(activeConversationId), String(nextIdx)).catch(() => {});
+    }
+    try {
+      const repo = await getSqliteConversationRepository();
+      if (repo) {
+        for (const msgId of affectedIds) {
+          await repo.invalidateMemoriesForMessage({
+            conversationId: activeConversationId,
+            characterId: character.id,
+            messageId: msgId,
+            action,
+          });
+        }
+      }
+    } catch {}
+  };
+
+  const handlePinMessageToMemory = async (msg: ChatMessage) => {
+    setSelectedMessageId(null);
+    const clean = stripThinkTags(msg.content || '').replace(/\s+/g, ' ').trim().slice(0, 260);
+    if (!clean) return;
+
+    if (activeConversationId) {
+      try {
+        const repo = await getSqliteConversationRepository();
+        if (repo) {
+          await repo.addSessionMemory({
+            conversationId: activeConversationId,
+            characterId: character.id,
+            memoryType: 'pinned',
+            content: clean,
+            isPinned: true,
+            sourceMessageIds: [msg.id],
+          });
+        }
+      } catch {}
+    }
+
+    const pinLine = `[Pinned] ${clean}`;
+    if (!chatMemory.includes(pinLine)) {
+      const updated = chatMemory.trim() ? `${chatMemory.trim()}\n${pinLine}` : pinLine;
+      setChatMemory(updated);
+      await persistSessionMemory(activeConversationId, updated);
+    }
+    setMemoryNoticeText('✓ Pinned to this session memory');
+    setTimeout(() => setMemoryNoticeText(''), 2200);
+  };
+
   /**
    * Cascading Delete:
    * Deleting a message automatically deletes it AND all messages below it in the thread.
@@ -1117,9 +1213,58 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const handleDeleteMessage = async (msgId: string) => {
     setSelectedMessageId(null);
     const targetIdx = messages.findIndex(m => m.id === msgId);
+    const removedIds = targetIdx >= 0 ? messages.slice(targetIdx).map(m => m.id) : [msgId];
     const updated = targetIdx >= 0 ? messages.slice(0, targetIdx) : messages.filter(m => m.id !== msgId);
     setMessages(updated);
     await persistMessagesList(updated);
+    await invalidateSessionMemoriesForTurn(removedIds, targetIdx >= 0 ? targetIdx : messages.length - 1, 'delete');
+  };
+
+  /**
+   * Native SQLite-only atomic conversation branching up to `msg` (inclusive).
+   * Excludes future turns, unattributed/future memories, and future checkpoints.
+   */
+  const handleBranchFromMessage = async (msg: ChatMessage) => {
+    setSelectedMessageId(null);
+    if (isStreaming || Platform.OS === 'web' || !activeConversationId) return;
+
+    const targetIdx = messages.findIndex(m => m.id === msg.id);
+    if (targetIdx < 0) return;
+
+    const branched = await storageService.branchConversation({
+      sourceConversationId: activeConversationId,
+      characterId: character.id,
+      branchMessageId: msg.id,
+      title: `Branch · Turn ${targetIdx + 1}`,
+    });
+    if (!branched) return;
+
+    const checkpointState = resolveBranchCheckpointState({
+      chatMemory,
+      lastCheckpointIndex,
+      branchTurnIndex: branched.branchTurnIndex,
+      sourceMessageCount: branched.sourceMessageCount,
+    });
+
+    await persistSessionMemory(
+      branched.conversation.id,
+      checkpointState.chatMemory,
+      checkpointState.lastCheckpointIndex
+    );
+
+    const updatedConvs = await storageService.getConversationsForCharacter(character.id);
+    setConversations(updatedConvs);
+    setActiveConversationId(branched.conversation.id);
+    setMessages(branched.conversation.messages);
+    setChatMemory(checkpointState.chatMemory);
+    setLastCheckpointIndex(checkpointState.lastCheckpointIndex);
+
+    setMemoryNoticeText(
+      checkpointState.excludedFutureCheckpoint || branched.excludedMemoriesCount > 0
+        ? `✓ Branched at Turn #${targetIdx + 1} (future memories/checkpoints excluded)`
+        : `✓ Branched cleanly at Turn #${targetIdx + 1}`
+    );
+    setTimeout(() => setMemoryNoticeText(''), 3000);
   };
 
   const handleStartEdit = (msg: ChatMessage) => {
@@ -1132,6 +1277,9 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     if (!editingMessageId || !editText.trim()) return;
     const targetIdx = messages.findIndex(m => m.id === editingMessageId);
     if (targetIdx < 0) return;
+    const affectedIds = regenerateAfter
+      ? messages.slice(targetIdx).map(m => m.id)
+      : [messages[targetIdx].id];
 
     if (regenerateAfter) {
       if (isStreaming) {
@@ -1145,6 +1293,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       updated[targetIdx] = { ...updated[targetIdx], content: editText.trim() };
       setMessages(updated);
       await persistMessagesList(updated);
+      await invalidateSessionMemoriesForTurn(affectedIds, targetIdx, 'regenerate');
       await handleRegenerate(targetIdx, editText.trim());
     } else {
       const updated = [...messages];
@@ -1152,6 +1301,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       setMessages(updated);
       setEditingMessageId(null);
       await persistMessagesList(updated);
+      await invalidateSessionMemoriesForTurn(affectedIds, targetIdx, 'edit');
     }
   };
 
@@ -1194,11 +1344,15 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     }
 
     if (trimmed.length === 0) return;
+    const removedIds = messages.slice(trimmed.length).map(m => m.id);
     const lastTurn = trimmed[trimmed.length - 1];
     const promptText = lastTurn.role === 'user' ? lastTurn.content : '[Continue the opening scene in character.]';
 
     setMessages(trimmed);
     await persistMessagesList(trimmed);
+    if (removedIds.length > 0) {
+      await invalidateSessionMemoriesForTurn(removedIds, trimmed.length, 'regenerate');
+    }
     await triggerAiStream(trimmed, promptText);
   };
 
@@ -1267,6 +1421,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         },
       },
       {
+        conversationId: activeConversationId || undefined,
         scenario: currentScenario,
         lorebooks,
         isContinue: true,
@@ -2110,10 +2265,12 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         {copiedId === msg.id ? 'Copied!' : 'Copy'}
                       </Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleBranchFromMessage(idx)}>
-                      <Layers size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                      <Text style={styles.bubbleActionText}>Branch</Text>
-                    </TouchableOpacity>
+                    {Platform.OS !== 'web' && Boolean(activeConversationId) && (
+                      <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleBranchFromMessage(msg)}>
+                        <GitBranch size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                        <Text style={styles.bubbleActionText}>Branch</Text>
+                      </TouchableOpacity>
+                    )}
                     {isUser ? (
                       <>
                         <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleStartEdit(msg)}>
@@ -2155,6 +2312,10 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         )}
                       </>
                     )}
+                    <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handlePinMessageToMemory(msg)}>
+                      <Bookmark size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                      <Text style={[styles.bubbleActionText, { color: palette.accent }]}>Pin</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleDeleteMessage(msg.id)}>
                       <Trash2 size={13} color="#FF6B6B" style={{ marginRight: 4 }} />
                       <Text style={[styles.bubbleActionText, { color: '#FF6B6B' }]}>Delete</Text>
@@ -2296,10 +2457,12 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         {copiedId === msg.id ? 'Copied!' : 'Copy'}
                       </Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleBranchFromMessage(idx)}>
-                      <Layers size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                      <Text style={styles.bubbleActionText}>Branch</Text>
-                    </TouchableOpacity>
+                    {Platform.OS !== 'web' && Boolean(activeConversationId) && (
+                      <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleBranchFromMessage(msg)}>
+                        <GitBranch size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                        <Text style={styles.bubbleActionText}>Branch</Text>
+                      </TouchableOpacity>
+                    )}
                     {isUser ? (
                       <>
                         <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleStartEdit(msg)}>
@@ -2341,6 +2504,10 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         )}
                       </>
                     )}
+                    <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handlePinMessageToMemory(msg)}>
+                      <Bookmark size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                      <Text style={[styles.bubbleActionText, { color: palette.accent }]}>Pin</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleDeleteMessage(msg.id)}>
                       <Trash2 size={13} color="#FF6B6B" style={{ marginRight: 4 }} />
                       <Text style={[styles.bubbleActionText, { color: '#FF6B6B' }]}>Delete</Text>
@@ -2830,10 +2997,10 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                       activeOpacity={0.8}
                     >
                       <Text style={[styles.sessionTitle, isActive && { color: colors.lime }]}>
-                        {conv.scenarioTitle || `Session #${conversations.length - idx}`}
+                        {conv.parentConversationId ? `↳ ${conv.title || conv.scenarioTitle || 'Branch'}` : (conv.scenarioTitle || `Session #${conversations.length - idx}`)}
                       </Text>
                       <Text style={styles.sessionMeta}>
-                        {conv.messages?.length || 0} messages • {new Date(conv.updatedAt).toLocaleDateString()}
+                        {conv.parentConversationId ? 'Branched timeline • ' : ''}{conv.messages?.length || 0} messages • {new Date(conv.updatedAt).toLocaleDateString()}
                       </Text>
                     </TouchableOpacity>
 
@@ -3330,7 +3497,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                       value={chatMemory}
                       onChangeText={text => {
                         setChatMemory(text);
-                        AsyncStorage.setItem(`@nekochat:chat_memory_${character.id}`, text);
+                        persistSessionMemory(activeConversationId, text);
                       }}
                       placeholder="Write or auto-generate key plot points, character states, and relationship notes..."
                       placeholderTextColor="rgba(255, 255, 255, 0.35)"
@@ -3610,19 +3777,81 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                           </View>
                         </View>
                         <SmoothSlider
-                          value={chatMaxTokens}
+                          value={Math.min(chatMaxTokens, 32768)}
                           min={0}
-                          max={15000}
-                          step={250}
+                          max={32768}
+                          step={256}
                           onValueChange={val => {
                             setChatMaxTokens(val);
                             persistChatSettings({ maxTokens: val });
                           }}
                           minLabel="0 Unlimited"
-                          maxLabel="15000"
+                          maxLabel="32K+"
+                        />
+                        <View style={{ flexDirection: 'row', gap: 6, marginTop: 8, marginBottom: 8 }}>
+                          {[
+                            { val: 0, label: 'Unlimited' },
+                            { val: 1024, label: '1K' },
+                            { val: 4096, label: '4K' },
+                            { val: 8192, label: '8K' },
+                            { val: 15000, label: '15K' },
+                          ].map(preset => (
+                            <TouchableOpacity
+                              key={preset.val}
+                              onPress={() => {
+                                setChatMaxTokens(preset.val);
+                                persistChatSettings({ maxTokens: preset.val });
+                              }}
+                              style={{
+                                flex: 1,
+                                paddingVertical: 6,
+                                borderRadius: 8,
+                                alignItems: 'center',
+                                borderWidth: 1,
+                                borderColor: chatMaxTokens === preset.val ? palette.accent : 'rgba(255,255,255,0.1)',
+                                backgroundColor:
+                                  chatMaxTokens === preset.val
+                                    ? `rgba(${palette.accentRgb}, 0.14)`
+                                    : 'rgba(255,255,255,0.03)',
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  color: chatMaxTokens === preset.val ? palette.accent : '#cbd5e1',
+                                  fontSize: 11,
+                                  fontWeight: '700',
+                                }}
+                              >
+                                {preset.label}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                        <TextInput
+                          style={{
+                            backgroundColor: 'rgba(15, 23, 42, 0.7)',
+                            borderWidth: 1,
+                            borderColor: 'rgba(255,255,255,0.12)',
+                            borderRadius: 10,
+                            paddingHorizontal: 12,
+                            paddingVertical: 8,
+                            color: '#f8fafc',
+                            fontSize: 13,
+                            marginBottom: 6,
+                          }}
+                          value={String(chatMaxTokens)}
+                          onChangeText={v => {
+                            const digits = v.replace(/\D/g, '');
+                            const parsed = digits === '' ? 0 : parseInt(digits, 10);
+                            setChatMaxTokens(parsed);
+                            persistChatSettings({ maxTokens: parsed });
+                          }}
+                          keyboardType="number-pad"
+                          placeholder="Custom max tokens (0 = Unlimited)"
+                          placeholderTextColor="#64748b"
                         />
                         <Text style={styles.settingsHelperText}>
-                          Limits how long replies can be (up to 15k). 0 = Unlimited.
+                          Enter any custom limit (no 15K cap) or 0 = Unlimited (omits client-side cap; provider limits remain authoritative).
                         </Text>
 
                         <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 }}>
@@ -4367,7 +4596,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             <TouchableOpacity
               style={[styles.appearanceDoneBtn, { backgroundColor: palette.accent }]}
               onPress={() => {
-                AsyncStorage.setItem(`@nekochat:chat_memory_${character.id}`, chatMemory);
+                persistSessionMemory(activeConversationId, chatMemory);
                 setShowChatControlModal(false);
               }}
               activeOpacity={0.8}

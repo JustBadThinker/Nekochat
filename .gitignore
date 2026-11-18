@@ -38,6 +38,14 @@ yarn-error.*
 
 # generated native folders
 /ios
+
+# local uploaded character avatars
+uploads/
+
+# local XAMPP MySQL backend & login (kept local only, excluded from GitHub release)
+database/
+server/
+src/services/mysqlBackendService.ts
 /android
 
 # Internal local blueprints

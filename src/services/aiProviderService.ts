@@ -9,7 +9,24 @@ import { fetch as expoFetch } from 'expo/fetch';
 import { Character, CharacterScenario, ChatMessage, Lorebook, Persona, ProviderConfig } from '../types';
 import { isOocMessage, cleanOocContent, estimateTokens } from './tokenOptimizerService';
 import { storageService } from './storageService';
+import { getSqliteConversationRepository } from './sqliteDatabase';
 import { getDefaultLanguagePrompt } from '../i18n/translations';
+import {
+  APPLICATION_SAFETY_POLICY,
+  buildGeminiRequestBody,
+  buildOpenAiChatPayload,
+  buildTurns,
+  normalizeEndpointIdentity,
+  resolveContextBudget,
+} from './promptBudget';
+export {
+  APPLICATION_SAFETY_POLICY,
+  buildGeminiRequestBody,
+  buildOpenAiChatPayload,
+  buildTurns,
+  normalizeEndpointIdentity,
+  resolveContextBudget,
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Provider Routing — single source of truth used by EVERY AI feature
@@ -138,66 +155,6 @@ export function applyMacros(text: string, charName: string, userName: string): s
 
 export function isErrorMessage(m: ChatMessage): boolean {
   return Boolean((m as any).isError) || /^⚠️ Error/.test(m.content || '');
-}
-
-type SimpleTurn = { role: 'user' | 'assistant'; content: string };
-
-/**
- * Builds the conversation turns sent to the model:
- * - removes error bubbles / empty placeholders
- * - never duplicates the user's latest message
- * - trims the oldest turns to fit the configured context window
- */
-function buildTurns(
-  history: ChatMessage[],
-  userMessage: string,
-  opts: { isContinue?: boolean; contextLimit: number; reservedTokens: number; charName: string; userName: string }
-): SimpleTurn[] {
-  const clean: SimpleTurn[] = history
-    .filter(m => (m.role === 'user' || m.role === 'assistant') && !isErrorMessage(m))
-    .map(m => ({ role: m.role as 'user' | 'assistant', content: applyMacros(String(m.content || ''), opts.charName, opts.userName).trim() }))
-    .filter(m => m.content && m.content !== '...');
-
-  if (!opts.isContinue && userMessage.trim()) {
-    const last = clean[clean.length - 1];
-    if (!(last && last.role === 'user' && last.content === userMessage.trim())) {
-      clean.push({ role: 'user', content: userMessage.trim() });
-    }
-  }
-
-  // Fit to context window (always keep at least the last 2 turns)
-  const budget = Math.max(512, opts.contextLimit - opts.reservedTokens);
-  const kept: SimpleTurn[] = [];
-  let used = 0;
-  for (let i = clean.length - 1; i >= 0; i--) {
-    const cost = estimateTokens(clean[i].content) + 4;
-    if (kept.length >= 2 && used + cost > budget) break;
-    kept.unshift(clean[i]);
-    used += cost;
-  }
-
-  if (opts.isContinue) {
-    kept.push({ role: 'user', content: '[Continue your previous message exactly where it stopped. Do not repeat anything.]' });
-  }
-  return kept;
-}
-
-/** Gemini requires the first turn to be `user` and prefers strictly alternating roles. */
-function toGeminiContents(turns: SimpleTurn[]) {
-  const merged: { role: 'user' | 'model'; parts: { text: string }[] }[] = [];
-  for (const t of turns) {
-    const role = t.role === 'assistant' ? 'model' : 'user';
-    const prev = merged[merged.length - 1];
-    if (prev && prev.role === role) {
-      prev.parts[0].text += `\n\n${t.content}`;
-    } else {
-      merged.push({ role, parts: [{ text: t.content }] });
-    }
-  }
-  if (merged.length === 0 || merged[0].role !== 'user') {
-    merged.unshift({ role: 'user', parts: [{ text: '[Start the roleplay.]' }] });
-  }
-  return merged;
 }
 
 /** Reads an OpenAI-style SSE stream. Returns the full text. */
@@ -446,9 +403,29 @@ export const aiProviderService = {
                     id: cleanId,
                     name: m.displayName ? `${m.displayName} (${cleanId})` : cleanId,
                     contextLength: m.inputTokenLimit,
+                    maxOutputTokens: m.outputTokenLimit,
                   };
                 });
-              if (geminiList.length > 0) return geminiList;
+              if (geminiList.length > 0) {
+                if (provider.id) {
+                  const ep = normalizeEndpointIdentity(provider);
+                  const now = Date.now();
+                  const nextCache = { ...(provider.cachedModelMetadata || {}) };
+                  for (const item of geminiList) {
+                    if (item.contextLength || item.maxOutputTokens) {
+                      nextCache[item.id] = {
+                        endpointIdentity: ep,
+                        source: 'fetch_models',
+                        contextLimit: item.contextLength ? Number(item.contextLength) : undefined,
+                        maxOutputTokens: item.maxOutputTokens ? Number(item.maxOutputTokens) : undefined,
+                        fetchedAt: now,
+                      };
+                    }
+                  }
+                  storageService.upsertProvider({ ...provider, cachedModelMetadata: nextCache }).catch(() => {});
+                }
+                return geminiList;
+              }
             }
           }
         } catch {}
@@ -472,11 +449,30 @@ export const aiProviderService = {
       }
       const json = await res.json();
       const rawList = Array.isArray(json.data) ? json.data : Array.isArray(json.models) ? json.models : [];
-      return rawList.map((m: any) => ({
+      const mapped = rawList.map((m: any) => ({
         id: m.id || m.name,
         name: m.name || m.id,
         contextLength: m.context_length || m.context_window,
+        maxOutputTokens: m.top_provider?.max_completion_tokens || m.max_output_tokens,
       }));
+      if (provider.id && mapped.length > 0) {
+        const ep = normalizeEndpointIdentity(provider);
+        const now = Date.now();
+        const nextCache = { ...(provider.cachedModelMetadata || {}) };
+        for (const item of mapped) {
+          if (item.id && (item.contextLength || item.maxOutputTokens)) {
+            nextCache[item.id] = {
+              endpointIdentity: ep,
+              source: 'fetch_models',
+              contextLimit: item.contextLength ? Number(item.contextLength) : undefined,
+              maxOutputTokens: item.maxOutputTokens ? Number(item.maxOutputTokens) : undefined,
+              fetchedAt: now,
+            };
+          }
+        }
+        storageService.upsertProvider({ ...provider, cachedModelMetadata: nextCache }).catch(() => {});
+      }
+      return mapped;
     } catch (err: any) {
       throw new Error(`Failed to fetch models from ${modelsUrl}: ${err?.message || 'Network error'}`);
     }
@@ -721,6 +717,7 @@ export const aiProviderService = {
     config: ProviderConfig,
     callbacks: StreamCallbacks,
     options?: {
+      conversationId?: string;
       scenario?: CharacterScenario;
       lorebooks?: Lorebook[];
       isContinue?: boolean;
@@ -741,7 +738,8 @@ export const aiProviderService = {
     const userName = persona?.name || 'User';
 
     // Build rich instructions with {{char}} / {{user}} macro expansion
-    const sections: string[] = [];
+    // Priority 1: Application-owned safety policy (separated from character & user prompts)
+    const sections: string[] = [APPLICATION_SAFETY_POLICY];
     sections.push(
       `You are roleplaying as ${chatCharName}.\n` +
       `Identity: ${applyMacros(character.name, chatCharName, userName)} (${applyMacros(character.tagline || '', chatCharName, userName)})\n` +
@@ -771,18 +769,39 @@ export const aiProviderService = {
       }\nDescription: ${persona.description || persona.personality || ''}`
     );
 
-    // Warden AI Memory & Checkpoint Context Injection
-    if (options?.memory && options.memory.trim()) {
-      const cleanMem = options.memory.trim();
+    // Structured Per-Session State & Pinned Facts (SQLite) + Story Memory Checkpoint
+    let structuredSessionBlock = '';
+    if (options?.conversationId) {
+      try {
+        const repo = await getSqliteConversationRepository();
+        if (repo) {
+          structuredSessionBlock = await repo.formatSessionMemoriesForPrompt(
+            options.conversationId,
+            character.id,
+            350
+          );
+        }
+      } catch {}
+    }
+
+    if ((options?.memory && options.memory.trim()) || structuredSessionBlock) {
+      const cleanMem = (options?.memory || '').trim();
       const hasRealContent = cleanMem.replace(/<memory>|<\/memory>/gi, '').trim().length > 0;
+      const parts: string[] = [];
+      if (structuredSessionBlock) {
+        parts.push(`[ACTIVE SESSION STATE & PINNED FACTS]\n${structuredSessionBlock}`);
+      }
       if (hasRealContent) {
         const memBlock = cleanMem.includes('<memory>') ? cleanMem : `<memory>\n${cleanMem}\n</memory>`;
+        parts.push(memBlock);
+      }
+      if (parts.length > 0) {
         sections.push(
           `[WARDEN AI STORY MEMORY & CHECKPOINTS]\n` +
-          `${memBlock}\n` +
-          `Directives:\n` +
-          `- The <memory> block above documents immutable checkpoints, established facts, relationship state, and past milestones.\n` +
-          `- Never contradict, forget, or overwrite details recorded in the <memory> block.`
+            `${parts.join('\n\n')}\n` +
+            `Directives:\n` +
+            `- The memory block above documents established facts, relationship state, and past milestones.\n` +
+            `- Never contradict, forget, or overwrite active details recorded above.`
         );
       }
     }
@@ -854,10 +873,16 @@ export const aiProviderService = {
       );
     }
 
-    const systemInstruction = sections.join('\n\n');
-    const contextLimit = Number(config.contextLimit || config.contextWindow || 32768);
-    const maxOutputTokens = config.maxTokens === 0 ? 0 : Number(config.maxTokens || 4096);
-    const reservedTokens = estimateTokens(systemInstruction) + (maxOutputTokens > 0 ? maxOutputTokens : 4096) + 128;
+    const baseSystemInstruction = sections.join('\n\n');
+    const budget = resolveContextBudget(config);
+    const contextLimit = budget.contextLimit;
+    const maxOutputTokens = budget.maxOutputTokens;
+    const recallTokenBudget = 300;
+    const reservedTokens =
+      estimateTokens(baseSystemInstruction) +
+      recallTokenBudget +
+      budget.outputReservationTokens +
+      budget.safetyMargin;
 
     const turns = buildTurns(history, userMessage, {
       isContinue: options?.isContinue,
@@ -867,6 +892,37 @@ export const aiProviderService = {
       userName,
     });
 
+    // Phase 4: Per-session FTS5/BM25 retrieval of older messages not already in `turns`
+    if (options?.conversationId && userMessage.trim() && !options?.isContinue) {
+      try {
+        const repo = await getSqliteConversationRepository();
+        if (repo) {
+          const keptIds = turns.map(t => t.id).filter((id): id is string => Boolean(id));
+          const recalled = await repo.searchOlderMessagesForConversation({
+            conversationId: options.conversationId,
+            characterId: character.id,
+            query: userMessage,
+            excludeMessageIds: keptIds,
+            maxSnippets: 3,
+            maxTokens: recallTokenBudget,
+          });
+          if (recalled.length > 0) {
+            const lines = recalled.map(
+              r => `- [${r.role === 'assistant' ? chatCharName : userName}, Turn ${r.turnIndex + 1}]: ${r.content}`
+            );
+            sections.push(
+              `[RECALLED EARLIER IN THIS SESSION]\n` +
+                lines.join('\n')
+            );
+          }
+        }
+      } catch {
+        // Local recall failure must never block chat generation
+      }
+    }
+
+    const systemInstruction = sections.join('\n\n');
+
     const route = resolveProviderRoute(config);
 
     try {
@@ -875,17 +931,14 @@ export const aiProviderService = {
           throw new Error('Google Gemini API Key is missing. Please set your key or switch to your Custom Endpoint in Settings → AI Engine.');
         }
 
-        const contents = toGeminiContents(turns);
-        const generationConfig: Record<string, any> = {
-          temperature: typeof config.temperature === 'number' ? config.temperature : 0.85,
-          topP: typeof config.topP === 'number' ? config.topP : 0.95,
-          ...(maxOutputTokens > 0 ? { maxOutputTokens } : {}),
-        };
-        const geminiBody = JSON.stringify({
-          systemInstruction: { parts: [{ text: systemInstruction }] },
-          contents,
-          generationConfig,
-        });
+        const geminiBody = JSON.stringify(
+          buildGeminiRequestBody({
+            systemInstruction,
+            turns,
+            config,
+            maxOutputTokens,
+          })
+        );
 
         const modelName = encodeURIComponent(route.model || 'gemini-2.5-flash');
         const sseUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:streamGenerateContent?alt=sse&key=${encodeURIComponent(route.apiKey)}`;
@@ -971,11 +1024,6 @@ export const aiProviderService = {
         }
 
         const endpointUrl = buildChatCompletionsUrl(route.endpoint);
-        const messages = [
-          { role: 'system', content: systemInstruction },
-          ...turns.map(t => ({ role: t.role, content: t.content })),
-        ];
-
         const isReasoning = /r1|deepseek-r1|glm-4|qwq|thinking|reasoning/i.test(route.model);
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
@@ -985,14 +1033,14 @@ export const aiProviderService = {
           ...(config.customHeaders || {}),
         };
 
-        const payload: any = {
+        const payload: any = buildOpenAiChatPayload({
           model: route.model,
-          messages,
-          temperature: typeof config.temperature === 'number' ? config.temperature : 0.85,
-          top_p: typeof config.topP === 'number' ? config.topP : 0.95,
-          ...(maxOutputTokens > 0 ? { max_tokens: maxOutputTokens } : {}),
+          systemInstruction,
+          turns,
+          config,
+          maxOutputTokens,
           stream: true,
-        };
+        });
 
         if (typeof config.repetitionPenalty === 'number' && config.repetitionPenalty > 1.0 && route.isOpenRouter) {
           payload.repetition_penalty = config.repetitionPenalty;

@@ -10,6 +10,13 @@
 import http from 'http';
 import { URL } from 'url';
 
+let mysqlBackend = null;
+try {
+  mysqlBackend = await import('./server/mysqlBackend.mjs');
+} catch {
+  // Optional local MySQL module not present in standalone GitHub builds
+}
+
 const PORT = 3001;
 
 function cleanCreatorString(raw) {
@@ -368,7 +375,7 @@ const datacatService = new DatacatService();
 const server = http.createServer(async (req, res) => {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', '*');
   res.setHeader('Access-Control-Allow-Private-Network', 'true');
 
@@ -385,7 +392,12 @@ const server = http.createServer(async (req, res) => {
 
   if (pathname === '/' || pathname === '/health') {
     res.setHeader('Content-Type', 'application/json');
-    res.end(JSON.stringify({ status: 'ok', service: 'NekoChat Datacat Proxy', port: PORT }));
+    res.end(JSON.stringify({ status: 'ok', service: 'NekoChat Backend & Proxy', port: PORT }));
+    return;
+  }
+
+  // Optional local MySQL Auth, Character Storage & File Uploads
+  if (mysqlBackend?.handleMysqlRequest && (await mysqlBackend.handleMysqlRequest(req, res, pathname, parsedUrl.searchParams))) {
     return;
   }
 
@@ -511,6 +523,11 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[DatacatProxy] NekoChat Community Proxy running at http://localhost:${PORT}`);
+  console.log(`[NekoChatServer] Running at http://localhost:${PORT}`);
+  if (mysqlBackend?.ensureMysqlPool) {
+    mysqlBackend.ensureMysqlPool().catch(err => {
+      console.warn(`[MySQL] Not connected yet (${err?.message}). Start MySQL in XAMPP when ready.`);
+    });
+  }
 });
 

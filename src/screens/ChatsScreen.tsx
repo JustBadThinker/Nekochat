@@ -153,6 +153,8 @@ interface ChatsScreenProps {
   onNavigateStudio?: () => void;
 }
 
+let cachedChatsViewMode: 'grid' | 'accordion' | null = null;
+
 export const ChatsScreen: React.FC<ChatsScreenProps> = ({
   characters,
   trendingCharacters,
@@ -163,7 +165,8 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
   onNavigateDiscover,
   onNavigateStudio,
 }) => {
-  const [viewMode, setViewMode] = useState<'grid' | 'accordion'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'accordion'>(cachedChatsViewMode || 'grid');
+  const [viewModeLoaded, setViewModeLoaded] = useState<boolean>(cachedChatsViewMode !== null);
   const [expandedCharId, setExpandedCharId] = useState<string | null>(null);
   const [sessionSort, setSessionSort] = useState<'latest' | 'oldest' | 'messages'>('latest');
   const [selectModeCharId, setSelectModeCharId] = useState<string | null>(null);
@@ -183,9 +186,14 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
   useEffect(() => {
     AsyncStorage.getItem(VIEW_MODE_KEY)
       .then(v => {
-        if (v === 'accordion' || v === 'grid') setViewMode(v);
+        const resolved: 'grid' | 'accordion' = v === 'accordion' ? 'accordion' : 'grid';
+        cachedChatsViewMode = resolved;
+        setViewMode(resolved);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        setViewModeLoaded(true);
+      });
   }, []);
 
   useEffect(() => {
@@ -330,6 +338,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
 
   const handleToggleViewMode = (mode: 'grid' | 'accordion') => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    cachedChatsViewMode = mode;
     setViewMode(mode);
     AsyncStorage.setItem(VIEW_MODE_KEY, mode).catch(() => {});
   };
@@ -396,7 +405,10 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
         </TouchableOpacity>
       </View>
 
-      {/* Main Scroll Content */}
+      {/* Main Scroll Content — wait for persisted viewMode on cold start to avoid Grid->Accordion flash */}
+      {!viewModeLoaded ? (
+        <View style={{ flex: 1 }} />
+      ) : (
       <FlatList
         key={viewMode}
         data={groupedCharacters}
@@ -738,6 +750,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
           );
         }}
       />
+      )}
 
       {/* Fullscreen Story Viewer Modal */}
       <StoryViewerModal

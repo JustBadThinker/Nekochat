@@ -280,6 +280,8 @@ export interface Conversation {
   customPrompt?: string;
   tokenOptimizer?: TokenOptimizerLevel;
   cumulativeUsage?: CumulativeTokenUsage;
+  parentConversationId?: string;
+  branchedFromMessageId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -339,6 +341,20 @@ export type LLMProvider = 'gemini' | 'openai' | 'openrouter' | 'anthropic' | 'cu
 export type ImageProvider = 'pollinations' | 'openai' | 'custom';
 export type ChatStyleMode = 'novel' | 'bubble';
 
+export interface ModelBudgetOverride {
+  contextLimit?: number;
+  maxOutputTokens?: number;
+  updatedAt?: number;
+}
+
+export interface CachedModelMetadata {
+  endpointIdentity: string;
+  source: 'fetch_models';
+  contextLimit?: number;
+  maxOutputTokens?: number;
+  fetchedAt: number;
+}
+
 export interface ProviderConfig {
   id?: string;
   userId?: string;
@@ -355,7 +371,12 @@ export interface ProviderConfig {
   repetitionPenalty?: number;
   maxTokens?: number;
   contextLimit?: number;
+  /** @deprecated Legacy shipped default field; ignored as a user override unless userConfiguredContextLimit is true. */
   contextWindow?: number;
+  userConfiguredContextLimit?: boolean;
+  userConfiguredMaxTokens?: boolean;
+  modelContextLimits?: Record<string, ModelBudgetOverride>;
+  cachedModelMetadata?: Record<string, CachedModelMetadata>;
   streaming?: boolean;
   isDefault?: boolean;
   customHeaders?: Record<string, string>;
@@ -405,6 +426,24 @@ export interface AppSettings {
   passcodePin?: string;
   activePersonaId?: string;
   customProxyUrl?: string;
+  backendUrl?: string;
+  enableExternalCatalogs?: boolean;
+  autoMemoryEnabled?: boolean;
+}
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  email: string;
+  displayName: string;
+  avatarUrl?: string;
+  role: UserRole;
+  createdAt?: number;
+}
+
+export interface AuthSession {
+  token: string;
+  user: AuthUser;
 }
 
 export interface BotRulePreset {

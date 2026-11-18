@@ -48,13 +48,12 @@ export const characterService = {
    */
   async getTrending24h(): Promise<Character[]> {
     try {
-      // 1. Try real Datacat / JanitorAI trending first
       const datacatRes = await communityCatalogService.fetchDatacatCharacters({
         sort: 'trending',
         limit: 8,
       });
 
-      const candidates =
+      const candidates: import('../types').CommunityCharacter[] =
         datacatRes.characters && datacatRes.characters.length > 0
           ? datacatRes.characters
           : (await communityCatalogService.fetchChubCharacters({ sort: 'trending', limit: 8 })).characters;

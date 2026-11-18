@@ -50,7 +50,7 @@ interface CreatorProfileModalProps {
   creatorName: string | null;
   creatorId?: string;
   initialAvatarUrl?: string;
-  catalogSource?: 'janitor' | 'chub';
+  catalogSource?: 'janitor' | 'chub' | 'local_db';
   sfwOnly?: boolean;
   onClose: () => void;
   onSelectCharacter: (character: CommunityCharacter) => void;
@@ -126,8 +126,9 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
       } catch {}
 
       try {
+        const effectiveSource: 'janitor' | 'chub' = catalogSource === 'chub' ? 'chub' : 'janitor';
         const charsRes = await communityCatalogService.fetchCreatorCharacters(cleanHandle, {
-          source: catalogSource,
+          source: effectiveSource,
           limit: 48,
           sort: sortMode,
           sfwOnly,
@@ -141,7 +142,7 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
         const prof = await communityCatalogService.fetchCreatorProfile(
           cleanHandle,
           resolvedId,
-          catalogSource
+          effectiveSource
         );
         if (cancelled) return;
         setProfile(prev => ({

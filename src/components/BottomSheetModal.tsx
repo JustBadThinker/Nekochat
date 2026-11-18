@@ -182,7 +182,6 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
             sheetStyle,
             { transform: [{ translateY }] },
           ]}
-          onStartShouldSetResponder={() => true}
         >
           <LinearGradient
             pointerEvents="none"

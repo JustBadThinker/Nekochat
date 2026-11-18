@@ -225,12 +225,16 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
       storageService.isFollowingCreator(creatorName).then(setIsFollowing);
       storageService.isCommunityFavorite(character.id).then(setIsFav);
 
-      communityCatalogService.getCharacterDetail(character.id, {
-        fullPath: (character as any).fullPath,
-        source: (character as any).source,
-      }).then(d => {
-        setDetail(d);
-      });
+      if ((character as any).source === 'local_db') {
+        setDetail(character as any);
+      } else {
+        communityCatalogService.getCharacterDetail(character.id, {
+          fullPath: (character as any).fullPath,
+          source: (character as any).source,
+        }).then(d => {
+          setDetail(d);
+        });
+      }
     } else {
       setDetail(null);
     }
@@ -485,7 +489,14 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* 3. SCROLLABLE TAB CONTENT AREA (Matches Gambar 3)                   */}
           {/* ══════════════════════════════════════════════════════════════════ */}
-          <ScrollView style={styles.modalContent} contentContainerStyle={styles.modalContentInner}>
+          <ScrollView
+            style={styles.modalContent}
+            contentContainerStyle={styles.modalContentInner}
+            nestedScrollEnabled
+            keyboardShouldPersistTaps="handled"
+            overScrollMode="always"
+            showsVerticalScrollIndicator
+          >
             <Animated.View style={{ opacity: tabFadeAnim }}>
             {activeTab === 'overview' && (
               <View style={styles.overviewSection}>

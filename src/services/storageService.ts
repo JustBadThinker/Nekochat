@@ -12,6 +12,14 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { migrateLegacyProviderConfig } from './promptBudget';
+import { getSqliteConversationRepository, SqliteConversationRepository } from './sqliteDatabase';
+import {
+  getDefaultSecureStoreDriver,
+  hydrateProviderSecrets,
+  removeProviderSecrets,
+  stripAndPersistProviderSecrets,
+} from './secureKeyStore';
 import {
   Character,
   ChatMessage,
@@ -23,6 +31,39 @@ import {
   BotRulePreset,
   GlobalChatBackground,
 } from '../types';
+
+const SQLITE_MIGRATION_FLAG = '@nekochat_sqlite_migration_v1';
+let migrationPromise: Promise<SqliteConversationRepository | null> | null = null;
+
+async function ensureSqliteRepo(): Promise<SqliteConversationRepository | null> {
+  if (migrationPromise) return migrationPromise;
+  migrationPromise = (async () => {
+    const repo = await getSqliteConversationRepository();
+    if (!repo) return null;
+
+    try {
+      const done = await AsyncStorage.getItem(SQLITE_MIGRATION_FLAG);
+      if (done !== 'completed') {
+        const legacyRaw = await AsyncStorage.getItem(KEYS.CONVERSATIONS);
+        const legacyConvs: Conversation[] = legacyRaw ? JSON.parse(legacyRaw) : [];
+        const result = await repo.migrateFromLegacyConversations(
+          Array.isArray(legacyConvs) ? legacyConvs : []
+        );
+        if (result.verified) {
+          await AsyncStorage.setItem(SQLITE_MIGRATION_FLAG, 'completed');
+        } else {
+          // Verification failed — keep AsyncStorage authoritative
+          return null;
+        }
+      }
+      return repo;
+    } catch (err) {
+      console.warn('[StorageService] SQLite migration error, using AsyncStorage:', (err as any)?.message || err);
+      return null;
+    }
+  })();
+  return migrationPromise;
+}
 
 const KEYS = {
   CHARACTERS: '@nekochat:characters',
@@ -58,6 +99,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   hasCompletedOnboarding: false,
   passcodeEnabled: false,
   passcodePin: '',
+  backendUrl: '',
+  enableExternalCatalogs: true,
+  autoMemoryEnabled: false,
 };
 
 const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
@@ -82,7 +126,8 @@ export const INITIAL_PROVIDERS: ProviderConfig[] = [
     temperature: 0.8,
     topP: 0.95,
     maxTokens: 4096,
-    contextWindow: 1048576,
+    userConfiguredContextLimit: false,
+    userConfiguredMaxTokens: false,
     streaming: true,
     isDefault: true,
   },
@@ -100,7 +145,8 @@ export const INITIAL_PROVIDERS: ProviderConfig[] = [
     temperature: 0.8,
     topP: 0.95,
     maxTokens: 4096,
-    contextWindow: 128000,
+    userConfiguredContextLimit: false,
+    userConfiguredMaxTokens: false,
     streaming: true,
     isDefault: false,
   },
@@ -118,7 +164,8 @@ export const INITIAL_PROVIDERS: ProviderConfig[] = [
     temperature: 0.8,
     topP: 0.9,
     maxTokens: 4096,
-    contextWindow: 128000,
+    userConfiguredContextLimit: false,
+    userConfiguredMaxTokens: false,
     streaming: true,
     isDefault: false,
   },
@@ -136,7 +183,8 @@ export const INITIAL_PROVIDERS: ProviderConfig[] = [
     temperature: 0.8,
     topP: 0.9,
     maxTokens: 4096,
-    contextWindow: 128000,
+    userConfiguredContextLimit: false,
+    userConfiguredMaxTokens: false,
     streaming: true,
     isDefault: false,
   },
@@ -230,15 +278,24 @@ export const storageService = {
   async deleteCharacter(characterId: string): Promise<void> {
     const list = await this.getCharacters();
     await this.saveCharacters(list.filter(c => c.id !== characterId));
+    const repo = await ensureSqliteRepo();
+    if (repo) {
+      await repo.deleteConversationsForCharacter(characterId);
+      return;
+    }
     const convs = await this.getConversations();
     await this.saveConversations(convs.filter(c => c.characterId !== characterId));
   },
 
   // ═══════════════════════════════════════════════════════════════════════
-  // 2. MULTI-SESSION CONVERSATIONS (WARDEN PARITY)
+  // 2. MULTI-SESSION CONVERSATIONS (SQLITE + ASYNCSTORAGE FALLBACK)
   // ═══════════════════════════════════════════════════════════════════════
   async getConversations(userId?: string): Promise<Conversation[]> {
     try {
+      const repo = await ensureSqliteRepo();
+      if (repo) {
+        return await repo.getConversations(userId);
+      }
       const data = await AsyncStorage.getItem(KEYS.CONVERSATIONS);
       if (!data) return [];
       const list: Conversation[] = JSON.parse(data);
@@ -252,16 +309,29 @@ export const storageService = {
   },
 
   async getConversation(id: string): Promise<Conversation | null> {
+    const repo = await ensureSqliteRepo();
+    if (repo) {
+      return await repo.getConversation(id);
+    }
     const list = await this.getConversations();
     return list.find(c => c.id === id) || null;
   },
 
   async getConversationsForCharacter(characterId: string): Promise<Conversation[]> {
+    const repo = await ensureSqliteRepo();
+    if (repo) {
+      return await repo.getConversationsForCharacter(characterId);
+    }
     const list = await this.getConversations();
     return list.filter(c => c.characterId === characterId);
   },
 
   async saveConversations(conversations: Conversation[]): Promise<void> {
+    const repo = await ensureSqliteRepo();
+    if (repo) {
+      await repo.saveAllConversations(conversations);
+      return;
+    }
     await AsyncStorage.setItem(KEYS.CONVERSATIONS, JSON.stringify(conversations));
   },
 
@@ -272,7 +342,6 @@ export const storageService = {
     scenarioId?: string,
     scenarioTitle?: string
   ): Promise<Conversation> {
-    const list = await this.getConversations();
     const now = new Date().toISOString();
     const convId = `conv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
@@ -312,16 +381,60 @@ export const storageService = {
       tokenOptimizer: 'off',
     };
 
+    const repo = await ensureSqliteRepo();
+    if (repo) {
+      await repo.upsertConversation(newConv);
+      return newConv;
+    }
+
+    const list = await this.getConversations();
     list.unshift(newConv);
     await this.saveConversations(list);
 
-    // Also mirror to legacy message key for backwards compatibility
+    // Also mirror to legacy message key for backwards compatibility when SQLite is inactive
     await AsyncStorage.setItem(`${KEYS.MESSAGES}:${character.id}`, JSON.stringify([firstMsg]));
 
     return newConv;
   },
 
+  /**
+   * Native SQLite-only atomic conversation branching.
+   * Returns `null` on Web (AsyncStorage lacks atomic multi-key transactions).
+   */
+  async branchConversation(params: {
+    sourceConversationId: string;
+    characterId: string;
+    branchMessageId: string;
+    title?: string;
+  }): Promise<{
+    conversation: Conversation;
+    branchTurnIndex: number;
+    sourceMessageCount: number;
+    copiedMemoriesCount: number;
+    excludedMemoriesCount: number;
+  } | null> {
+    const repo = await ensureSqliteRepo();
+    if (!repo) return null;
+    return await repo.branchConversationAtMessage(params);
+  },
+
   async appendMessageToConversation(conversationId: string, message: ChatMessage): Promise<void> {
+    const repo = await ensureSqliteRepo();
+    if (repo) {
+      await repo.appendMessageToConversation(conversationId, message);
+      const conv = await repo.getConversation(conversationId);
+      if (conv) {
+        const chars = await this.getCharacters();
+        const char = chars.find(c => c.id === conv.characterId);
+        if (char) {
+          char.lastActive = Date.now();
+          char.totalChats = conv.messages.length;
+          await this.saveCharacters(chars);
+        }
+      }
+      return;
+    }
+
     const list = await this.getConversations();
     const conv = list.find(c => c.id === conversationId);
     if (!conv) return;
@@ -347,6 +460,11 @@ export const storageService = {
   },
 
   async updateConversation(updated: Conversation): Promise<void> {
+    const repo = await ensureSqliteRepo();
+    if (repo) {
+      await repo.upsertConversation({ ...updated, updatedAt: new Date().toISOString() });
+      return;
+    }
     const list = await this.getConversations();
     const index = list.findIndex(c => c.id === updated.id);
     if (index >= 0) {
@@ -356,6 +474,16 @@ export const storageService = {
   },
 
   async upsertConversation(conversation: Conversation): Promise<void> {
+    const repo = await ensureSqliteRepo();
+    if (repo) {
+      const existing = await repo.getConversation(conversation.id);
+      await repo.upsertConversation(
+        existing
+          ? { ...existing, ...conversation, updatedAt: new Date().toISOString() }
+          : conversation
+      );
+      return;
+    }
     const list = await this.getConversations();
     const index = list.findIndex(c => c.id === conversation.id);
     if (index >= 0) {
@@ -367,6 +495,11 @@ export const storageService = {
   },
 
   async deleteConversation(conversationId: string): Promise<void> {
+    const repo = await ensureSqliteRepo();
+    if (repo) {
+      await repo.deleteConversation(conversationId);
+      return;
+    }
     const list = await this.getConversations();
     const filtered = list.filter(c => c.id !== conversationId);
     await this.saveConversations(filtered);
@@ -712,14 +845,38 @@ export const storageService = {
 
   async getProviderConfig(): Promise<ProviderConfig> {
     try {
+      const driver = await getDefaultSecureStoreDriver();
       const data = await AsyncStorage.getItem(KEYS.PROVIDER_CONFIG);
-      const parsed = data ? { ...DEFAULT_PROVIDER_CONFIG, ...JSON.parse(data) } : null;
+      let parsed: ProviderConfig | null = data
+        ? migrateLegacyProviderConfig({ ...DEFAULT_PROVIDER_CONFIG, ...JSON.parse(data) })
+        : null;
+
+      // Migrate any legacy plaintext apiKey/imageApiKey in KEYS.PROVIDER_CONFIG to SecureStore
+      if (parsed && (parsed.apiKey || parsed.imageApiKey)) {
+        const { sanitized, migratedCount } = await stripAndPersistProviderSecrets(
+          [parsed],
+          driver,
+          parsed.id || 'active_provider'
+        );
+        if (migratedCount > 0) {
+          await AsyncStorage.setItem(KEYS.PROVIDER_CONFIG, JSON.stringify(sanitized[0]));
+        }
+      }
+
+      if (parsed) {
+        const [hydrated] = await hydrateProviderSecrets(
+          [parsed],
+          driver,
+          parsed.id || 'active_provider'
+        );
+        parsed = hydrated;
+      }
 
       // Also inspect the multi-provider list so a saved Custom Endpoint / OpenRouter / OpenAI key is never missed
-      const providersData = await AsyncStorage.getItem(KEYS.PROVIDERS);
-      if (providersData) {
-        const list: ProviderConfig[] = JSON.parse(providersData);
-        const defaultWithKey = list.find(p => p.isDefault && p.apiKey) || list.find(p => p.apiKey) || list.find(p => p.isDefault);
+      const list = await this.getProviders();
+      if (list.length > 0) {
+        const defaultWithKey =
+          list.find(p => p.isDefault && p.apiKey) || list.find(p => p.apiKey) || list.find(p => p.isDefault);
         if (parsed && parsed.apiKey) {
           return parsed;
         }
@@ -735,26 +892,50 @@ export const storageService = {
 
   async saveProviderConfig(config: Partial<ProviderConfig>): Promise<ProviderConfig> {
     const current = await this.getProviderConfig();
-    const updated = { ...current, ...config };
-    await AsyncStorage.setItem(KEYS.PROVIDER_CONFIG, JSON.stringify(updated));
+    const updated: ProviderConfig = { ...current, ...config };
+    const driver = await getDefaultSecureStoreDriver();
+    const { sanitized } = await stripAndPersistProviderSecrets(
+      [updated],
+      driver,
+      updated.id || 'active_provider'
+    );
+    await AsyncStorage.setItem(KEYS.PROVIDER_CONFIG, JSON.stringify(sanitized[0]));
     return updated;
   },
 
   async getProviders(): Promise<ProviderConfig[]> {
     try {
+      const driver = await getDefaultSecureStoreDriver();
       const data = await AsyncStorage.getItem(KEYS.PROVIDERS);
       if (!data) {
         await AsyncStorage.setItem(KEYS.PROVIDERS, JSON.stringify(INITIAL_PROVIDERS));
         return INITIAL_PROVIDERS;
       }
-      return JSON.parse(data);
+      const parsed: ProviderConfig[] = JSON.parse(data);
+      const migrated = Array.isArray(parsed)
+        ? parsed.map(p => migrateLegacyProviderConfig(p))
+        : INITIAL_PROVIDERS;
+
+      // One-time verified migration of any remaining plaintext keys in AsyncStorage
+      const hasPlaintextSecrets = migrated.some(p => Boolean(p.apiKey || p.imageApiKey));
+      if (hasPlaintextSecrets) {
+        const { sanitized, migratedCount } = await stripAndPersistProviderSecrets(migrated, driver);
+        if (migratedCount > 0) {
+          await AsyncStorage.setItem(KEYS.PROVIDERS, JSON.stringify(sanitized));
+        }
+        return await hydrateProviderSecrets(sanitized, driver);
+      }
+
+      return await hydrateProviderSecrets(migrated, driver);
     } catch {
       return INITIAL_PROVIDERS;
     }
   },
 
   async saveProviders(providers: ProviderConfig[]): Promise<void> {
-    await AsyncStorage.setItem(KEYS.PROVIDERS, JSON.stringify(providers));
+    const driver = await getDefaultSecureStoreDriver();
+    const { sanitized } = await stripAndPersistProviderSecrets(providers, driver);
+    await AsyncStorage.setItem(KEYS.PROVIDERS, JSON.stringify(sanitized));
   },
 
   async upsertProvider(provider: ProviderConfig): Promise<void> {
@@ -769,6 +950,8 @@ export const storageService = {
   },
 
   async deleteProvider(id: string): Promise<void> {
+    const driver = await getDefaultSecureStoreDriver();
+    await removeProviderSecrets(id, driver);
     const list = await this.getProviders();
     const filtered = list.filter(p => p.id !== id);
     await this.saveProviders(filtered);

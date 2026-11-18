@@ -826,7 +826,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <Sparkles size={18} color={palette.accent} />
           </View>
           <Text style={styles.tileTitle}>{t('settings.about')}</Text>
-          <Text style={styles.tileSubtitle}>v0.1.6-beta • Free & Open</Text>
+          <Text style={styles.tileSubtitle}>v0.1.7-beta • Open-Source</Text>
           <View style={styles.tileBadge}>
             <Text style={styles.tileBadgeText}>FOSS</Text>
           </View>
@@ -1758,13 +1758,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
                   {/* Max Output Tokens */}
                   <Text style={styles.inputLabel}>{t('settings.maxOutputTokens')}</Text>
-                  <View style={[styles.tokenPillRow, { marginBottom: 12 }]}>
+                  <View style={[styles.tokenPillRow, { marginBottom: 8 }]}>
                     {[
                       { val: '0', label: t('settings.unlimited') },
-                      { val: '2048', label: '2k' },
-                      { val: '4096', label: '4k' },
-                      { val: '8192', label: '8k' },
-                      { val: '15000', label: '15k' },
+                      { val: '1024', label: '1K' },
+                      { val: '4096', label: '4K' },
+                      { val: '8192', label: '8K' },
+                      { val: '15000', label: '15K' },
                     ].map(tok => (
                       <TouchableOpacity
                         key={tok.val}
@@ -1778,6 +1778,30 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                       </TouchableOpacity>
                     ))}
                   </View>
+                  <TextInput
+                    style={[styles.inputBox, { marginBottom: 6 }]}
+                    value={maxTokens}
+                    onChangeText={v => setMaxTokens(v.replace(/\D/g, ''))}
+                    keyboardType="number-pad"
+                    placeholder="Custom max output tokens (0 = Unlimited)"
+                    placeholderTextColor="#64748b"
+                  />
+                  {(() => {
+                    const parsedOut = maxTokens === '0' ? 0 : parseInt(maxTokens, 10) || 0;
+                    const parsedCtx = parseInt(contextLimit, 10) || 16384;
+                    if (parsedOut > 0 && parsedOut >= parsedCtx) {
+                      return (
+                        <Text style={{ color: '#fbbf24', fontSize: 11, marginBottom: 10 }}>
+                          Warning: Output limit ({parsedOut}) meets or exceeds configured context limit ({parsedCtx}). Provider limits remain authoritative.
+                        </Text>
+                      );
+                    }
+                    return (
+                      <Text style={{ color: '#64748b', fontSize: 11, marginBottom: 10 }}>
+                        Enter any custom token limit (e.g. 16384, 32768) or 0 for Unlimited (no client-side cap sent).
+                      </Text>
+                    );
+                  })()}
 
                   {/* Temperature */}
                   <Text style={styles.inputLabel}>Temperature (Creativity: {temperature})</Text>
@@ -1847,10 +1871,25 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               <TouchableOpacity
                 style={styles.saveBtn}
                 onPress={async () => {
+                  const nextContextLimit = parseInt(contextLimit, 10) || 8192;
+                  const nextMaxTokens = maxTokens === '0' ? 0 : (parseInt(maxTokens, 10) || 4096);
+                  const activeModelKey = String(config.model || config.defaultModel || '').trim();
+                  const nextModelLimits = { ...(config.modelContextLimits || {}) };
+                  if (activeModelKey) {
+                    nextModelLimits[activeModelKey] = {
+                      ...(nextModelLimits[activeModelKey] || {}),
+                      contextLimit: nextContextLimit,
+                      maxOutputTokens: nextMaxTokens,
+                      updatedAt: Date.now(),
+                    };
+                  }
                   const updated: ProviderConfig = {
                     ...config,
-                    contextLimit: parseInt(contextLimit, 10) || 8192,
-                    maxTokens: maxTokens === '0' ? 0 : (parseInt(maxTokens, 10) || 4096),
+                    contextLimit: nextContextLimit,
+                    maxTokens: nextMaxTokens,
+                    userConfiguredContextLimit: true,
+                    userConfiguredMaxTokens: true,
+                    modelContextLimits: nextModelLimits,
                     temperature: parseFloat(temperature) || 0.7,
                     topP: parseFloat(topP) || 0.95,
                     repetitionPenalty: parseFloat(repPenalty) || 1.15,

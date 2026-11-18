@@ -81,7 +81,7 @@ type DiscoverTab = 'community' | 'library';
 type EntityMode = 'characters' | 'creators';
 type ScopeMode = 'all' | 'following' | 'favorites';
 type CatalogSort = 'latest' | 'trending' | 'popular';
-type CatalogSource = 'janitor' | 'chub';
+type CatalogSource = 'local_db' | 'janitor' | 'chub';
 
 export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   characters,
@@ -184,8 +184,10 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
     }
   }, [topMode, onMatchModeChange]);
 
-  // Sub-tabs in Catalog Grid
+  // Sub-tabs in Catalog Grid (MySQL DB pill hidden while testing memory with JanitorAI & Chub.ai)
+  const showMysqlSource = false;
   const [activeTab, setActiveTab] = useState<DiscoverTab>('community');
+  const [enableExternalCatalogs] = useState<boolean>(true);
   const [catalogSource, setCatalogSource] = useState<CatalogSource>('janitor');
 
   // Community Catalog State — 100% Real Live Data (Starts empty)
@@ -269,7 +271,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           followedCreators.map(handle =>
             communityCatalogService
               .fetchCreatorCharacters(handle, {
-                source: catalogSource,
+                source: catalogSource === 'chub' ? 'chub' : 'janitor',
                 limit: 24,
                 sort: communitySort,
                 sfwOnly,
@@ -813,41 +815,65 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                 {activeTab === 'community' && (
                   <>
                     <View style={styles.sourcePillSwitch}>
-                      <TouchableOpacity
-                        style={[styles.sourcePillBtn, catalogSource === 'janitor' && styles.sourcePillBtnActive]}
-                        onPress={() => {
-                          setCatalogSource('janitor');
-                          setCurrentPage(1);
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        <Text
-                          style={[
-                            styles.sourcePillText,
-                            catalogSource === 'janitor' && styles.sourcePillTextActive,
-                          ]}
+                      {showMysqlSource && (
+                        <TouchableOpacity
+                          style={[styles.sourcePillBtn, catalogSource === 'local_db' && styles.sourcePillBtnActive]}
+                          onPress={() => {
+                            setCatalogSource('local_db');
+                            setCurrentPage(1);
+                          }}
+                          activeOpacity={0.8}
                         >
-                          JanitorAI
-                        </Text>
-                      </TouchableOpacity>
+                          <Text
+                            style={[
+                              styles.sourcePillText,
+                              catalogSource === 'local_db' && styles.sourcePillTextActive,
+                            ]}
+                          >
+                            MySQL DB
+                          </Text>
+                        </TouchableOpacity>
+                      )}
 
-                      <TouchableOpacity
-                        style={[styles.sourcePillBtn, catalogSource === 'chub' && styles.sourcePillBtnActive]}
-                        onPress={() => {
-                          setCatalogSource('chub');
-                          setCurrentPage(1);
-                        }}
-                        activeOpacity={0.8}
-                      >
-                        <Text
-                          style={[
-                            styles.sourcePillText,
-                            catalogSource === 'chub' && styles.sourcePillTextActive,
-                          ]}
-                        >
-                          Chub.ai
-                        </Text>
-                      </TouchableOpacity>
+                      {enableExternalCatalogs && (
+                        <>
+                          <TouchableOpacity
+                            style={[styles.sourcePillBtn, catalogSource === 'janitor' && styles.sourcePillBtnActive]}
+                            onPress={() => {
+                              setCatalogSource('janitor');
+                              setCurrentPage(1);
+                            }}
+                            activeOpacity={0.8}
+                          >
+                            <Text
+                              style={[
+                                styles.sourcePillText,
+                                catalogSource === 'janitor' && styles.sourcePillTextActive,
+                              ]}
+                            >
+                              JanitorAI
+                            </Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={[styles.sourcePillBtn, catalogSource === 'chub' && styles.sourcePillBtnActive]}
+                            onPress={() => {
+                              setCatalogSource('chub');
+                              setCurrentPage(1);
+                            }}
+                            activeOpacity={0.8}
+                          >
+                            <Text
+                              style={[
+                                styles.sourcePillText,
+                                catalogSource === 'chub' && styles.sourcePillTextActive,
+                              ]}
+                            >
+                              Chub.ai
+                            </Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
                     </View>
 
                     <TouchableOpacity
@@ -1731,14 +1757,18 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                   <Sparkles size={24} color="#f43f5e" />
                 </View>
                 <Text style={styles.errorTitle}>
-                  {catalogSource === 'janitor'
-                    ? 'JanitorAI Gateway Offline (Port 3001)'
-                    : 'Chub.ai Feed Unavailable'}
+                  {catalogSource === 'local_db'
+                    ? 'MySQL Backend Offline'
+                    : catalogSource === 'janitor'
+                      ? 'JanitorAI Gateway Offline (Port 3001)'
+                      : 'Chub.ai Feed Unavailable'}
                 </Text>
                 <Text style={styles.errorDesc}>
-                  {catalogSource === 'janitor'
-                    ? 'Buka terminal baru di folder NekoChat dan jalankan "npm run proxy" untuk mengaktifkan proxy JanitorAI tanpa mock data.'
-                    : communityError}
+                  {catalogSource === 'local_db'
+                    ? `${communityError}\n\nStart MySQL in XAMPP, run "npm run proxy", and set your Backend URL in Settings → Account & MySQL.`
+                    : catalogSource === 'janitor'
+                      ? 'Buka terminal baru di folder NekoChat dan jalankan "npm run proxy" untuk mengaktifkan proxy JanitorAI tanpa mock data.'
+                      : communityError}
                 </Text>
                 <View style={styles.errorActionsRow}>
                   <TouchableOpacity
