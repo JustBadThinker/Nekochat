@@ -65,7 +65,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
   onToggleFavorite,
   favoriteIds = new Set(),
 }) => {
-  const { palette } = useTheme();
+  const { palette, skin } = useTheme();
   const styles = useMemo(() => createStyles(palette), [palette]);
   const [deck, setDeck] = useState<ScoredMatchCharacter[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -243,7 +243,8 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
     const targetX = -Math.max(SCREEN_WIDTH, 480) * 1.5;
     Animated.timing(position, {
       toValue: { x: targetX, y: 15 },
-      duration: 220,
+      duration: Math.max(180, Math.round(skin.animation.enterDuration * 0.85)),
+      easing: skin.animation.easing,
       useNativeDriver: false,
     }).start(() => handleNext());
 
@@ -278,7 +279,8 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
     const targetX = Math.max(SCREEN_WIDTH, 480) * 1.5;
     Animated.timing(position, {
       toValue: { x: targetX, y: 15 },
-      duration: 220,
+      duration: Math.max(180, Math.round(skin.animation.enterDuration * 0.85)),
+      easing: skin.animation.easing,
       useNativeDriver: false,
     }).start(() => {
       onMatchChatRef.current?.(char);

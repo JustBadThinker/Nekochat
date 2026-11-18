@@ -91,7 +91,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   onImportCard,
   onMatchModeChange,
 }) => {
-  const { palette } = useTheme();
+  const { palette, skin } = useTheme();
   const { t } = useTranslation();
   const styles = useMemo(() => createStyles(palette), [palette]);
   const insets = useSafeAreaInsets();
@@ -111,11 +111,11 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
     floatingHeaderAnim.setValue(0);
     Animated.timing(floatingHeaderAnim, {
       toValue: 1,
-      duration: 210,
-      easing: Easing.out(Easing.cubic),
+      duration: Math.max(160, Math.round(skin.animation.enterDuration * 0.8)),
+      easing: skin.animation.easing,
       useNativeDriver: true,
     }).start();
-  }, [catalogScrollMode, floatingHeaderAnim]);
+  }, [catalogScrollMode, floatingHeaderAnim, skin.animation]);
   const handleCatalogScroll = (event: any) => {
     const y = event?.nativeEvent?.contentOffset?.y ?? 0;
     const dy = y - lastCatalogScrollYRef.current;
@@ -621,7 +621,21 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
 
   const renderSearchBarOnly = (compact: boolean = false) => (
     <View style={[styles.searchContainer, compact && { paddingTop: 6, paddingBottom: 6 }]}>
-      <View style={styles.searchBarWrapper}>
+      <View
+        style={[
+          styles.searchBarWrapper,
+          {
+            borderRadius: skin.inputRadius,
+            borderWidth: skin.id === 'material' ? 0 : Math.max(0.75, skin.cardBorderWidth),
+            backgroundColor:
+              skin.surfaceMode === 'tonal'
+                ? palette.bgSurfaceSubtle
+                : skin.surfaceMode === 'frosted'
+                  ? 'rgba(28, 28, 30, 0.85)'
+                  : palette.bgSurface,
+          },
+        ]}
+      >
         <Search size={15} color="#9ca3af" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}

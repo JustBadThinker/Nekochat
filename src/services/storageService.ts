@@ -30,6 +30,8 @@ import {
   AppSettings,
   BotRulePreset,
   GlobalChatBackground,
+  DynamicCastMember,
+  SceneContinuityState,
 } from '../types';
 
 const SQLITE_MIGRATION_FLAG = '@nekochat_sqlite_migration_v1';
@@ -80,6 +82,7 @@ const KEYS = {
   COMMENT_CACHE: '@nekochat:comment_cache_',
   FOLLOWED_CREATORS: '@nekochat:followed_creators',
   COMMUNITY_FAVORITES: '@nekochat:community_favorites',
+  DYNAMIC_CAST: '@nekochat:dynamic_cast_',
 };
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -495,6 +498,7 @@ export const storageService = {
   },
 
   async deleteConversation(conversationId: string): Promise<void> {
+    await AsyncStorage.removeItem(`${KEYS.DYNAMIC_CAST}${conversationId}`).catch(() => {});
     const repo = await ensureSqliteRepo();
     if (repo) {
       await repo.deleteConversation(conversationId);
@@ -503,6 +507,108 @@ export const storageService = {
     const list = await this.getConversations();
     const filtered = list.filter(c => c.id !== conversationId);
     await this.saveConversations(filtered);
+  },
+
+  // ── Phase 7: Dynamic Cast & Scene Continuity (Native SQLite + Web AsyncStorage) ──
+
+  async getDynamicCastState(
+    conversationId: string,
+    characterId: string
+  ): Promise<{ castMembers: DynamicCastMember[]; sceneState: SceneContinuityState | null }> {
+    const repo = await ensureSqliteRepo();
+    if (repo) {
+      const [castMembers, sceneState] = await Promise.all([
+        repo.getCastMembers(conversationId, characterId),
+        repo.getSceneState(conversationId, characterId),
+      ]);
+      return { castMembers, sceneState };
+    }
+    try {
+      const raw = await AsyncStorage.getItem(`${KEYS.DYNAMIC_CAST}${conversationId}`);
+      if (!raw) return { castMembers: [], sceneState: null };
+      const parsed = JSON.parse(raw);
+      return {
+        castMembers: Array.isArray(parsed?.castMembers) ? parsed.castMembers : [],
+        sceneState: parsed?.sceneState ?? null,
+      };
+    } catch {
+      return { castMembers: [], sceneState: null };
+    }
+  },
+
+  async saveCastMember(member: DynamicCastMember): Promise<void> {
+    const repo = await ensureSqliteRepo();
+    if (repo) {
+      await repo.upsertCastMember(member);
+      return;
+    }
+    const current = await this.getDynamicCastState(member.conversationId, member.characterId);
+    const idx = current.castMembers.findIndex(m => m.id === member.id);
+    const nextMembers =
+      idx >= 0
+        ? current.castMembers.map((m, i) => (i === idx ? member : m))
+        : [...current.castMembers, member];
+    await AsyncStorage.setItem(
+      `${KEYS.DYNAMIC_CAST}${member.conversationId}`,
+      JSON.stringify({ castMembers: nextMembers, sceneState: current.sceneState })
+    );
+  },
+
+  async deleteCastMember(
+    conversationId: string,
+    characterId: string,
+    castMemberId: string
+  ): Promise<void> {
+    const repo = await ensureSqliteRepo();
+    if (repo) {
+      await repo.deleteCastMember(castMemberId);
+      return;
+    }
+    const current = await this.getDynamicCastState(conversationId, characterId);
+    const nextMembers = current.castMembers.filter(m => m.id !== castMemberId);
+    await AsyncStorage.setItem(
+      `${KEYS.DYNAMIC_CAST}${conversationId}`,
+      JSON.stringify({ castMembers: nextMembers, sceneState: current.sceneState })
+    );
+  },
+
+  async saveSceneState(scene: SceneContinuityState): Promise<void> {
+    const repo = await ensureSqliteRepo();
+    if (repo) {
+      await repo.upsertSceneState(scene);
+      return;
+    }
+    const current = await this.getDynamicCastState(scene.conversationId, scene.characterId);
+    await AsyncStorage.setItem(
+      `${KEYS.DYNAMIC_CAST}${scene.conversationId}`,
+      JSON.stringify({ castMembers: current.castMembers, sceneState: scene })
+    );
+  },
+
+  async invalidateCastFactsForMessage(
+    conversationId: string,
+    characterId: string,
+    messageId: string
+  ): Promise<void> {
+    const repo = await ensureSqliteRepo();
+    if (repo) {
+      await repo.invalidateCastFactsForMessage({ conversationId, messageId });
+      return;
+    }
+    const current = await this.getDynamicCastState(conversationId, characterId);
+    const now = Date.now();
+    const nextMembers = current.castMembers.map(m => ({
+      ...m,
+      facts: m.facts.map(f =>
+        f.sourceMessageId === messageId
+          ? { ...f, status: (f.confirmed ? 'needs_review' : 'stale') as 'needs_review' | 'stale', updatedAt: now }
+          : f
+      ),
+    }));
+    await AsyncStorage.setItem(
+      `${KEYS.DYNAMIC_CAST}${conversationId}`,
+      JSON.stringify({ castMembers: nextMembers, sceneState: current.sceneState })
+    );
   },
 
   async togglePinConversation(conversationId: string): Promise<boolean> {

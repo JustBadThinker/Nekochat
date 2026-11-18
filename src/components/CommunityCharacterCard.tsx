@@ -27,6 +27,12 @@ import { CommunityCharacter } from '../types';
 import { matchAlgorithmService } from '../services/matchAlgorithmService';
 import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
+import { getCardSurfaceStyle } from '../theme/skins';
+import {
+  runEnterAnimation,
+  runPressInAnimation,
+  runPressOutAnimation,
+} from '../theme/animations';
 import { ThemePalette } from '../theme/colors';
 
 interface CommunityCharacterCardProps {
@@ -58,7 +64,7 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
   onCreatorClick,
   onTagClick,
 }) => {
-  const { palette } = useTheme();
+  const { palette, skin } = useTheme();
   const styles = useMemo(() => createStyles(palette), [palette]);
   const [imgError, setImgError] = useState(false);
   const [isLiked, setIsLiked] = useState<boolean>(
@@ -70,30 +76,15 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
   const pressScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    Animated.spring(enterAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-      friction: 8,
-      tension: 85,
-    }).start();
+    runEnterAnimation(enterAnim, skin.animation);
   }, []);
 
   const handlePressIn = () => {
-    Animated.spring(pressScale, {
-      toValue: 0.97,
-      useNativeDriver: true,
-      friction: 7,
-      tension: 180,
-    }).start();
+    runPressInAnimation(pressScale, skin.animation);
   };
 
   const handlePressOut = () => {
-    Animated.spring(pressScale, {
-      toValue: 1,
-      useNativeDriver: true,
-      friction: 6,
-      tension: 140,
-    }).start();
+    runPressOutAnimation(pressScale, skin.animation);
   };
 
   const handlePressLike = (e: any) => {
@@ -136,8 +127,8 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
     <Animated.View
       style={[
         styles.cardContainer,
+        getCardSurfaceStyle(palette, skin),
         {
-          backgroundColor: palette.bgSurface,
           opacity: enterAnim,
           transform: [
             { scale: Animated.multiply(pressScale, enterAnim.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1] })) },

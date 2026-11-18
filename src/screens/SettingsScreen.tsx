@@ -42,6 +42,7 @@ import {
   Zap,
   Volume2,
   ChevronDown,
+  ChevronRight,
   Image as ImageIcon,
   Globe,
   Lock,
@@ -56,7 +57,9 @@ import { aiProviderService } from '../services/aiProviderService';
 import { wardenVaultService } from '../services/wardenVaultService';
 import { ttsService, VOICE_PROFILES, TtsConfig, DEFAULT_TTS_CONFIG } from '../services/ttsService';
 import { imageGenService, IMAGE_STYLE_OPTIONS, ImageGenConfig, DEFAULT_IMAGE_GEN_CONFIG, ImageStylePreset } from '../services/imageGenService';
-import { colors, applyThemePalette, ThemeId, ThemePalette } from '../theme/colors';
+import { colors, applyThemePalette, ThemeId, ThemePalette, THEME_PALETTES } from '../theme/colors';
+import { UI_SKINS, UiSkinId, getCardSurfaceStyle } from '../theme/skins';
+import { APP_VERSION_LABEL } from '../constants/appInfo';
 import { useTheme } from '../theme/ThemeContext';
 import { useTranslation } from '../i18n/LanguageContext';
 import { LANGUAGE_OPTIONS, UiLanguage, getDefaultLanguagePrompt } from '../i18n/translations';
@@ -79,7 +82,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onUpdateSettings,
   onReplayOnboarding,
 }) => {
-  const { palette } = useTheme();
+  const { palette, skin } = useTheme();
   const { t } = useTranslation();
   const styles = useMemo(() => createStyles(palette), [palette]);
   // Modal Visibility State
@@ -137,13 +140,23 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [showKey, setShowKey] = useState(false);
   const [testingPing, setTestingPing] = useState(false);
   const [pingResult, setPingResult] = useState<{ ok: boolean; latencyMs: number; error?: string } | null>(null);
+  const [testingNsfw, setTestingNsfw] = useState(false);
+  const [nsfwTestResult, setNsfwTestResult] = useState<{
+    ok: boolean;
+    supported: boolean;
+    latencyMs: number;
+    reason?: string;
+  } | null>(null);
 
   // Unified AI Engine Tabs (LLM Text Gen, Scene Art, Voice TTS)
   const [aiModalTab, setAiModalTab] = useState<'llm' | 'image' | 'voice'>('llm');
 
   // Theming State
-  const [selectedTheme, setSelectedTheme] = useState<'midnight' | 'sakura' | 'slate' | 'cyan'>(
-    (settings?.theme as any) || 'midnight'
+  const [selectedTheme, setSelectedTheme] = useState<ThemeId>(
+    (settings?.theme as ThemeId) || 'midnight'
+  );
+  const [selectedSkin, setSelectedSkin] = useState<UiSkinId>(
+    (settings?.uiSkin as UiSkinId) || 'bento'
   );
 
   // Vault State
@@ -385,6 +398,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     setTestingPing(false);
   };
 
+  // Test whether the active model/endpoint allows consenting adult (18+) NSFW roleplay
+  const handleTestNsfwCapability = async () => {
+    setTestingNsfw(true);
+    setNsfwTestResult(null);
+    const updated = await persistProviderConfigQuietly();
+    const res = await aiProviderService.testNsfwCapability(updated);
+    setNsfwTestResult(res);
+    setTestingNsfw(false);
+  };
+
   const handleSaveApi = async () => {
     const updated = await persistProviderConfigQuietly();
     setActiveModal(null);
@@ -459,6 +482,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     setSelectedTheme(themeId);
     applyThemePalette(themeId);
     const updated: AppSettings = { ...settings, theme: themeId };
+    await storageService.saveSettings(updated);
+    onUpdateSettings(updated);
+  };
+
+  const handleSelectSkinInstant = async (skinId: UiSkinId) => {
+    setSelectedSkin(skinId);
+    const updated: AppSettings = { ...settings, uiSkin: skinId };
     await storageService.saveSettings(updated);
     onUpdateSettings(updated);
   };
@@ -681,157 +711,258 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       </View>
 
       {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* 2. 2-COLUMN BENTO GRID: TILES THAT OPEN MODAL POP-UPS              */}
+      {/* 2. ADAPTIVE CONTROL PANEL (Bento Grid / M3 List / iOS InsetGrouped)*/}
       {/* ══════════════════════════════════════════════════════════════════ */}
       <Text style={styles.gridSectionHeading}>{t('settings.controlPanel')}</Text>
 
-      <View style={styles.bentoTwoGrid}>
-        {/* Tile 1: Unified AI Engine Suite (LLM, Scene Art & Voice TTS) */}
-        <TouchableOpacity
-          style={styles.bentoTile}
-          onPress={() => {
-            setAiModalTab('llm');
-            setActiveModal('api');
-          }}
-          activeOpacity={0.8}
-        >
-          <View style={styles.tileIconCircle}>
-            <Key size={18} color={palette.accent} />
-          </View>
-          <Text style={styles.tileTitle}>{t('settings.aiEngine')}</Text>
-          <Text style={styles.tileSubtitle}>{t('settings.aiEngineSub')}</Text>
-          <View style={styles.tileBadgeLime}>
-            <Text style={styles.tileBadgeLimeText}>3 Engines Active</Text>
-          </View>
-        </TouchableOpacity>
+      {(() => {
+        const controlItems = [
+          {
+            key: 'api',
+            Icon: Key,
+            title: t('settings.aiEngine'),
+            subtitle: t('settings.aiEngineSub'),
+            badge: '3 Engines Active',
+            accentBadge: true,
+            onPress: () => {
+              setAiModalTab('llm');
+              setActiveModal('api');
+            },
+          },
+          {
+            key: 'theming',
+            Icon: Palette,
+            title: t('settings.theming'),
+            subtitle: t('settings.themingSub'),
+            badge: `${skin.badge} • ${selectedTheme.charAt(0).toUpperCase() + selectedTheme.slice(1)}`,
+            accentBadge: false,
+            onPress: () => setActiveModal('theming'),
+          },
+          {
+            key: 'vault',
+            Icon: ShieldCheck,
+            title: t('settings.dataVault'),
+            subtitle: t('settings.dataVaultSub'),
+            badge: 'Sanitized',
+            accentBadge: false,
+            onPress: () => setActiveModal('vault'),
+          },
+          {
+            key: 'personas',
+            Icon: Users,
+            title: t('settings.personas'),
+            subtitle: t('settings.personasSub'),
+            badge: `${personas.length} ${t('studio.personas')}`,
+            accentBadge: false,
+            onPress: () => setActiveModal('personas'),
+          },
+          {
+            key: 'tokens',
+            Icon: Cpu,
+            title: t('settings.tokens'),
+            subtitle: t('settings.tokensSub'),
+            badge: `${contextLimit} BPE`,
+            accentBadge: false,
+            onPress: () => setActiveModal('tokens'),
+          },
+          {
+            key: 'language',
+            Icon: Globe,
+            title:
+              t('nav.settings') === 'Pengaturan'
+                ? 'Bahasa'
+                : t('nav.settings') === '設定'
+                  ? '言語'
+                  : t('nav.settings') === 'Paramètres'
+                    ? 'Langue'
+                    : 'Language',
+            subtitle: t('settings.languageSub'),
+            badge: `${(LANGUAGE_OPTIONS.find(l => l.id === selectedUiLang) || LANGUAGE_OPTIONS[0]).flag} ${(LANGUAGE_OPTIONS.find(l => l.id === selectedUiLang) || LANGUAGE_OPTIONS[0]).nativeName}`,
+            accentBadge: false,
+            onPress: () => setActiveModal('language'),
+          },
+          {
+            key: 'passcode',
+            Icon: Lock,
+            title: 'Passcode Lock',
+            subtitle: 'App PIN & First-Time Tour',
+            badge: settings.passcodeEnabled && settings.passcodePin ? 'Enabled' : 'Off',
+            accentBadge: false,
+            onPress: () => {
+              setPasscodeEnabledDraft(!!settings.passcodeEnabled);
+              setPasscodePinDraft(settings.passcodePin || '');
+              setPasscodeConfirmDraft(settings.passcodePin || '');
+              setPasscodeError('');
+              setActiveModal('passcode');
+            },
+          },
+          {
+            key: 'about',
+            Icon: Sparkles,
+            title: t('settings.about'),
+            subtitle: `${APP_VERSION_LABEL} • Open-Source`,
+            badge: 'FOSS',
+            accentBadge: false,
+            onPress: () => setActiveModal('about'),
+          },
+        ];
 
-        {/* Tile 2: Theming & Visuals */}
-        <TouchableOpacity
-          style={styles.bentoTile}
-          onPress={() => setActiveModal('theming')}
-          activeOpacity={0.8}
-        >
-          <View style={styles.tileIconCircle}>
-            <Palette size={18} color={palette.accent} />
-          </View>
-          <Text style={styles.tileTitle}>{t('settings.theming')}</Text>
-          <Text style={styles.tileSubtitle}>{t('settings.themingSub')}</Text>
-          <View style={styles.tileBadge}>
-            <Text style={styles.tileBadgeText}>
-              {selectedTheme.charAt(0).toUpperCase() + selectedTheme.slice(1)}
-            </Text>
-          </View>
-        </TouchableOpacity>
+        if (skin.settingsLayout === 'ios_inset_grouped') {
+          return (
+            <View
+              style={{
+                borderRadius: 12,
+                backgroundColor: 'rgba(28, 28, 30, 0.86)',
+                borderWidth: 0.5,
+                borderColor: 'rgba(255, 255, 255, 0.14)',
+                overflow: 'hidden',
+                marginBottom: 16,
+              }}
+            >
+              {controlItems.map((item, idx) => {
+                const IconComp = item.Icon;
+                return (
+                  <TouchableOpacity
+                    key={item.key}
+                    onPress={item.onPress}
+                    activeOpacity={0.7}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: 12,
+                      paddingHorizontal: 14,
+                      borderBottomWidth: idx < controlItems.length - 1 ? 0.5 : 0,
+                      borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+                      gap: 12,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 30,
+                        height: 30,
+                        borderRadius: 7,
+                        backgroundColor: item.accentBadge ? palette.accent : `rgba(${palette.accentRgb}, 0.18)`,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <IconComp size={16} color={item.accentBadge ? '#000000' : palette.accent} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '500' }}>{item.title}</Text>
+                      <Text style={{ color: 'rgba(235, 235, 245, 0.55)', fontSize: 12, marginTop: 1 }} numberOfLines={1}>
+                        {item.subtitle}
+                      </Text>
+                    </View>
+                    <Text style={{ color: 'rgba(235, 235, 245, 0.5)', fontSize: 13, marginRight: 2 }} numberOfLines={1}>
+                      {item.badge}
+                    </Text>
+                    <ChevronRight size={16} color="rgba(235, 235, 245, 0.35)" />
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          );
+        }
 
-        {/* Tile 3: Neko Data Vault (Strictly no auto-download on tile click) */}
-        <TouchableOpacity
-          style={styles.bentoTile}
-          onPress={() => {
-            setActiveModal('vault');
-          }}
-          activeOpacity={0.8}
-        >
-          <View style={styles.tileIconCircle}>
-            <ShieldCheck size={18} color={palette.accent} />
-          </View>
-          <Text style={styles.tileTitle}>{t('settings.dataVault')}</Text>
-          <Text style={styles.tileSubtitle}>{t('settings.dataVaultSub')}</Text>
-          <View style={styles.tileBadge}>
-            <Text style={styles.tileBadgeText}>Sanitized</Text>
-          </View>
-        </TouchableOpacity>
+        if (skin.settingsLayout === 'm3_list') {
+          return (
+            <View style={{ gap: 10, marginBottom: 16 }}>
+              {controlItems.map(item => {
+                const IconComp = item.Icon;
+                return (
+                  <TouchableOpacity
+                    key={item.key}
+                    onPress={item.onPress}
+                    activeOpacity={0.85}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: 14,
+                      paddingHorizontal: 16,
+                      borderRadius: skin.cardRadius,
+                      backgroundColor: palette.bgSurfaceSubtle,
+                      gap: 14,
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 20,
+                        backgroundColor: `rgba(${palette.accentRgb}, 0.16)`,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <IconComp size={18} color={palette.accent} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '600' }}>{item.title}</Text>
+                      <Text style={{ color: '#94a3b8', fontSize: 12.5, marginTop: 2 }} numberOfLines={1}>
+                        {item.subtitle}
+                      </Text>
+                    </View>
+                    <View
+                      style={{
+                        paddingHorizontal: 10,
+                        paddingVertical: 4,
+                        borderRadius: 8,
+                        backgroundColor: item.accentBadge
+                          ? `rgba(${palette.accentRgb}, 0.22)`
+                          : 'rgba(255, 255, 255, 0.06)',
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: '700',
+                          color: item.accentBadge ? palette.accent : '#cbd5e1',
+                        }}
+                      >
+                        {item.badge}
+                      </Text>
+                    </View>
+                    <ChevronRight size={18} color="#94a3b8" />
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          );
+        }
 
-        {/* Tile 4: Persona Studio */}
-        <TouchableOpacity
-          style={styles.bentoTile}
-          onPress={() => setActiveModal('personas')}
-          activeOpacity={0.8}
-        >
-          <View style={styles.tileIconCircle}>
-            <Users size={18} color={palette.accent} />
+        return (
+          <View style={styles.bentoTwoGrid}>
+            {controlItems.map(item => {
+              const IconComp = item.Icon;
+              return (
+                <TouchableOpacity
+                  key={item.key}
+                  style={[styles.bentoTile, getCardSurfaceStyle(palette, skin)]}
+                  onPress={item.onPress}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.tileIconCircle, { borderRadius: skin.pillRadius === 999 ? 18 : 10 }]}>
+                    <IconComp size={18} color={palette.accent} />
+                  </View>
+                  <Text style={styles.tileTitle}>{item.title}</Text>
+                  <Text style={styles.tileSubtitle}>{item.subtitle}</Text>
+                  <View
+                    style={[
+                      item.accentBadge ? styles.tileBadgeLime : styles.tileBadge,
+                      { borderRadius: skin.pillRadius },
+                    ]}
+                  >
+                    <Text style={item.accentBadge ? styles.tileBadgeLimeText : styles.tileBadgeText}>
+                      {item.badge}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </View>
-          <Text style={styles.tileTitle}>{t('settings.personas')}</Text>
-          <Text style={styles.tileSubtitle}>{t('settings.personasSub')}</Text>
-          <View style={styles.tileBadge}>
-            <Text style={styles.tileBadgeText}>{personas.length} {t('studio.personas')}</Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Tile 5: Token & Context Limits */}
-        <TouchableOpacity
-          style={styles.bentoTile}
-          onPress={() => setActiveModal('tokens')}
-          activeOpacity={0.8}
-        >
-          <View style={styles.tileIconCircle}>
-            <Cpu size={18} color={palette.accent} />
-          </View>
-          <Text style={styles.tileTitle}>{t('settings.tokens')}</Text>
-          <Text style={styles.tileSubtitle}>{t('settings.tokensSub')}</Text>
-          <View style={styles.tileBadge}>
-            <Text style={styles.tileBadgeText}>{contextLimit} BPE</Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Tile 6: Language & AI Prompt */}
-        <TouchableOpacity
-          style={styles.bentoTile}
-          onPress={() => setActiveModal('language')}
-          activeOpacity={0.8}
-        >
-          <View style={styles.tileIconCircle}>
-            <Globe size={18} color={palette.accent} />
-          </View>
-          <Text style={styles.tileTitle}>{t('nav.settings') === 'Pengaturan' ? 'Bahasa' : t('nav.settings') === '設定' ? '言語' : t('nav.settings') === 'Paramètres' ? 'Langue' : 'Language'}</Text>
-          <Text style={styles.tileSubtitle}>{t('settings.languageSub')}</Text>
-          <View style={styles.tileBadge}>
-            <Text style={styles.tileBadgeText}>
-              {(LANGUAGE_OPTIONS.find(l => l.id === selectedUiLang) || LANGUAGE_OPTIONS[0]).flag}{' '}
-              {(LANGUAGE_OPTIONS.find(l => l.id === selectedUiLang) || LANGUAGE_OPTIONS[0]).nativeName}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Tile 7: Passcode Lock */}
-        <TouchableOpacity
-          style={styles.bentoTile}
-          onPress={() => {
-            setPasscodeEnabledDraft(!!settings.passcodeEnabled);
-            setPasscodePinDraft(settings.passcodePin || '');
-            setPasscodeConfirmDraft(settings.passcodePin || '');
-            setPasscodeError('');
-            setActiveModal('passcode');
-          }}
-          activeOpacity={0.8}
-        >
-          <View style={styles.tileIconCircle}>
-            <Lock size={18} color={palette.accent} />
-          </View>
-          <Text style={styles.tileTitle}>Passcode Lock</Text>
-          <Text style={styles.tileSubtitle}>App PIN & First-Time Tour</Text>
-          <View style={styles.tileBadge}>
-            <Text style={styles.tileBadgeText}>
-              {settings.passcodeEnabled && settings.passcodePin ? 'Enabled' : 'Off'}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Tile 8: About NekoChat */}
-        <TouchableOpacity
-          style={styles.bentoTile}
-          onPress={() => setActiveModal('about')}
-          activeOpacity={0.8}
-        >
-          <View style={styles.tileIconCircle}>
-            <Sparkles size={18} color={palette.accent} />
-          </View>
-          <Text style={styles.tileTitle}>{t('settings.about')}</Text>
-          <Text style={styles.tileSubtitle}>v0.1.7-beta • Open-Source</Text>
-          <View style={styles.tileBadge}>
-            <Text style={styles.tileBadgeText}>FOSS</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
+        );
+      })()}
 
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* 3. MODALS / POP-UPS (Triggered on Tile Click)                      */}
@@ -1021,6 +1152,51 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                         {pingResult.ok
                           ? `✓ Connection Successful (${pingResult.latencyMs}ms)`
                           : `✕ Ping Failed: ${pingResult.error || 'Check URL and Key'}`}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* NSFW / 18+ Roleplay Capability Test */}
+                  <TouchableOpacity
+                    style={[
+                      styles.autoTestBtn,
+                      {
+                        marginTop: 8,
+                        backgroundColor: 'rgba(255,255,255,0.08)',
+                        borderWidth: 1,
+                        borderColor: colors.borderSubtle,
+                      },
+                    ]}
+                    onPress={handleTestNsfwCapability}
+                    disabled={testingNsfw || testingPing}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.autoTestBtnText, { color: colors.textPrimary }]}>
+                      {testingNsfw ? 'Testing NSFW Capability...' : '🔞 Test NSFW Support'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {nsfwTestResult && (
+                    <View
+                      style={[
+                        styles.pingResultBox,
+                        nsfwTestResult.ok && nsfwTestResult.supported
+                          ? styles.pingSuccess
+                          : styles.pingFailure,
+                      ]}
+                    >
+                      <Text
+                        style={
+                          nsfwTestResult.ok && nsfwTestResult.supported
+                            ? styles.pingTextSuccess
+                            : styles.pingTextFailure
+                        }
+                      >
+                        {!nsfwTestResult.ok
+                          ? `✕ Test Failed: ${nsfwTestResult.reason || 'Check URL and Key'}`
+                          : nsfwTestResult.supported
+                            ? `✓ NSFW / 18+ Roleplay Supported (${nsfwTestResult.latencyMs}ms)`
+                            : `✕ This model does not support NSFW (${nsfwTestResult.reason || 'Blocked by model'})`}
                       </Text>
                     </View>
                   )}
@@ -1220,13 +1396,51 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
 
             <ScrollView style={styles.modalBody}>
-              <Text style={styles.sectionSub}>{t('settings.selectThemeSub')}</Text>
-              {[
-                { id: 'midnight', name: '⚡ Midnight Cyber', desc: 'True OLED Black (#0c0e14) + Acid Lime (#d4ff00)', accent: palette.accent, bg: palette.bgDark },
-                { id: 'sakura', name: '🌸 Sakura Dusk', desc: 'Deep Charcoal (#120d14) + Pastel Rose (#fb7185)', accent: '#FB7185', bg: '#120d14' },
-                { id: 'slate', name: '☕ Warm Slate', desc: 'Warm Dark Slate (#12151f) + Amber (#facc15)', accent: '#FACC15', bg: '#12151f' },
-                { id: 'cyan', name: '💠 Cyber Cyan', desc: 'Deep Void (#070c12) + Electric Cyan (#38bdf8)', accent: '#38BDF8', bg: '#070c12' },
-              ].map(th => {
+              <Text style={styles.sectionSub}>UI Design & Surface Skin (Applies Instantly)</Text>
+              {Object.values(UI_SKINS).map(sk => {
+                const isSelected = selectedSkin === sk.id;
+                return (
+                  <TouchableOpacity
+                    key={sk.id}
+                    style={[
+                      styles.themeOptionCard,
+                      { borderRadius: sk.cardRadius },
+                      isSelected && [styles.themeOptionActive, { borderColor: palette.accent }],
+                    ]}
+                    onPress={() => handleSelectSkinInstant(sk.id)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                      <View
+                        style={{
+                          width: 44,
+                          height: 44,
+                          borderRadius: sk.cardRadius > 20 ? 16 : sk.cardRadius * 0.65,
+                          backgroundColor: palette.bgDark,
+                          borderWidth: Math.max(1, sk.cardBorderWidth),
+                          borderColor: isSelected ? palette.accent : `rgba(${palette.accentRgb}, 0.4)`,
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '800' }}>
+                          {sk.badge}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.themeOptionName, isSelected && { color: palette.accent }]}>
+                          {sk.name}
+                        </Text>
+                        <Text style={styles.themeOptionDesc}>{sk.desc}</Text>
+                      </View>
+                    </View>
+                    {isSelected && <Check size={16} color={palette.accent} />}
+                  </TouchableOpacity>
+                );
+              })}
+
+              <Text style={[styles.sectionSub, { marginTop: 14 }]}>{t('settings.selectThemeSub')}</Text>
+              {Object.values(THEME_PALETTES).map(th => {
                 const isSelected = selectedTheme === th.id;
                 return (
                   <TouchableOpacity
@@ -1235,7 +1449,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                       styles.themeOptionCard,
                       isSelected && [styles.themeOptionActive, { borderColor: th.accent }],
                     ]}
-                    onPress={() => handleSelectThemeInstant(th.id as ThemeId)}
+                    onPress={() => handleSelectThemeInstant(th.id)}
                     activeOpacity={0.8}
                   >
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
@@ -1244,7 +1458,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                           width: 44,
                           height: 44,
                           borderRadius: 12,
-                          backgroundColor: th.bg,
+                          backgroundColor: th.bgDark,
                           borderWidth: 1.5,
                           borderColor: th.accent,
                           justifyContent: 'center',
@@ -2204,7 +2418,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   <NekoLogoSvg size={48} color={colors.lime} />
                 </View>
                 <Text style={styles.aboutTitle}>NekoChat</Text>
-                <Text style={styles.aboutVersion}>v0.1.7-beta • Open-Source</Text>
+                <Text style={styles.aboutVersion}>{APP_VERSION_LABEL} • Open-Source</Text>
                 <Text style={styles.aboutDesc}>
                   Yet another AI roleplay app. Built with Expo and React Native for people who want a local, bring-your-own-key chat client.
                 </Text>

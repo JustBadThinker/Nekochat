@@ -41,6 +41,8 @@ import {
 } from 'lucide-react-native';
 import { Character, Persona, Conversation } from '../types';
 import { useTheme } from '../theme/ThemeContext';
+import { getCardSurfaceStyle } from '../theme/skins';
+import { runToggleAnimation } from '../theme/animations';
 import { useTranslation } from '../i18n/LanguageContext';
 import { NekoLogoSvg } from '../components/NekoLogoSvg';
 import { StoryTray } from '../components/StoryTray';
@@ -63,6 +65,7 @@ const AccordionAnimatedBody: React.FC<{ isExpanded: boolean; children: React.Rea
   isExpanded,
   children,
 }) => {
+  const { skin } = useTheme();
   const anim = useRef(new Animated.Value(isExpanded ? 1 : 0)).current;
   const [rendered, setRendered] = useState(isExpanded);
 
@@ -70,23 +73,18 @@ const AccordionAnimatedBody: React.FC<{ isExpanded: boolean; children: React.Rea
     if (isExpanded) {
       setRendered(true);
       anim.setValue(0);
-      Animated.timing(anim, {
-        toValue: 1,
-        duration: 240,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start();
+      runToggleAnimation(anim, true, skin.animation);
     } else if (rendered) {
       Animated.timing(anim, {
         toValue: 0,
-        duration: 160,
-        easing: Easing.in(Easing.cubic),
+        duration: Math.max(140, Math.round(skin.animation.enterDuration * 0.65)),
+        easing: skin.animation.easing,
         useNativeDriver: true,
       }).start(({ finished }) => {
         if (finished) setRendered(false);
       });
     }
-  }, [isExpanded]);
+  }, [isExpanded, skin.animation]);
 
   if (!rendered) return null;
 
@@ -113,16 +111,12 @@ const AccordionAnimatedChevron: React.FC<{ isExpanded: boolean; activeColor: str
   isExpanded,
   activeColor,
 }) => {
+  const { skin } = useTheme();
   const rot = useRef(new Animated.Value(isExpanded ? 1 : 0)).current;
 
   useEffect(() => {
-    Animated.spring(rot, {
-      toValue: isExpanded ? 1 : 0,
-      friction: 7,
-      tension: 120,
-      useNativeDriver: true,
-    }).start();
-  }, [isExpanded]);
+    runToggleAnimation(rot, isExpanded, skin.animation);
+  }, [isExpanded, skin.animation]);
 
   return (
     <Animated.View
@@ -377,7 +371,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
     ? sessionsByCharId.get(selectedGroupChar.id) || []
     : [];
 
-  const { palette } = useTheme();
+  const { palette, skin } = useTheme();
   const { t } = useTranslation();
   const styles = useMemo(() => createStyles(palette), [palette]);
 
@@ -512,6 +506,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
             <View
               style={[
                 styles.accordionCard,
+                getCardSurfaceStyle(palette, skin),
                 isExpanded && { borderColor: `rgba(${palette.accentRgb}, 0.4)` },
               ]}
             >
@@ -578,7 +573,10 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
                   {/* Action Buttons Row */}
                   <View style={styles.accordionCtaRow}>
                     <TouchableOpacity
-                      style={[styles.accordionPrimaryBtn, { backgroundColor: palette.accent }]}
+                      style={[
+                        styles.accordionPrimaryBtn,
+                        { backgroundColor: palette.accent, borderRadius: skin.buttonRadius },
+                      ]}
                       onPress={async () => {
                         try {
                           const newConv = await storageService.createConversation(
@@ -601,7 +599,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={styles.accordionSecondaryBtn}
+                      style={[styles.accordionSecondaryBtn, { borderRadius: skin.buttonRadius }]}
                       onPress={() => handleCardPress(item)}
                       activeOpacity={0.8}
                     >

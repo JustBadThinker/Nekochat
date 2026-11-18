@@ -6,6 +6,9 @@
  * Native Expo / React Native Compatible
  */
 
+import type { ThemeId } from '../theme/colors';
+import type { UiSkinId } from '../theme/skins';
+
 export type UserRole = 'user' | 'moderator' | 'admin';
 
 export interface User {
@@ -205,6 +208,7 @@ export interface Persona {
   roleInstructions?: string;
   avatar?: string;
   avatarUrl?: string;
+  lorebookIds?: string[];
   isDefault?: boolean;
   createdAt?: string;
 }
@@ -220,6 +224,8 @@ export interface LorebookEntry {
   selective?: boolean; // requires both primary and secondary triggers
   constant?: boolean; // always injected regardless of triggers
   position?: 'before_char' | 'after_char';
+  probability?: number; // 0..100
+  useProbability?: boolean;
 }
 
 export interface Lorebook {
@@ -412,7 +418,8 @@ export interface SyntaxColorConfig {
 }
 
 export interface AppSettings {
-  theme?: 'midnight' | 'sakura' | 'slate' | 'cyan';
+  theme?: ThemeId;
+  uiSkin?: UiSkinId;
   chatStyle: ChatStyleMode;
   syntaxColors: SyntaxColorConfig;
   showTokenCounter: boolean;
@@ -523,4 +530,67 @@ export interface ImportParseResult {
   error?: string;
   warnings?: string[];
   detectedFormat?: string;
+}
+
+export type CastPresenceStatus = 'present' | 'away' | 'unknown';
+export type CastFactSource = 'user' | 'ai_inferred' | 'imported';
+export type CastProfileField =
+  | 'personality'
+  | 'appearance'
+  | 'background'
+  | 'relationships'
+  | 'interests'
+  | 'fact';
+
+export interface CastFactRecord {
+  id: string;
+  castMemberId: string;
+  conversationId: string;
+  field: CastProfileField;
+  value: string;
+  sourceType: CastFactSource;
+  confirmed: boolean;
+  sourceMessageId?: string;
+  turnIndex?: number;
+  status: 'active' | 'stale' | 'needs_review';
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CastKnowledgeBoundary {
+  witnessed: string[];
+  communicated: string[];
+  unknown: string[];
+}
+
+export interface DynamicCastMember {
+  id: string;
+  conversationId: string;
+  characterId: string;
+  name: string;
+  aliases: string[];
+  isPrimary: boolean;
+  presence: CastPresenceStatus;
+  aiControlled: boolean;
+  singleTurnOnly?: boolean;
+  profileStatus: 'stub' | 'provisional' | 'established';
+  unknownFields: CastProfileField[];
+  facts: CastFactRecord[];
+  knowledge: CastKnowledgeBoundary;
+  introducedAtMessageId?: string;
+  introducedTurnIndex?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface SceneContinuityState {
+  conversationId: string;
+  characterId: string;
+  currentLocation: string;
+  establishedTime: string;
+  ongoingActivities: string[];
+  unresolvedActions: string[];
+  lastTransitionMessageId?: string;
+  lastTransitionTurnIndex?: number;
+  updatedAt: number;
 }

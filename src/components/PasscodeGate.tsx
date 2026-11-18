@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Lock, Delete } from 'lucide-react-native';
 import { useTheme } from '../theme/ThemeContext';
+import { runEnterAnimation } from '../theme/animations';
 import { NekoLogoSvg } from './NekoLogoSvg';
 
 interface PasscodeGateProps {
@@ -18,7 +19,7 @@ interface PasscodeGateProps {
 }
 
 export const PasscodeGate: React.FC<PasscodeGateProps> = ({ expectedPin, onUnlock }) => {
-  const { palette } = useTheme();
+  const { palette, skin } = useTheme();
   const [pin, setPin] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -26,13 +27,8 @@ export const PasscodeGate: React.FC<PasscodeGateProps> = ({ expectedPin, onUnloc
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(enterAnim, {
-      toValue: 1,
-      duration: 320,
-      easing: Easing.inOut(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [enterAnim]);
+    runEnterAnimation(enterAnim, skin.animation);
+  }, [enterAnim, skin.animation]);
 
   const triggerShake = () => {
     shakeAnim.setValue(0);

@@ -6,6 +6,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import { colors } from '../theme/colors';
+import { APP_VERSION_LABEL } from '../constants/appInfo';
 import { NekoLogoSvg } from './NekoLogoSvg';
 
 interface SplashScreenProps {
@@ -101,7 +102,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish, isReady = 
           },
         ]}
       >
-        v0.1.6-beta • Powered by Warden Core
+        {APP_VERSION_LABEL} • Powered by Warden Core
       </Text>
 
       <View style={styles.loaderBarContainer}>

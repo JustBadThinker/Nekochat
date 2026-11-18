@@ -10,10 +10,19 @@
  *   continues using `AsyncStorage` without requiring COOP/COEP WASM headers.
  */
 
-import type { ChatMessage, Conversation } from '../types';
+import type {
+  CastFactRecord,
+  CastKnowledgeBoundary,
+  CastPresenceStatus,
+  CastProfileField,
+  ChatMessage,
+  Conversation,
+  DynamicCastMember,
+  SceneContinuityState,
+} from '../types';
 
 export const SQLITE_DB_NAME = 'nekochat.db';
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 export interface SqlQueryExecutor {
   execAsync(sql: string): Promise<void>;
@@ -156,6 +165,64 @@ export async function initializeSqliteSchema(db: SqlExecutor): Promise<SchemaIni
       if (!colNames.has('branched_from_message_id')) {
         await q.execAsync('ALTER TABLE conversations ADD COLUMN branched_from_message_id TEXT');
       }
+
+      // v3: Dynamic Cast & Scene Continuity tables (idempotent across fresh & v1/v2 DBs)
+      await q.execAsync(`
+        CREATE TABLE IF NOT EXISTS cast_members (
+          id TEXT PRIMARY KEY,
+          conversation_id TEXT NOT NULL,
+          character_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          aliases_json TEXT,
+          is_primary INTEGER NOT NULL DEFAULT 0,
+          presence TEXT NOT NULL DEFAULT 'unknown',
+          ai_controlled INTEGER NOT NULL DEFAULT 1,
+          profile_status TEXT NOT NULL DEFAULT 'stub',
+          unknown_fields_json TEXT,
+          knowledge_json TEXT,
+          introduced_at_message_id TEXT,
+          introduced_turn_index INTEGER,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_cast_members_conv
+          ON cast_members(conversation_id, character_id);
+
+        CREATE TABLE IF NOT EXISTS cast_facts (
+          id TEXT PRIMARY KEY,
+          cast_member_id TEXT NOT NULL,
+          conversation_id TEXT NOT NULL,
+          field TEXT NOT NULL,
+          value TEXT NOT NULL,
+          source_type TEXT NOT NULL,
+          confirmed INTEGER NOT NULL DEFAULT 0,
+          source_message_id TEXT,
+          turn_index INTEGER,
+          status TEXT NOT NULL DEFAULT 'active',
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+          FOREIGN KEY (cast_member_id) REFERENCES cast_members(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_cast_facts_member
+          ON cast_facts(cast_member_id, status);
+
+        CREATE TABLE IF NOT EXISTS scene_states (
+          conversation_id TEXT PRIMARY KEY,
+          character_id TEXT NOT NULL,
+          current_location TEXT NOT NULL DEFAULT '',
+          established_time TEXT NOT NULL DEFAULT '',
+          ongoing_activities_json TEXT,
+          unresolved_actions_json TEXT,
+          last_transition_message_id TEXT,
+          last_transition_turn_index INTEGER,
+          updated_at INTEGER NOT NULL,
+          FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+        );
+      `);
 
       await q.runAsync(
         'INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)',
@@ -502,6 +569,9 @@ export class SqliteConversationRepository {
       if (this.fts5Supported) {
         await this.db.runAsync('DELETE FROM messages_fts WHERE conversation_id = ?', [conversationId]);
       }
+      await this.db.runAsync('DELETE FROM cast_facts WHERE conversation_id = ?', [conversationId]);
+      await this.db.runAsync('DELETE FROM cast_members WHERE conversation_id = ?', [conversationId]);
+      await this.db.runAsync('DELETE FROM scene_states WHERE conversation_id = ?', [conversationId]);
       await this.db.runAsync('DELETE FROM session_memories WHERE conversation_id = ?', [conversationId]);
       await this.db.runAsync('DELETE FROM messages WHERE conversation_id = ?', [conversationId]);
       await this.db.runAsync('DELETE FROM conversations WHERE id = ?', [conversationId]);
@@ -668,6 +738,115 @@ export class SqliteConversationRepository {
           ]
         );
         copiedMemoriesCount++;
+      }
+
+      // Copy provenance-safe Dynamic Cast members, facts, and scene continuity
+      const castRows = await q.getAllAsync<any>(
+        'SELECT * FROM cast_members WHERE conversation_id = ? AND character_id = ?',
+        [params.sourceConversationId, params.characterId]
+      );
+      const castIdMap = new Map<string, string>();
+      for (const cRow of castRows) {
+        const introTurn = typeof cRow.introduced_turn_index === 'number' ? cRow.introduced_turn_index : null;
+        if (introTurn !== null && introTurn > branchTurnIndex) {
+          continue;
+        }
+        const newCastId = `cast_br_${nowMs}_${castIdMap.size}_${Math.random().toString(36).slice(2, 6)}`;
+        castIdMap.set(cRow.id, newCastId);
+        const remappedIntroMsg =
+          cRow.introduced_at_message_id && idMap.has(cRow.introduced_at_message_id)
+            ? idMap.get(cRow.introduced_at_message_id)!
+            : null;
+        await q.runAsync(
+          `INSERT INTO cast_members (
+            id, conversation_id, character_id, name, aliases_json, is_primary,
+            presence, ai_controlled, profile_status, unknown_fields_json, knowledge_json,
+            introduced_at_message_id, introduced_turn_index, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            newCastId,
+            newConvId,
+            branchedConv.characterId,
+            cRow.name,
+            cRow.aliases_json ?? '[]',
+            cRow.is_primary ? 1 : 0,
+            cRow.presence ?? 'unknown',
+            cRow.ai_controlled ? 1 : 0,
+            cRow.profile_status ?? 'stub',
+            cRow.unknown_fields_json ?? '[]',
+            cRow.knowledge_json ?? '{}',
+            remappedIntroMsg,
+            introTurn,
+            cRow.created_at,
+            nowMs,
+          ]
+        );
+      }
+
+      const castFactRows = await q.getAllAsync<any>(
+        'SELECT * FROM cast_facts WHERE conversation_id = ?',
+        [params.sourceConversationId]
+      );
+      let copiedCastFacts = 0;
+      for (const fRow of castFactRows) {
+        const mappedCastId = castIdMap.get(fRow.cast_member_id);
+        if (!mappedCastId || fRow.status !== 'active') continue;
+        if (!fRow.source_message_id || !idMap.has(fRow.source_message_id)) continue;
+        const newFactId = `cf_br_${nowMs}_${copiedCastFacts++}_${Math.random().toString(36).slice(2, 6)}`;
+        await q.runAsync(
+          `INSERT INTO cast_facts (
+            id, cast_member_id, conversation_id, field, value, source_type,
+            confirmed, source_message_id, turn_index, status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            newFactId,
+            mappedCastId,
+            newConvId,
+            fRow.field,
+            fRow.value,
+            fRow.source_type,
+            fRow.confirmed ? 1 : 0,
+            idMap.get(fRow.source_message_id)!,
+            typeof fRow.turn_index === 'number' ? fRow.turn_index : null,
+            'active',
+            fRow.created_at,
+            nowMs,
+          ]
+        );
+      }
+
+      const sceneRow = await q.getFirstAsync<any>(
+        'SELECT * FROM scene_states WHERE conversation_id = ? AND character_id = ?',
+        [params.sourceConversationId, params.characterId]
+      );
+      if (
+        sceneRow &&
+        (sceneRow.last_transition_turn_index === null ||
+          sceneRow.last_transition_turn_index === undefined ||
+          sceneRow.last_transition_turn_index <= branchTurnIndex)
+      ) {
+        const remappedTransitionMsg =
+          sceneRow.last_transition_message_id && idMap.has(sceneRow.last_transition_message_id)
+            ? idMap.get(sceneRow.last_transition_message_id)!
+            : null;
+        await q.runAsync(
+          `INSERT INTO scene_states (
+            conversation_id, character_id, current_location, established_time,
+            ongoing_activities_json, unresolved_actions_json,
+            last_transition_message_id, last_transition_turn_index, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            newConvId,
+            branchedConv.characterId,
+            sceneRow.current_location ?? '',
+            sceneRow.established_time ?? '',
+            sceneRow.ongoing_activities_json ?? '[]',
+            sceneRow.unresolved_actions_json ?? '[]',
+            remappedTransitionMsg,
+            typeof sceneRow.last_transition_turn_index === 'number' ? sceneRow.last_transition_turn_index : null,
+            nowMs,
+          ]
+        );
       }
 
       result = {
@@ -1018,6 +1197,248 @@ export class SqliteConversationRepository {
 
   async deleteSessionMemory(memoryId: string): Promise<void> {
     await this.db.runAsync('DELETE FROM session_memories WHERE id = ?', [memoryId]);
+  }
+
+  // ── Phase 7: Dynamic Cast & Scene Continuity CRUD ──
+
+  async getCastMembers(conversationId: string, characterId: string): Promise<DynamicCastMember[]> {
+    const owner = await this.db.getFirstAsync<{ id: string }>(
+      'SELECT id FROM conversations WHERE id = ? AND character_id = ? LIMIT 1',
+      [conversationId, characterId]
+    );
+    if (!owner) return [];
+
+    const memberRows = await this.db.getAllAsync<any>(
+      'SELECT * FROM cast_members WHERE conversation_id = ? AND character_id = ? ORDER BY is_primary DESC, created_at ASC',
+      [conversationId, characterId]
+    );
+    const factRows = await this.db.getAllAsync<any>(
+      'SELECT * FROM cast_facts WHERE conversation_id = ? ORDER BY created_at ASC',
+      [conversationId]
+    );
+
+    const factsByMember = new Map<string, CastFactRecord[]>();
+    for (const f of factRows) {
+      const list = factsByMember.get(f.cast_member_id) || [];
+      list.push({
+        id: f.id,
+        castMemberId: f.cast_member_id,
+        conversationId: f.conversation_id,
+        field: f.field as CastProfileField,
+        value: f.value,
+        sourceType: f.source_type,
+        confirmed: Boolean(f.confirmed),
+        sourceMessageId: f.source_message_id ?? undefined,
+        turnIndex: typeof f.turn_index === 'number' ? f.turn_index : undefined,
+        status: f.status,
+        createdAt: Number(f.created_at),
+        updatedAt: Number(f.updated_at),
+      });
+      factsByMember.set(f.cast_member_id, list);
+    }
+
+    return memberRows.map(r => {
+      let aliases: string[] = [];
+      let unknownFields: CastProfileField[] = [];
+      let knowledge: CastKnowledgeBoundary = { witnessed: [], communicated: [], unknown: [] };
+      let singleTurnOnly = false;
+      try {
+        aliases = r.aliases_json ? JSON.parse(r.aliases_json) : [];
+      } catch {}
+      try {
+        unknownFields = r.unknown_fields_json ? JSON.parse(r.unknown_fields_json) : [];
+      } catch {}
+      try {
+        const k = r.knowledge_json ? JSON.parse(r.knowledge_json) : {};
+        singleTurnOnly = Boolean(k.singleTurnOnly);
+        knowledge = {
+          witnessed: Array.isArray(k.witnessed) ? k.witnessed : [],
+          communicated: Array.isArray(k.communicated) ? k.communicated : [],
+          unknown: Array.isArray(k.unknown) ? k.unknown : [],
+        };
+      } catch {}
+
+      return {
+        id: r.id,
+        conversationId: r.conversation_id,
+        characterId: r.character_id,
+        name: r.name,
+        aliases: Array.isArray(aliases) ? aliases : [],
+        isPrimary: Boolean(r.is_primary),
+        presence: (r.presence || 'unknown') as CastPresenceStatus,
+        aiControlled: Boolean(r.ai_controlled),
+        singleTurnOnly,
+        profileStatus: (r.profile_status || 'stub') as DynamicCastMember['profileStatus'],
+        unknownFields: Array.isArray(unknownFields) ? unknownFields : [],
+        facts: factsByMember.get(r.id) || [],
+        knowledge,
+        introducedAtMessageId: r.introduced_at_message_id ?? undefined,
+        introducedTurnIndex: typeof r.introduced_turn_index === 'number' ? r.introduced_turn_index : undefined,
+        createdAt: Number(r.created_at),
+        updatedAt: Number(r.updated_at),
+      };
+    });
+  }
+
+  async upsertCastMember(member: DynamicCastMember): Promise<void> {
+    await this.db.withExclusiveTransactionAsync(async tx => {
+      const q = tx ?? this.db;
+      await q.runAsync(
+        `INSERT INTO cast_members (
+          id, conversation_id, character_id, name, aliases_json, is_primary,
+          presence, ai_controlled, profile_status, unknown_fields_json, knowledge_json,
+          introduced_at_message_id, introduced_turn_index, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          name = excluded.name,
+          aliases_json = excluded.aliases_json,
+          is_primary = excluded.is_primary,
+          presence = excluded.presence,
+          ai_controlled = excluded.ai_controlled,
+          profile_status = excluded.profile_status,
+          unknown_fields_json = excluded.unknown_fields_json,
+          knowledge_json = excluded.knowledge_json,
+          introduced_at_message_id = excluded.introduced_at_message_id,
+          introduced_turn_index = excluded.introduced_turn_index,
+          updated_at = excluded.updated_at`,
+        [
+          member.id,
+          member.conversationId,
+          member.characterId,
+          member.name.trim(),
+          JSON.stringify(member.aliases || []),
+          member.isPrimary ? 1 : 0,
+          member.presence,
+          member.aiControlled ? 1 : 0,
+          member.profileStatus,
+          JSON.stringify(member.unknownFields || []),
+          JSON.stringify({
+            ...(member.knowledge || { witnessed: [], communicated: [], unknown: [] }),
+            singleTurnOnly: Boolean(member.singleTurnOnly),
+          }),
+          member.introducedAtMessageId ?? null,
+          typeof member.introducedTurnIndex === 'number' ? member.introducedTurnIndex : null,
+          member.createdAt,
+          member.updatedAt,
+        ]
+      );
+
+      for (const fact of member.facts || []) {
+        await q.runAsync(
+          `INSERT INTO cast_facts (
+            id, cast_member_id, conversation_id, field, value, source_type,
+            confirmed, source_message_id, turn_index, status, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            field = excluded.field,
+            value = excluded.value,
+            source_type = excluded.source_type,
+            confirmed = excluded.confirmed,
+            source_message_id = excluded.source_message_id,
+            turn_index = excluded.turn_index,
+            status = excluded.status,
+            updated_at = excluded.updated_at`,
+          [
+            fact.id,
+            member.id,
+            member.conversationId,
+            fact.field,
+            fact.value.trim(),
+            fact.sourceType,
+            fact.confirmed ? 1 : 0,
+            fact.sourceMessageId ?? null,
+            typeof fact.turnIndex === 'number' ? fact.turnIndex : null,
+            fact.status || 'active',
+            fact.createdAt,
+            fact.updatedAt,
+          ]
+        );
+      }
+    });
+  }
+
+  async deleteCastMember(castMemberId: string): Promise<void> {
+    await this.db.withExclusiveTransactionAsync(async tx => {
+      const q = tx ?? this.db;
+      await q.runAsync('DELETE FROM cast_facts WHERE cast_member_id = ?', [castMemberId]);
+      await q.runAsync('DELETE FROM cast_members WHERE id = ?', [castMemberId]);
+    });
+  }
+
+  async getSceneState(conversationId: string, characterId: string): Promise<SceneContinuityState | null> {
+    const row = await this.db.getFirstAsync<any>(
+      'SELECT * FROM scene_states WHERE conversation_id = ? AND character_id = ? LIMIT 1',
+      [conversationId, characterId]
+    );
+    if (!row) return null;
+    let ongoingActivities: string[] = [];
+    let unresolvedActions: string[] = [];
+    try {
+      ongoingActivities = row.ongoing_activities_json ? JSON.parse(row.ongoing_activities_json) : [];
+    } catch {}
+    try {
+      unresolvedActions = row.unresolved_actions_json ? JSON.parse(row.unresolved_actions_json) : [];
+    } catch {}
+    return {
+      conversationId: row.conversation_id,
+      characterId: row.character_id,
+      currentLocation: row.current_location || '',
+      establishedTime: row.established_time || '',
+      ongoingActivities: Array.isArray(ongoingActivities) ? ongoingActivities : [],
+      unresolvedActions: Array.isArray(unresolvedActions) ? unresolvedActions : [],
+      lastTransitionMessageId: row.last_transition_message_id ?? undefined,
+      lastTransitionTurnIndex:
+        typeof row.last_transition_turn_index === 'number' ? row.last_transition_turn_index : undefined,
+      updatedAt: Number(row.updated_at),
+    };
+  }
+
+  async upsertSceneState(scene: SceneContinuityState): Promise<void> {
+    await this.db.runAsync(
+      `INSERT INTO scene_states (
+        conversation_id, character_id, current_location, established_time,
+        ongoing_activities_json, unresolved_actions_json,
+        last_transition_message_id, last_transition_turn_index, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(conversation_id) DO UPDATE SET
+        current_location = excluded.current_location,
+        established_time = excluded.established_time,
+        ongoing_activities_json = excluded.ongoing_activities_json,
+        unresolved_actions_json = excluded.unresolved_actions_json,
+        last_transition_message_id = excluded.last_transition_message_id,
+        last_transition_turn_index = excluded.last_transition_turn_index,
+        updated_at = excluded.updated_at`,
+      [
+        scene.conversationId,
+        scene.characterId,
+        scene.currentLocation.trim(),
+        scene.establishedTime.trim(),
+        JSON.stringify(scene.ongoingActivities || []),
+        JSON.stringify(scene.unresolvedActions || []),
+        scene.lastTransitionMessageId ?? null,
+        typeof scene.lastTransitionTurnIndex === 'number' ? scene.lastTransitionTurnIndex : null,
+        scene.updatedAt,
+      ]
+    );
+  }
+
+  async invalidateCastFactsForMessage(params: {
+    conversationId: string;
+    messageId: string;
+  }): Promise<number> {
+    const rows = await this.db.getAllAsync<{ id: string; confirmed: number }>(
+      'SELECT id, confirmed FROM cast_facts WHERE conversation_id = ? AND source_message_id = ?',
+      [params.conversationId, params.messageId]
+    );
+    const now = Date.now();
+    for (const r of rows) {
+      const nextStatus = r.confirmed ? 'needs_review' : 'stale';
+      await this.db.runAsync(
+        'UPDATE cast_facts SET status = ?, updated_at = ? WHERE id = ?',
+        [nextStatus, now, r.id]
+      );
+    }
+    return rows.length;
   }
 
   /**

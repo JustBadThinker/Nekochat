@@ -91,7 +91,7 @@ test('schema migration handles fresh v2 DB and v1->v2 upgrade idempotently', asy
   assert.equal(freshRes.version, CURRENT_SCHEMA_VERSION);
   const freshMigs = await freshExec.getAllAsync('SELECT * FROM schema_migrations');
   assert.equal(freshMigs.length, 1);
-  assert.equal(freshMigs[0].version, 2);
+  assert.equal(freshMigs[0].version, CURRENT_SCHEMA_VERSION);
 
   // Retry fresh DB
   await initializeSqliteSchema(freshExec);
@@ -164,7 +164,7 @@ test('schema migration handles fresh v2 DB and v1->v2 upgrade idempotently', asy
   await v1Exec.runAsync('INSERT INTO schema_migrations (version, applied_at) VALUES (1, ?)', [new Date().toISOString()]);
 
   const upgraded = await initializeSqliteSchema(v1Exec);
-  assert.equal(upgraded.version, 2);
+  assert.equal(upgraded.version, CURRENT_SCHEMA_VERSION);
   const cols = await v1Exec.getAllAsync('PRAGMA table_info(conversations)');
   const colNames = new Set(cols.map(c => c.name));
   assert.equal(colNames.has('parent_conversation_id'), true);
@@ -173,7 +173,7 @@ test('schema migration handles fresh v2 DB and v1->v2 upgrade idempotently', asy
   // Retry v2 migration must not fail with duplicate column
   await initializeSqliteSchema(v1Exec);
   const migRows = await v1Exec.getAllAsync('SELECT * FROM schema_migrations ORDER BY version ASC');
-  assert.deepEqual(migRows.map(r => r.version), [1, 2]);
+  assert.deepEqual(migRows.map(r => r.version), [1, CURRENT_SCHEMA_VERSION]);
 });
 
 test('branchConversationAtMessage uses tx executor exclusively and prevents future-state leakage', async () => {

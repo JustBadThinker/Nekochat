@@ -261,6 +261,7 @@ export default function App() {
 
   // Active theme background tokens
   const currentTheme = settings?.theme || 'midnight';
+  const currentSkin = settings?.uiSkin || 'bento';
   const activePalette = applyThemePalette(currentTheme);
   const themeBg = activePalette.bgDark;
   const webFrameBg = activePalette.webFrameBg;
@@ -268,7 +269,7 @@ export default function App() {
   if (!settings.hasCompletedOnboarding || forceShowOnboarding) {
     return (
       <SafeAreaProvider>
-        <ThemeProvider themeId={currentTheme}>
+        <ThemeProvider themeId={currentTheme} uiSkin={currentSkin}>
           <LanguageProvider language={settings?.uiLanguage || 'en'}>
             <View style={[styles.webFrame, { backgroundColor: webFrameBg }]}>
               <View style={[styles.appContainer, { backgroundColor: themeBg }]}>
@@ -294,7 +295,7 @@ export default function App() {
   if (settings.passcodeEnabled && settings.passcodePin && !isPasscodeUnlocked) {
     return (
       <SafeAreaProvider>
-        <ThemeProvider themeId={currentTheme}>
+        <ThemeProvider themeId={currentTheme} uiSkin={currentSkin}>
           <LanguageProvider language={settings?.uiLanguage || 'en'}>
             <View style={[styles.webFrame, { backgroundColor: webFrameBg }]}>
               <View style={[styles.appContainer, { backgroundColor: themeBg }]}>
@@ -342,7 +343,7 @@ export default function App() {
   if (activeChatCharacter) {
     return (
       <SafeAreaProvider>
-      <ThemeProvider themeId={currentTheme}>
+      <ThemeProvider themeId={currentTheme} uiSkin={currentSkin}>
       <LanguageProvider language={settings?.uiLanguage || 'en'}>
       <View style={[styles.webFrame, { backgroundColor: webFrameBg }]}>
         <Animated.View
@@ -388,7 +389,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-    <ThemeProvider themeId={currentTheme}>
+    <ThemeProvider themeId={currentTheme} uiSkin={currentSkin}>
     <LanguageProvider language={settings?.uiLanguage || 'en'}>
     <View style={[styles.webFrame, { backgroundColor: webFrameBg }]}>
       <SafeAreaView

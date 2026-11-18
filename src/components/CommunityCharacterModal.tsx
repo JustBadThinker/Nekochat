@@ -39,6 +39,7 @@ import { communityCatalogService } from '../services/communityCatalogService';
 import { storageService } from '../services/storageService';
 import { RichHtmlRenderer } from './RichHtmlRenderer';
 import { GLASS } from '../theme/glassTheme';
+import { useTheme } from '../theme/ThemeContext';
 import { LinearGradient } from 'expo-linear-gradient';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -60,32 +61,34 @@ const GreetingAccordionItem: React.FC<GreetingAccordionItemProps> = ({
   onToggle,
   onStartWithGreeting,
 }) => {
+  const { skin } = useTheme();
   const rotateAnim = useRef(new Animated.Value(isExpanded ? 1 : 0)).current;
   const bodyFadeAnim = useRef(new Animated.Value(isExpanded ? 1 : 0)).current;
   const bodySlideAnim = useRef(new Animated.Value(isExpanded ? 0 : -6)).current;
 
   useEffect(() => {
+    const dur = Math.max(160, Math.round(skin.animation.enterDuration * 0.85));
     Animated.parallel([
       Animated.timing(rotateAnim, {
         toValue: isExpanded ? 1 : 0,
-        duration: 220,
-        easing: Easing.out(Easing.cubic),
+        duration: dur,
+        easing: skin.animation.easing,
         useNativeDriver: true,
       }),
       Animated.timing(bodyFadeAnim, {
         toValue: isExpanded ? 1 : 0,
-        duration: 220,
-        easing: Easing.out(Easing.cubic),
+        duration: dur,
+        easing: skin.animation.easing,
         useNativeDriver: true,
       }),
       Animated.timing(bodySlideAnim, {
         toValue: isExpanded ? 0 : -6,
-        duration: 220,
-        easing: Easing.out(Easing.cubic),
+        duration: dur,
+        easing: skin.animation.easing,
         useNativeDriver: true,
       }),
     ]).start();
-  }, [isExpanded, rotateAnim, bodyFadeAnim, bodySlideAnim]);
+  }, [isExpanded, rotateAnim, bodyFadeAnim, bodySlideAnim, skin.animation]);
 
   const chevronRotate = rotateAnim.interpolate({
     inputRange: [0, 1],

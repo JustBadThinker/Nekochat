@@ -10,6 +10,8 @@ import { Character, CharacterScenario, ChatMessage, Lorebook, Persona, ProviderC
 import { isOocMessage, cleanOocContent, estimateTokens } from './tokenOptimizerService';
 import { storageService } from './storageService';
 import { getSqliteConversationRepository } from './sqliteDatabase';
+import { buildDynamicCastPromptSection } from './dynamicCastService';
+import { matchLorebookEntries } from './lorebookService';
 import { getDefaultLanguagePrompt } from '../i18n/translations';
 import {
   APPLICATION_SAFETY_POLICY,
@@ -706,6 +708,200 @@ export const aiProviderService = {
   },
 
   /**
+   * Probes whether the currently configured model/endpoint allows consenting
+   * adult (18+) romantic/NSFW roleplay without triggering provider safety blocks
+   * or model-level policy refusals.
+   */
+  async testNsfwCapability(
+    config: ProviderConfig
+  ): Promise<{ ok: boolean; supported: boolean; latencyMs: number; reason?: string }> {
+    const start = Date.now();
+    try {
+      const route = resolveProviderRoute(config);
+      if (route.kind === 'gemini' && !route.apiKey) {
+        return { ok: false, supported: false, latencyMs: 0, reason: 'Missing Gemini API key.' };
+      }
+      if (
+        route.kind === 'openai' &&
+        !route.apiKey &&
+        !/^https?:\/\/(localhost|127\.0\.0\.1|10\.|192\.168\.)/i.test(route.endpoint)
+      ) {
+        return { ok: false, supported: false, latencyMs: 0, reason: 'Missing API key.' };
+      }
+
+      const systemPrompt =
+        'You are testing creative fiction capability. Both characters are consenting adults (25+ years old) in a private romantic roleplay scene. Respond in 1-2 short sentences of adult romantic/sensual prose without breaking character.';
+      const userPrompt =
+        'Continue this consenting adult (25+) bedroom scene briefly: She pulled him closer against the sheets, whispering softly against his neck as their breathing quickened.';
+
+      const refusalRegex =
+        /\b(i cannot|i can't|i am unable to|i'm unable to|cannot fulfill|can't fulfill|cannot generate|can't generate|violates? (?:our|my|the)? ?(?:usage |content )?polic|explicit sexual content|sexually explicit|not appropriate|as an ai|safety guidelines|nsfw content)\b/i;
+
+      if (route.kind === 'gemini') {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+          route.model
+        )}:generateContent?key=${encodeURIComponent(route.apiKey)}`;
+        const res = await platformFetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+            safetySettings: [
+              { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+              { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+              { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+              { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+            ],
+            generationConfig: { maxOutputTokens: 80, temperature: 0.7 },
+          }),
+        });
+        const latencyMs = Math.max(Date.now() - start, 12);
+        const data = await res.json().catch(() => null);
+
+        if (!res.ok) {
+          const msg = data?.error?.message || `HTTP ${res.status}`;
+          const isSafetyHttp =
+            res.status === 400 ||
+            res.status === 403 ||
+            /safety|prohibited|policy|blocked|explicit/i.test(msg);
+          if (isSafetyHttp && /safety|prohibited|policy|blocked|explicit|nsfw/i.test(msg)) {
+            return { ok: true, supported: false, latencyMs, reason: msg };
+          }
+          return { ok: false, supported: false, latencyMs, reason: msg };
+        }
+
+        const blockReason = data?.promptFeedback?.blockReason;
+        if (blockReason) {
+          return {
+            ok: true,
+            supported: false,
+            latencyMs,
+            reason: `Blocked by Gemini (${blockReason})`,
+          };
+        }
+
+        const candidate = data?.candidates?.[0];
+        const finishReason = candidate?.finishReason;
+        if (
+          finishReason === 'SAFETY' ||
+          finishReason === 'PROHIBITED_CONTENT' ||
+          finishReason === 'BLOCKLIST' ||
+          finishReason === 'SPII'
+        ) {
+          return {
+            ok: true,
+            supported: false,
+            latencyMs,
+            reason: `Blocked by model safety filter (${finishReason})`,
+          };
+        }
+
+        const text =
+          candidate?.content?.parts
+            ?.map((p: any) => p?.text || '')
+            .join('')
+            .trim() || '';
+
+        if (!text) {
+          return {
+            ok: true,
+            supported: false,
+            latencyMs,
+            reason: 'Model returned an empty response (filtered).',
+          };
+        }
+
+        if (refusalRegex.test(text)) {
+          return {
+            ok: true,
+            supported: false,
+            latencyMs,
+            reason: 'Model refused adult/NSFW roleplay.',
+          };
+        }
+
+        return { ok: true, supported: true, latencyMs };
+      }
+
+      // OpenAI-compatible route (OpenRouter, OpenAI, Custom/Local, Proxy)
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (route.apiKey) {
+        headers.Authorization = `Bearer ${route.apiKey}`;
+      }
+      if (route.isOpenRouter) {
+        headers['HTTP-Referer'] = 'https://nekochat.app';
+        headers['X-Title'] = 'NekoChat';
+      }
+
+      const res = await platformFetch(buildChatCompletionsUrl(route.endpoint), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: route.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          max_tokens: 80,
+          temperature: 0.7,
+        }),
+      });
+      const latencyMs = Math.max(Date.now() - start, 12);
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        const msg = data?.error?.message || `HTTP ${res.status}`;
+        if (
+          (res.status === 400 || res.status === 403 || res.status === 422) &&
+          /safety|moderation|content_filter|policy|prohibited|explicit|nsfw/i.test(msg)
+        ) {
+          return { ok: true, supported: false, latencyMs, reason: msg };
+        }
+        return { ok: false, supported: false, latencyMs, reason: msg };
+      }
+
+      const choice = data?.choices?.[0];
+      if (choice?.finish_reason === 'content_filter') {
+        return {
+          ok: true,
+          supported: false,
+          latencyMs,
+          reason: 'Blocked by provider content_filter.',
+        };
+      }
+
+      const text = (choice?.message?.content || '').trim();
+      if (!text) {
+        return {
+          ok: true,
+          supported: false,
+          latencyMs,
+          reason: 'Model returned an empty response (filtered).',
+        };
+      }
+
+      if (refusalRegex.test(text)) {
+        return {
+          ok: true,
+          supported: false,
+          latencyMs,
+          reason: 'Model refused adult/NSFW roleplay.',
+        };
+      }
+
+      return { ok: true, supported: true, latencyMs };
+    } catch (err: any) {
+      return {
+        ok: false,
+        supported: false,
+        latencyMs: Date.now() - start,
+        reason: err?.message || 'Network Error',
+      };
+    }
+  },
+
+  /**
    * Generates a streaming roleplay response across ALL configured AI providers
    * (Google Gemini, OpenRouter, OpenAI, and any Custom OpenAI-compatible Endpoint).
    */
@@ -806,29 +1002,15 @@ export const aiProviderService = {
       }
     }
 
-    // Lorebook keyword matching
+    // Lorebook / JanitorAI Script keyword matching
     if (options?.lorebooks && options.lorebooks.length > 0) {
-      const scanDepth = 6;
-      const recentHistoryText = (
-        history.slice(-scanDepth).map(m => m.content).join(' ') + ' ' + userMessage
-      ).toLowerCase();
-      const matchedEntries: { title: string; content: string; priority: number }[] = [];
-
-      options.lorebooks.forEach(lb => {
-        lb.entries.forEach(entry => {
-          if (!entry.enabled) return;
-          if (entry.constant || entry.keys.some(k => k.trim() && recentHistoryText.includes(k.trim().toLowerCase()))) {
-            matchedEntries.push({
-              title: entry.title,
-              content: applyMacros(entry.content, chatCharName, userName),
-              priority: entry.priority || 10,
-            });
-          }
-        });
+      const matchedEntries = matchLorebookEntries(options.lorebooks, history, userMessage, {
+        charName: chatCharName,
+        userName,
+        attachedIds: persona?.lorebookIds,
       });
 
       if (matchedEntries.length > 0) {
-        matchedEntries.sort((a, b) => b.priority - a.priority);
         sections.push(
           `[WORLD LORE & BACKGROUND]\n${matchedEntries.map(e => `- ${e.title}: ${e.content}`).join('\n')}`
         );
@@ -849,6 +1031,24 @@ export const aiProviderService = {
       }
     } catch {}
 
+    // Dynamic Cast & Scene Continuity (Phase 7)
+    let dynamicCastBlock = '';
+    if (options?.conversationId) {
+      try {
+        const castState = await storageService.getDynamicCastState(options.conversationId, character.id);
+        dynamicCastBlock = buildDynamicCastPromptSection({
+          primaryCharName: chatCharName,
+          userName,
+          castMembers: castState.castMembers,
+          sceneState: castState.sceneState,
+          maxTokens: 450,
+        });
+        if (dynamicCastBlock) {
+          sections.push(dynamicCastBlock);
+        }
+      } catch {}
+    }
+
     if (options?.isContinue) {
       sections.push(
         `[DIRECTIVE: SCENE CONTINUATION]\n` +
@@ -864,7 +1064,9 @@ export const aiProviderService = {
     } else {
       sections.push(
         `[FORMATTING GUIDELINES]\n` +
-        `- Stay in character as ${chatCharName}.\n` +
+        (dynamicCastBlock
+          ? `- Stay in character for the AI-controlled cast member(s) present in the current scene.\n`
+          : `- Stay in character as ${chatCharName}.\n`) +
         `- Actions, body language, and narration ONLY in *single asterisks* (rendered as italic). Never use *single asterisks* for bold words.\n` +
         `- Spoken dialogue in "double quotes".\n` +
         `- Bold emphasis, key sounds, or dramatic words ONLY in **double asterisks** (never single asterisks).\n` +

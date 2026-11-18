@@ -14,6 +14,8 @@ import {
 import { ChevronDown, Check, Cpu } from 'lucide-react-native';
 import { colors } from '../theme/colors';
 import { GLASS } from '../theme/glassTheme';
+import { useTheme } from '../theme/ThemeContext';
+import { runToggleAnimation } from '../theme/animations';
 
 export interface ModelOption {
   id: string;
@@ -34,17 +36,13 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
   options,
   onSelect,
 }) => {
+  const { skin } = useTheme();
   const [open, setOpen] = useState(false);
   const [anim] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
-    Animated.spring(anim, {
-      toValue: open ? 1 : 0,
-      useNativeDriver: true,
-      friction: 8,
-      tension: 120,
-    }).start();
-  }, [open]);
+    runToggleAnimation(anim, open, skin.animation);
+  }, [open, anim, skin.animation]);
 
   const chevronRotate = anim.interpolate({
     inputRange: [0, 1],

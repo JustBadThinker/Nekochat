@@ -11,6 +11,7 @@ import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MessageSquare, Compass, User, Settings } from 'lucide-react-native';
 import { useTheme } from '../theme/ThemeContext';
+import { runDockIconScale, runDockSlideAnimation } from '../theme/animations';
 import { useTranslation } from '../i18n/LanguageContext';
 import { TranslationKey } from '../i18n/translations';
 
@@ -35,29 +36,131 @@ interface CapsuleDockProps {
 
 export const CapsuleDock: React.FC<CapsuleDockProps> = ({ activeTab, onTabChange, blurTargetRef }) => {
   const insets = useSafeAreaInsets();
-  const { palette } = useTheme();
+  const { palette, skin } = useTheme();
   const { t } = useTranslation();
   const activeIdx = Math.max(0, TAB_ITEMS.findIndex(t => t.key === activeTab));
   const [slideAnim] = useState(() => new Animated.Value(activeIdx * STEP_WIDTH));
   const [scaleAnims] = useState(() => TAB_ITEMS.map((_, i) => new Animated.Value(i === activeIdx ? 1.08 : 1)));
 
   useEffect(() => {
-    Animated.spring(slideAnim, {
-      toValue: activeIdx * STEP_WIDTH,
-      useNativeDriver: true,
-      friction: 8,
-      tension: 110,
-    }).start();
+    runDockSlideAnimation(slideAnim, activeIdx * STEP_WIDTH, skin.animation);
 
     TAB_ITEMS.forEach((_, idx) => {
-      Animated.spring(scaleAnims[idx], {
-        toValue: idx === activeIdx ? 1.08 : 1,
-        useNativeDriver: true,
-        friction: 6,
-        tension: 140,
-      }).start();
+      runDockIconScale(scaleAnims[idx], idx === activeIdx, skin.animation);
     });
-  }, [activeIdx]);
+  }, [activeIdx, skin.animation]);
+
+  if (skin.navBarStyle === 'm3_nav_bar') {
+    return (
+      <View
+        style={[
+          styles.dockedBarContainer,
+          {
+            backgroundColor: palette.bgSurfaceSubtle,
+            borderTopWidth: 1,
+            borderTopColor: 'rgba(255, 255, 255, 0.08)',
+            paddingBottom: Math.max(8, insets.bottom),
+            paddingTop: 10,
+          },
+        ]}
+      >
+        {TAB_ITEMS.map(({ key, labelKey, Icon }, idx) => {
+          const isActive = activeTab === key;
+          return (
+            <TouchableOpacity
+              key={key}
+              style={styles.dockedTabItem}
+              onPress={() => onTabChange(key)}
+              activeOpacity={0.85}
+            >
+              <Animated.View style={{ transform: [{ scale: scaleAnims[idx] }], alignItems: 'center' }}>
+                <View
+                  style={[
+                    styles.m3ActivePill,
+                    isActive && { backgroundColor: `rgba(${palette.accentRgb}, 0.24)` },
+                  ]}
+                >
+                  <Icon
+                    size={20}
+                    color={isActive ? palette.accent : '#cbd5e1'}
+                    style={{ opacity: isActive ? 1 : 0.7 }}
+                  />
+                </View>
+                <Text
+                  style={[
+                    styles.m3Label,
+                    { color: isActive ? palette.accent : '#94a3b8', fontWeight: isActive ? '700' : '500' },
+                  ]}
+                >
+                  {t(labelKey)}
+                </Text>
+              </Animated.View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
+  }
+
+  if (skin.navBarStyle === 'ios_tab_bar') {
+    return (
+      <View
+        style={[
+          styles.dockedBarContainer,
+          {
+            backgroundColor: Platform.OS === 'web' ? 'rgba(22, 22, 24, 0.72)' : 'rgba(22, 22, 24, 0.82)',
+            borderTopWidth: 0.5,
+            borderTopColor: 'rgba(255, 255, 255, 0.16)',
+            paddingBottom: Math.max(6, insets.bottom),
+            paddingTop: 7,
+          },
+          Platform.OS === 'web'
+            ? ({
+                backdropFilter: 'blur(24px) saturate(180%)',
+                WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+              } as any)
+            : {},
+        ]}
+      >
+        {Platform.OS !== 'web' && (
+          <BlurView
+            intensity={55}
+            tint="dark"
+            blurMethod="dimezisBlurView"
+            blurTarget={blurTargetRef}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          />
+        )}
+        {TAB_ITEMS.map(({ key, labelKey, Icon }, idx) => {
+          const isActive = activeTab === key;
+          return (
+            <TouchableOpacity
+              key={key}
+              style={styles.dockedTabItem}
+              onPress={() => onTabChange(key)}
+              activeOpacity={0.7}
+            >
+              <Animated.View style={{ transform: [{ scale: scaleAnims[idx] }], alignItems: 'center' }}>
+                <Icon
+                  size={22}
+                  color={isActive ? palette.accent : 'rgba(255, 255, 255, 0.52)'}
+                />
+                <Text
+                  style={[
+                    styles.iosLabel,
+                    { color: isActive ? palette.accent : 'rgba(255, 255, 255, 0.52)', fontWeight: isActive ? '600' : '500' },
+                  ]}
+                >
+                  {t(labelKey)}
+                </Text>
+              </Animated.View>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
+  }
 
   return (
     <View
@@ -71,8 +174,17 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({ activeTab, onTabChange
         style={[
           styles.dockCapsule,
           {
-            backgroundColor: 'rgba(14, 17, 26, 0.46)',
-            borderColor: `rgba(${palette.accentRgb}, 0.25)`,
+            backgroundColor: skin.surfaceMode === 'tonal' ? palette.bgSurfaceSubtle : 'rgba(14, 17, 26, 0.46)',
+            borderColor: `rgba(${palette.accentRgb}, ${skin.id === 'janitor' ? 0.45 : 0.25})`,
+            borderRadius: skin.dockRadius,
+            borderWidth: skin.dockBorderWidth,
+            ...(skin.id === 'janitor'
+              ? {
+                  shadowColor: palette.accent,
+                  shadowOpacity: 0.25,
+                  shadowRadius: 14,
+                }
+              : {}),
           },
           Platform.OS === 'web'
             ? ({
@@ -223,6 +335,38 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '500',
     marginTop: 2,
+  },
+  dockedBarContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    overflow: 'hidden',
+    zIndex: 99,
+  },
+  dockedTabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  m3ActivePill: {
+    width: 64,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  m3Label: {
+    fontSize: 12,
+    letterSpacing: 0.2,
+  },
+  iosLabel: {
+    fontSize: 10,
+    marginTop: 3,
   },
   activeDot: {
     width: 3,

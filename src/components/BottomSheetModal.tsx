@@ -23,6 +23,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GLASS } from '../theme/glassTheme';
+import { useTheme } from '../theme/ThemeContext';
+import { runSheetCloseAnimation, runSheetOpenAnimation } from '../theme/animations';
 
 interface BottomSheetModalProps {
   visible: boolean;
@@ -42,6 +44,7 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
   fullScreen = false,
 }) => {
   const insets = useSafeAreaInsets();
+  const { palette, skin } = useTheme();
   const { height: windowHeight } = useWindowDimensions();
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [translateY] = useState(() => new Animated.Value(420));
@@ -69,40 +72,12 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
 
   useEffect(() => {
     if (visible) {
-      translateY.setValue(420);
-      backdropOpacity.setValue(0);
-      Animated.parallel([
-        Animated.timing(translateY, {
-          toValue: 0,
-          duration: 260,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(backdropOpacity, {
-          toValue: 1,
-          duration: 260,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]).start();
+      runSheetOpenAnimation(translateY, backdropOpacity, skin.animation);
     }
-  }, [visible, translateY, backdropOpacity]);
+  }, [visible, translateY, backdropOpacity, skin.animation]);
 
   const animateClose = () => {
-    Animated.parallel([
-      Animated.timing(translateY, {
-        toValue: 520,
-        duration: 210,
-        easing: Easing.in(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(backdropOpacity, {
-        toValue: 0,
-        duration: 210,
-        easing: Easing.in(Easing.cubic),
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
+    runSheetCloseAnimation(translateY, backdropOpacity, skin.animation, () => {
       onCloseRef.current();
     });
   };
@@ -172,6 +147,13 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
           style={[
             styles.sheet,
             {
+              borderTopLeftRadius: skin.sheetRadius,
+              borderTopRightRadius: skin.sheetRadius,
+              backgroundColor: skin.surfaceMode === 'tonal' ? palette.bgSurfaceSubtle : palette.bgSurface,
+              borderColor:
+                skin.id === 'janitor'
+                  ? `rgba(${palette.accentRgb}, 0.35)`
+                  : 'rgba(255, 255, 255, 0.12)',
               marginBottom: keyboardHeight,
               maxHeight: Math.max(240, windowHeight - keyboardHeight - insets.top - (fullScreen ? 8 : 28)),
               paddingBottom: keyboardHeight > 0 ? 14 : Math.max(24, insets.bottom + 12),
@@ -193,7 +175,16 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
           {/* Swipe-Down Drag Handle Zone */}
           {showDragHandle && (
             <View style={styles.dragZone} {...panResponder.panHandlers}>
-              <View style={styles.dragPill} />
+              <View
+                style={[
+                  styles.dragPill,
+                  {
+                    width: skin.grabberWidth,
+                    height: skin.grabberHeight,
+                    borderRadius: skin.grabberHeight / 2,
+                  },
+                ]}
+              />
             </View>
           )}
 

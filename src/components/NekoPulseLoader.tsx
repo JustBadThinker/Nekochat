@@ -5,9 +5,9 @@
  */
 
 import React, { useEffect, useRef } from 'react';
-import { View, Text, Animated, StyleSheet, Easing } from 'react-native';
+import { View, Text, Animated, StyleSheet } from 'react-native';
 import { NekoLogoSvg } from './NekoLogoSvg';
-import { colors } from '../theme/colors';
+import { useTheme } from '../theme/ThemeContext';
 
 export interface NekoPulseLoaderProps {
   size?: number;
@@ -20,35 +20,37 @@ export const NekoPulseLoader: React.FC<NekoPulseLoaderProps> = ({
   color,
   label,
 }) => {
+  const { palette, skin } = useTheme();
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const opacityAnim = useRef(new Animated.Value(0.75)).current;
 
   useEffect(() => {
+    const duration = Math.max(480, skin.animation.enterDuration * 2.2);
     const pulseLoop = Animated.loop(
       Animated.sequence([
         Animated.parallel([
           Animated.timing(pulseAnim, {
-            toValue: 1.15,
-            duration: 650,
-            easing: Easing.bezier(0.4, 0, 0.2, 1),
+            toValue: skin.id === 'janitor' ? 1.18 : 1.12,
+            duration,
+            easing: skin.animation.easing,
             useNativeDriver: true,
           }),
           Animated.timing(opacityAnim, {
             toValue: 1,
-            duration: 650,
+            duration,
             useNativeDriver: true,
           }),
         ]),
         Animated.parallel([
           Animated.timing(pulseAnim, {
-            toValue: 0.9,
-            duration: 650,
-            easing: Easing.bezier(0.4, 0, 0.2, 1),
+            toValue: 0.92,
+            duration,
+            easing: skin.animation.easing,
             useNativeDriver: true,
           }),
           Animated.timing(opacityAnim, {
             toValue: 0.65,
-            duration: 650,
+            duration,
             useNativeDriver: true,
           }),
         ]),
@@ -56,7 +58,7 @@ export const NekoPulseLoader: React.FC<NekoPulseLoaderProps> = ({
     );
     pulseLoop.start();
     return () => pulseLoop.stop();
-  }, [pulseAnim, opacityAnim]);
+  }, [pulseAnim, opacityAnim, skin.animation, skin.id]);
 
   return (
     <View style={styles.container}>
@@ -68,7 +70,7 @@ export const NekoPulseLoader: React.FC<NekoPulseLoaderProps> = ({
           justifyContent: 'center',
         }}
       >
-        <NekoLogoSvg size={size} color={color || colors.lime} />
+        <NekoLogoSvg size={size} color={color || palette.accent} />
       </Animated.View>
       {label ? <Text style={styles.label}>{label}</Text> : null}
     </View>

@@ -26,6 +26,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
+import { getCardSurfaceStyle } from '../theme/skins';
 import { useTranslation } from '../i18n/LanguageContext';
 import { BottomSheetModal } from '../components/BottomSheetModal';
 import {
@@ -52,8 +53,10 @@ import { Character, CharacterScenario, Persona, ContentRating, Lorebook, Loreboo
 import { colors } from '../theme/colors';
 import { storageService } from '../services/storageService';
 import { characterImportService } from '../services/characterImportService';
+import { parseJanitorLorebookJson } from '../services/lorebookService';
 import { compressImageFile, ANIME_DEFAULT_FALLBACK } from '../utils/imageUtils';
 import { ThemePalette } from '../theme/colors';
+import { CharacterCreatorScreen } from './CharacterCreatorScreen';
 
 interface UserStudioScreenProps {
   onStartChat: (character: Character) => void;
@@ -66,7 +69,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
   activePersona,
   onUpdateActivePersona,
 }) => {
-  const { palette } = useTheme();
+  const { palette, skin } = useTheme();
   const styles = useMemo(() => createStyles(palette), [palette]);
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<'cards' | 'personas' | 'lorebooks'>('cards');
@@ -77,6 +80,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
 
   // Character Modal State
   const [charModalVisible, setCharModalVisible] = useState(false);
+  const [creatorDraftChar, setCreatorDraftChar] = useState<Character | null>(null);
   const [editingCharId, setEditingCharId] = useState<string | null>(null);
   const [charName, setCharName] = useState('');
   const [charTagline, setCharTagline] = useState('');
@@ -98,7 +102,14 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
   const [personaDescription, setPersonaDescription] = useState('');
   const [personaAppearance, setPersonaAppearance] = useState('');
   const [personaPersonality, setPersonaPersonality] = useState('');
+  const [personaLorebookIds, setPersonaLorebookIds] = useState<string[]>([]);
   const [isPersonaDefault, setIsPersonaDefault] = useState(false);
+
+  // JanitorAI Lorebook JSON Paste-Import State
+  const [loreImportVisible, setLoreImportVisible] = useState(false);
+  const [loreImportTitle, setLoreImportTitle] = useState('');
+  const [loreImportJson, setLoreImportJson] = useState('');
+  const [loreImportError, setLoreImportError] = useState<string | null>(null);
 
   // Lorebook Modal State
   const [lorebookModalVisible, setLorebookModalVisible] = useState(false);
@@ -132,6 +143,23 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
     setCharTags((data.tags || []).join(', '));
     setCharRating(data.contentRating);
     setEditingCharId(null);
+    setCreatorDraftChar({
+      id: '',
+      name: data.name || '',
+      tagline: data.subtitle || data.shortDescription || 'Roleplay Companion',
+      description: data.shortDescription || data.background || '',
+      avatar: data.avatarUrl || ANIME_DEFAULT_FALLBACK,
+      personality: data.personality || '',
+      scenario: data.background || '',
+      systemPrompt: data.systemPrompt || data.exampleDialogue || '',
+      firstMessage: data.firstMessage || '',
+      tags: data.tags || ['Anime', 'Roleplay'],
+      creator: '@User',
+      isUserCreated: true,
+      contentRating: data.contentRating || 'SFW',
+      totalChats: 0,
+      lastActive: Date.now(),
+    });
 
     setImportModalVisible(false);
     setImportRawText('');
@@ -319,10 +347,12 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
     setCharRating('SFW');
     setCharScenarios([]);
     setCharAlternateGreetings([]);
+    setCreatorDraftChar(null);
     setCharModalVisible(true);
   };
 
   const handleOpenEditChar = (char: Character) => {
+    setCreatorDraftChar(char);
     setEditingCharId(char.id);
     setCharName(char.name);
     setCharTagline(char.tagline);
@@ -429,6 +459,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
     setPersonaDescription('');
     setPersonaAppearance('');
     setPersonaPersonality('');
+    setPersonaLorebookIds([]);
     setIsPersonaDefault(personas.length === 0);
     setPersonaModalVisible(true);
   };
@@ -441,6 +472,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
     setPersonaDescription(pers.description || '');
     setPersonaAppearance(pers.appearance || '');
     setPersonaPersonality(pers.personality || '');
+    setPersonaLorebookIds(pers.lorebookIds || []);
     setIsPersonaDefault(!!pers.isDefault);
     setPersonaModalVisible(true);
   };
@@ -459,6 +491,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
       description: personaDescription.trim() || 'An observant companion.',
       appearance: personaAppearance.trim() || undefined,
       personality: personaPersonality.trim() || undefined,
+      lorebookIds: personaLorebookIds.length > 0 ? personaLorebookIds : undefined,
       isDefault: isPersonaDefault,
     };
 
@@ -714,7 +747,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
               /* Character Card List */
               <View style={styles.cardsGrid}>
                 {userCharacters.map(char => (
-                  <View key={char.id} style={styles.cardItem}>
+                  <View key={char.id} style={[styles.cardItem, getCardSurfaceStyle(palette, skin)]}>
                     <Image source={{ uri: char.avatar }} style={styles.cardItemBanner} />
                     <View style={styles.cardItemBody}>
                       <View style={styles.cardItemHeader}>
@@ -868,14 +901,29 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                 <Text style={styles.sectionHeading}>{t('studio.codexTitle')}</Text>
                 <Text style={styles.sectionDesc}>{t('studio.codexSub')}</Text>
               </View>
-              <TouchableOpacity
-                style={styles.createButton}
-                onPress={handleOpenCreateLorebook}
-                activeOpacity={0.8}
-              >
-                <Plus size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.createButtonText}>{t('studio.addLorebook')}</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity
+                  style={styles.importButton}
+                  onPress={() => {
+                    setLoreImportTitle('');
+                    setLoreImportJson('');
+                    setLoreImportError(null);
+                    setLoreImportVisible(true);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Upload size={14} color={palette.accent} style={{ marginRight: 5 }} />
+                  <Text style={styles.importButtonText}>Import Janitor JSON</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.createButton}
+                  onPress={handleOpenCreateLorebook}
+                  activeOpacity={0.8}
+                >
+                  <Plus size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                  <Text style={styles.createButtonText}>{t('studio.addLorebook')}</Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             {lorebooks.length === 0 ? (
@@ -1056,223 +1104,74 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
             </ScrollView>
       </BottomSheetModal>
 
-      {/* ================= MODAL: CREATE / EDIT CHARACTER ================= */}
-      <BottomSheetModal
+      {/* ================= FULL-SCREEN PAGE: CREATE / EDIT CHARACTER ================= */}
+      <CharacterCreatorScreen
         visible={charModalVisible}
-        onClose={() => setCharModalVisible(false)}
-        sheetStyle={{ maxHeight: '90%' }}
+        editingCharacter={creatorDraftChar}
+        fallbackAvatar={ANIME_DEFAULT_FALLBACK}
+        onCancel={() => setCharModalVisible(false)}
+        onSave={async nextChar => {
+          await storageService.upsertUserCharacter(nextChar);
+          await storageService.upsertCharacter(nextChar);
+          await loadData();
+          setCharModalVisible(false);
+        }}
+      />
+
+      {/* ================= MODAL: IMPORT JANITORAI LOREBOOK JSON ================= */}
+      <BottomSheetModal
+        visible={loreImportVisible}
+        onClose={() => setLoreImportVisible(false)}
+        sheetStyle={{ maxHeight: '88%' }}
       >
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {editingCharId ? 'Edit Character Card' : t('studio.charModalNew')}
-              </Text>
-              <TouchableOpacity onPress={() => setCharModalVisible(false)}>
-                <X size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {/* Character Avatar Preview & Upload */}
-              <View style={styles.uploadRow}>
-                <Image source={{ uri: charAvatar || ANIME_DEFAULT_FALLBACK }} style={styles.uploadPreview} />
-                <View style={{ flex: 1, marginLeft: 14 }}>
-                  <Text style={styles.fieldLabel}>{t('studio.charAvatar')}</Text>
-                  <TouchableOpacity
-                    style={styles.uploadButton}
-                    onPress={() => handleTriggerUpload('char')}
-                  >
-                    <Upload size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.uploadButtonText}>
-                      {isUploading ? 'Compressing...' : t('studio.uploadImage')}
-                    </Text>
-                  </TouchableOpacity>
-                  <TextInput
-                    style={[styles.textInput, { marginTop: 8 }]}
-                    placeholder="Or enter image URL..."
-                    placeholderTextColor="#666"
-                    value={charAvatar}
-                    onChangeText={setCharAvatar}
-                  />
-                </View>
-              </View>
-
-              {/* Name */}
-              <Text style={styles.fieldLabel}>{t('studio.charName')}</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. Kuroha Raven"
-                placeholderTextColor="#666"
-                value={charName}
-                onChangeText={setCharName}
-              />
-
-              {/* Tagline */}
-              <Text style={styles.fieldLabel}>{t('studio.tagline')}</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. The Reserved Senior with a Secret Warmth"
-                placeholderTextColor="#666"
-                value={charTagline}
-                onChangeText={setCharTagline}
-              />
-
-              {/* Scenario */}
-              <Text style={styles.fieldLabel}>{t('studio.scenario')}</Text>
-              <TextInput
-                style={[styles.textInput, styles.textArea]}
-                placeholder="Describe where and when you encounter this companion..."
-                placeholderTextColor="#666"
-                multiline
-                numberOfLines={3}
-                value={charScenario}
-                onChangeText={setCharScenario}
-              />
-
-              {/* Personality */}
-              <Text style={styles.fieldLabel}>{t('studio.personality')}</Text>
-              <TextInput
-                style={[styles.textInput, styles.textArea]}
-                placeholder="e.g. Tsundere, protective, sarcastic, soft when alone with user..."
-                placeholderTextColor="#666"
-                multiline
-                numberOfLines={3}
-                value={charPersonality}
-                onChangeText={setCharPersonality}
-              />
-
-              {/* First Message */}
-              <Text style={styles.fieldLabel}>{t('studio.firstMsg')}</Text>
-              <TextInput
-                style={[styles.textInput, styles.textArea]}
-                placeholder="*He looks at you quietly.* 'Took you long enough.'"
-                placeholderTextColor="#666"
-                multiline
-                numberOfLines={3}
-                value={charFirstMessage}
-                onChangeText={setCharFirstMessage}
-              />
-
-              {/* Tags */}
-              <Text style={styles.fieldLabel}>{t('studio.tagsLabel')}</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Anime, Romance, Fantasy, Tsundere"
-                placeholderTextColor="#666"
-                value={charTags}
-                onChangeText={setCharTags}
-              />
-
-              {/* Content Rating */}
-              <Text style={styles.fieldLabel}>Content Rating</Text>
-              <View style={styles.ratingToggleRow}>
-                <TouchableOpacity
-                  style={[styles.ratingToggleBtn, charRating === 'SFW' && styles.ratingToggleBtnActive]}
-                  onPress={() => setCharRating('SFW')}
-                >
-                  <Text style={[styles.ratingToggleText, charRating === 'SFW' && styles.ratingToggleTextActive]}>
-                    SFW
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.ratingToggleBtn, charRating === 'NSFW' && styles.ratingToggleBtnActive]}
-                  onPress={() => setCharRating('NSFW')}
-                >
-                  <Text style={[styles.ratingToggleText, charRating === 'NSFW' && styles.ratingToggleTextActive]}>
-                    NSFW (18+)
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Alternate Scenarios Section */}
-              <View style={styles.subSectionHeader}>
-                <Text style={styles.subSectionTitle}>
-                  Alternate Scenarios ({charScenarios.length})
-                </Text>
-                <TouchableOpacity
-                  style={styles.addMiniBtn}
-                  onPress={handleAddCharScenario}
-                >
-                  <Plus size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                  <Text style={styles.addMiniBtnText}>Add Scenario</Text>
-                </TouchableOpacity>
-              </View>
-
-              {charScenarios.map((scen, sIdx) => (
-                <View key={scen.id} style={styles.subItemCard}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <Text style={styles.subItemIndex}>Scenario #{sIdx + 1}</Text>
-                    <TouchableOpacity onPress={() => handleDeleteCharScenario(sIdx)}>
-                      <Trash2 size={13} color="#FF6B6B" />
-                    </TouchableOpacity>
-                  </View>
-                  <TextInput
-                    style={[styles.textInput, { marginBottom: 6 }]}
-                    placeholder="Scenario Title (e.g. Rainy Day Shelter)"
-                    placeholderTextColor="#666"
-                    value={scen.title}
-                    onChangeText={v => handleUpdateCharScenario(sIdx, 'title', v)}
-                  />
-                  <TextInput
-                    style={[styles.textInput, styles.textArea, { marginBottom: 6, minHeight: 48 }]}
-                    placeholder="Scenario premise & environment context..."
-                    placeholderTextColor="#666"
-                    multiline
-                    value={scen.description}
-                    onChangeText={v => handleUpdateCharScenario(sIdx, 'description', v)}
-                  />
-                  <TextInput
-                    style={[styles.textInput, styles.textArea, { marginBottom: 6, minHeight: 48 }]}
-                    placeholder="Scenario opening greeting message..."
-                    placeholderTextColor="#666"
-                    multiline
-                    value={scen.openingMessage || ''}
-                    onChangeText={v => handleUpdateCharScenario(sIdx, 'openingMessage', v)}
-                  />
-                  <TextInput
-                    style={[styles.textInput, { minHeight: 38 }]}
-                    placeholder="Scenario system directive (e.g. Focus on intimate warmth)"
-                    placeholderTextColor="#666"
-                    value={scen.scenarioInstructions || ''}
-                    onChangeText={v => handleUpdateCharScenario(sIdx, 'scenarioInstructions', v)}
-                  />
-                </View>
-              ))}
-
-              {/* Alternate Greetings Section */}
-              <View style={styles.subSectionHeader}>
-                <Text style={styles.subSectionTitle}>
-                  Alternate Greetings ({charAlternateGreetings.length})
-                </Text>
-                <TouchableOpacity
-                  style={styles.addMiniBtn}
-                  onPress={handleAddCharGreeting}
-                >
-                  <Plus size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                  <Text style={styles.addMiniBtnText}>Add Greeting</Text>
-                </TouchableOpacity>
-              </View>
-
-              {charAlternateGreetings.map((greet, gIdx) => (
-                <View key={`greet_${gIdx}`} style={[styles.subItemCard, { flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
-                  <TextInput
-                    style={[styles.textInput, styles.textArea, { flex: 1, minHeight: 44 }]}
-                    placeholder={`Alternate Greeting #${gIdx + 1}...`}
-                    placeholderTextColor="#666"
-                    multiline
-                    value={greet}
-                    onChangeText={v => handleUpdateCharGreeting(gIdx, v)}
-                  />
-                  <TouchableOpacity onPress={() => handleDeleteCharGreeting(gIdx)} style={{ padding: 6 }}>
-                    <Trash2 size={14} color="#FF6B6B" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-
-              <TouchableOpacity style={styles.saveSubmitBtn} onPress={handleSaveCharacter}>
-                <Text style={styles.saveSubmitBtnText}>Save Character Card</Text>
-              </TouchableOpacity>
-            </ScrollView>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>Import JanitorAI Lorebook / Script JSON</Text>
+          <TouchableOpacity onPress={() => setLoreImportVisible(false)}>
+            <X size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+        <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
+          <Text style={styles.fieldLabel}>Lorebook Title (Optional)</Text>
+          <TextInput
+            style={styles.textInput}
+            placeholder="e.g. Cyberpunk World Lore"
+            placeholderTextColor="#666"
+            value={loreImportTitle}
+            onChangeText={setLoreImportTitle}
+          />
+          <Text style={styles.fieldLabel}>Paste JanitorAI Lorebook JSON or JS Script *</Text>
+          <TextInput
+            style={[styles.textInput, styles.textArea, { minHeight: 160 }]}
+            placeholder={'Paste JanitorAI Lorebook JSON or JS Script (var ... = context.chat...)'}
+            placeholderTextColor="#666"
+            multiline
+            value={loreImportJson}
+            onChangeText={v => {
+              setLoreImportJson(v);
+              setLoreImportError(null);
+            }}
+          />
+          {loreImportError ? (
+            <Text style={{ color: '#f87171', fontSize: 12, fontWeight: '600', marginBottom: 8 }}>
+              {loreImportError}
+            </Text>
+          ) : null}
+          <TouchableOpacity
+            style={styles.saveSubmitBtn}
+            onPress={async () => {
+              const res = parseJanitorLorebookJson(loreImportJson, loreImportTitle);
+              if (!res.success || !res.lorebook) {
+                setLoreImportError(res.error || 'Could not parse lorebook JSON.');
+                return;
+              }
+              await storageService.upsertLorebook(res.lorebook);
+              await loadData();
+              setLoreImportVisible(false);
+            }}
+          >
+            <Text style={styles.saveSubmitBtnText}>Import to Codex</Text>
+          </TouchableOpacity>
+        </ScrollView>
       </BottomSheetModal>
 
       {/* ================= MODAL: ADD / EDIT PERSONA ================= */}
@@ -1346,6 +1245,40 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                 value={personaDescription}
                 onChangeText={setPersonaDescription}
               />
+
+              {/* Attached Codex Lorebooks for this Persona */}
+              {lorebooks.length > 0 && (
+                <View style={{ marginBottom: 12 }}>
+                  <Text style={styles.fieldLabel}>Codex Lorebooks for this Persona</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                    {lorebooks.map(lb => {
+                      const active = personaLorebookIds.includes(lb.id);
+                      return (
+                        <TouchableOpacity
+                          key={lb.id}
+                          onPress={() =>
+                            setPersonaLorebookIds(prev =>
+                              prev.includes(lb.id) ? prev.filter(x => x !== lb.id) : [...prev, lb.id]
+                            )
+                          }
+                          style={{
+                            paddingHorizontal: 10,
+                            paddingVertical: 6,
+                            borderRadius: 999,
+                            borderWidth: 1,
+                            borderColor: active ? palette.accent : 'rgba(255,255,255,0.14)',
+                            backgroundColor: active ? `rgba(${palette.accentRgb}, 0.16)` : 'rgba(255,255,255,0.04)',
+                          }}
+                        >
+                          <Text style={{ color: active ? palette.accent : '#cbd5e1', fontSize: 12, fontWeight: '700' }}>
+                            {active ? '✓ ' : ''}{lb.title}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              )}
 
               {/* Set as Default Toggle */}
               <TouchableOpacity

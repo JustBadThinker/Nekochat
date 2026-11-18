@@ -72,6 +72,7 @@ import {
   Coins,
   Bookmark,
   GitBranch,
+  Users,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { compressImageFile } from '../utils/imageUtils';
@@ -84,15 +85,28 @@ import {
   Persona,
   ProviderConfig,
   ChatStyleMode,
+  DynamicCastMember,
+  SceneContinuityState,
+  CastPresenceStatus,
 } from '../types';
 import { colors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
+import { getBubbleSurfaceStyle, getCardSurfaceStyle } from '../theme/skins';
+import { runToggleAnimation } from '../theme/animations';
 import { useTranslation } from '../i18n/LanguageContext';
 import { imageGenService, IMAGE_STYLE_OPTIONS, ImageStylePreset } from '../services/imageGenService';
 import { ttsService, TtsPlaybackState } from '../services/ttsService';
 import { aiProviderService, extractCleanCharacterName } from '../services/aiProviderService';
 import { storageService } from '../services/storageService';
 import { getSqliteConversationRepository, resolveBranchCheckpointState } from '../services/sqliteDatabase';
+import {
+  CastCandidateSuggestion,
+  appendCastFact,
+  createPrimaryCastMember,
+  createProvisionalCastMember,
+  detectCastCandidates,
+  getConfirmedCharacteristicsSummary,
+} from '../services/dynamicCastService';
 import { calculateCost, estimateTokens } from '../services/tokenOptimizerService';
 import { tokenPriceService } from '../services/tokenPriceService';
 import { NekoPulseLoader } from '../components/NekoPulseLoader';
@@ -119,7 +133,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   onBack,
   initialConversationId,
 }) => {
-  const { palette } = useTheme();
+  const { palette, skin } = useTheme();
   const { t } = useTranslation();
   const styles = useMemo(() => createStyles(palette), [palette]);
   // Session & Message State
@@ -166,12 +180,8 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const scrollBottomAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(scrollBottomAnim, {
-      toValue: showScrollBottom ? 1 : 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-  }, [showScrollBottom, scrollBottomAnim]);
+    runToggleAnimation(scrollBottomAnim, showScrollBottom, skin.animation);
+  }, [showScrollBottom, scrollBottomAnim, skin.animation]);
 
   // TTS Speech State
   const [ttsState, setTtsState] = useState<TtsPlaybackState>(ttsService.getPlaybackState());
@@ -238,6 +248,18 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [isSummarizingMemory, setIsSummarizingMemory] = useState(false);
   const [memoryNoticeText, setMemoryNoticeText] = useState('');
   const [lastCheckpointIndex, setLastCheckpointIndex] = useState<number>(-1);
+
+  // Phase 7: Dynamic Cast & Scene Continuity State
+  const [castMembers, setCastMembers] = useState<DynamicCastMember[]>([]);
+  const [sceneState, setSceneState] = useState<SceneContinuityState | null>(null);
+  const [castCandidate, setCastCandidate] = useState<CastCandidateSuggestion | null>(null);
+  const [castCandidateMsgId, setCastCandidateMsgId] = useState<string | undefined>(undefined);
+  const [showCastSheet, setShowCastSheet] = useState(false);
+  const [editingCastId, setEditingCastId] = useState<string | null>(null);
+  const [castDraftName, setCastDraftName] = useState('');
+  const [castDraftCharacteristics, setCastDraftCharacteristics] = useState('');
+  const [castLocationDraft, setCastLocationDraft] = useState('');
+  const [castTimeDraft, setCastTimeDraft] = useState('');
 
   // Quick Persona Switcher & Personality Editor State (Dynamic from storage)
   const [showPersonaModal, setShowPersonaModal] = useState(false);
@@ -427,13 +449,8 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   };
 
   useEffect(() => {
-    Animated.spring(actionDeckAnim, {
-      toValue: showActionDeck ? 1 : 0,
-      useNativeDriver: true,
-      friction: 8,
-      tension: 120,
-    }).start();
-  }, [showActionDeck]);
+    runToggleAnimation(actionDeckAnim, showActionDeck, skin.animation);
+  }, [showActionDeck, actionDeckAnim, skin.animation]);
 
   useEffect(() => {
     Animated.spring(wallpaperToggleAnim, {
@@ -445,26 +462,36 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   }, [appearance.enableWallpaper]);
 
   useEffect(() => {
-    Animated.spring(headerMenuAnim, {
-      toValue: showHeaderMenu ? 1 : 0,
-      useNativeDriver: true,
-      friction: 8,
-      tension: 130,
-    }).start();
-  }, [showHeaderMenu, headerMenuAnim]);
+    runToggleAnimation(headerMenuAnim, showHeaderMenu, skin.animation);
+  }, [showHeaderMenu, headerMenuAnim, skin.animation]);
 
   useEffect(() => {
     chatControlTabAnim.setValue(0.35);
     Animated.timing(chatControlTabAnim, {
       toValue: 1,
-      duration: 180,
+      duration: Math.max(140, Math.round(skin.animation.enterDuration * 0.7)),
+      easing: skin.animation.easing,
       useNativeDriver: true,
     }).start();
-  }, [chatControlTab, settingsSubView]);
+  }, [chatControlTab, settingsSubView, skin.animation]);
 
   useEffect(() => {
     loadPersonas();
     loadChatMemoryAndSettings(activeConversationId);
+    if (activeConversationId) {
+      storageService
+        .getDynamicCastState(activeConversationId, character.id)
+        .then(res => {
+          setCastMembers(res.castMembers);
+          setSceneState(res.sceneState);
+          setCastLocationDraft(res.sceneState?.currentLocation || '');
+          setCastTimeDraft(res.sceneState?.establishedTime || '');
+        })
+        .catch(() => {});
+    } else {
+      setCastMembers([]);
+      setSceneState(null);
+    }
   }, [character.id, persona?.id, activeConversationId]);
 
   const hasValidMemory = (mem: string) => {
@@ -942,6 +969,113 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 
   const handleCycleGreeting = () => handleStepGreeting(1);
 
+  const handleOpenCastSheet = async (prefillName?: string) => {
+    setShowHeaderMenu(false);
+    if (activeConversationId && !castMembers.some(m => m.isPrimary)) {
+      const primary = createPrimaryCastMember({
+        conversationId: activeConversationId,
+        characterId: character.id,
+        name: chatCharName,
+      });
+      await storageService.saveCastMember(primary);
+      setCastMembers(prev => [primary, ...prev]);
+    }
+    setEditingCastId(null);
+    setCastDraftName(prefillName || '');
+    setCastDraftCharacteristics('');
+    setShowCastSheet(true);
+  };
+
+  const handleSaveCastDraft = async () => {
+    const cleanName = castDraftName.trim();
+    if (!cleanName || !activeConversationId) return;
+    let current = castMembers;
+    if (!current.some(m => m.isPrimary)) {
+      const primary = createPrimaryCastMember({
+        conversationId: activeConversationId,
+        characterId: character.id,
+        name: chatCharName,
+      });
+      await storageService.saveCastMember(primary);
+      current = [primary, ...current];
+    }
+
+    const existing = editingCastId ? current.find(m => m.id === editingCastId) : undefined;
+    if (existing) {
+      let updated: DynamicCastMember = { ...existing, name: cleanName, facts: [], updatedAt: Date.now() };
+      const cleanDesc = castDraftCharacteristics.trim();
+      if (cleanDesc) {
+        const lastMsg = messages[messages.length - 1];
+        updated = appendCastFact(updated, {
+          field: 'fact',
+          value: cleanDesc,
+          sourceType: 'user',
+          confirmed: true,
+          sourceMessageId: lastMsg?.id,
+          turnIndex: messages.length > 0 ? messages.length - 1 : undefined,
+        });
+      } else {
+        updated.profileStatus = 'stub';
+      }
+      await storageService.saveCastMember(updated);
+      setCastMembers(current.map(m => (m.id === updated.id ? updated : m)));
+    } else {
+      const lastMsg = messages[messages.length - 1];
+      const created = createProvisionalCastMember({
+        conversationId: activeConversationId,
+        characterId: character.id,
+        name: cleanName,
+        presence: 'present',
+        aiControlled: true,
+        characteristics: castDraftCharacteristics.trim() || undefined,
+        sourceMessageId: lastMsg?.id,
+        turnIndex: messages.length > 0 ? messages.length - 1 : undefined,
+      });
+      created.singleTurnOnly = true;
+      await storageService.saveCastMember(created);
+      setCastMembers([...current, created]);
+      if (castCandidate && castCandidate.name.toLowerCase() === cleanName.toLowerCase()) {
+        setCastCandidate(null);
+        setCastCandidateMsgId(undefined);
+      }
+    }
+    setEditingCastId(null);
+    setCastDraftName('');
+    setCastDraftCharacteristics('');
+  };
+
+  const handleCycleCastPresence = async (member: DynamicCastMember) => {
+    const order: CastPresenceStatus[] = ['present', 'away', 'unknown'];
+    const nextPresence = order[(order.indexOf(member.presence) + 1) % order.length];
+    const updated: DynamicCastMember = { ...member, presence: nextPresence, updatedAt: Date.now() };
+    await storageService.saveCastMember(updated);
+    setCastMembers(prev => prev.map(m => (m.id === updated.id ? updated : m)));
+  };
+
+  const handleToggleCastAi = async (member: DynamicCastMember) => {
+    const updated: DynamicCastMember = { ...member, aiControlled: !member.aiControlled, updatedAt: Date.now() };
+    await storageService.saveCastMember(updated);
+    setCastMembers(prev => prev.map(m => (m.id === updated.id ? updated : m)));
+  };
+
+  const handleSaveSceneLocationTime = async () => {
+    if (!activeConversationId) return;
+    const lastMsg = messages[messages.length - 1];
+    const nextScene: SceneContinuityState = {
+      conversationId: activeConversationId,
+      characterId: character.id,
+      currentLocation: castLocationDraft.trim(),
+      establishedTime: castTimeDraft.trim(),
+      ongoingActivities: sceneState?.ongoingActivities || [],
+      unresolvedActions: sceneState?.unresolvedActions || [],
+      lastTransitionMessageId: lastMsg?.id,
+      lastTransitionTurnIndex: messages.length > 0 ? messages.length - 1 : undefined,
+      updatedAt: Date.now(),
+    };
+    await storageService.saveSceneState(nextScene);
+    setSceneState(nextScene);
+  };
+
   // --- Non-Destructive Reply Alternatives (< 1 / N >) ---
   const handleSwipeAlternative = async (dir: -1 | 1) => {
     if (isStreaming || messages.length === 0) return;
@@ -1020,6 +1154,17 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       await storageService.appendMessageToConversation(activeConversationId, userMsg);
     } else {
       await storageService.appendMessage(character.id, userMsg);
+    }
+
+    const candidates = detectCastCandidates({
+      message: text,
+      primaryCharName: chatCharName,
+      userName: persona?.name || 'User',
+      existingCast: castMembers,
+    });
+    if (candidates.length > 0 && candidates[0].signal !== 'mention') {
+      setCastCandidate(candidates[0]);
+      setCastCandidateMsgId(userMsg.id);
     }
 
     setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
@@ -1103,6 +1248,24 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         },
         onComplete: async (fullText, tokenCount, thought) => {
           setIsStreaming(false);
+          // Auto-reset 1-turn-only cast members back to away so they don't leak into subsequent turns
+          const singleTurnMembers = castMembers.filter(
+            m => !m.isPrimary && m.singleTurnOnly && m.presence === 'present'
+          );
+          if (singleTurnMembers.length > 0) {
+            const nowMs = Date.now();
+            const nextCast = castMembers.map(m =>
+              !m.isPrimary && m.singleTurnOnly && m.presence === 'present'
+                ? { ...m, presence: 'away' as CastPresenceStatus, aiControlled: false, updatedAt: nowMs }
+                : m
+            );
+            setCastMembers(nextCast);
+            for (const m of nextCast) {
+              if (!m.isPrimary && m.singleTurnOnly) {
+                storageService.saveCastMember(m).catch(() => {});
+              }
+            }
+          }
           const candidateText = fullText || incomingAssistantText || '';
           const visibleText = stripThinkTags(candidateText).trim();
           const finalText =
@@ -1172,6 +1335,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           });
         }
       }
+      for (const msgId of affectedIds) {
+        await storageService.invalidateCastFactsForMessage(activeConversationId, character.id, msgId);
+      }
+      const refreshedCast = await storageService.getDynamicCastState(activeConversationId, character.id);
+      setCastMembers(refreshedCast.castMembers);
     } catch {}
   };
 
@@ -1855,8 +2023,24 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         </View>
       )}
 
-      {/* Top Header Bar — Clean Minimalist Neo-Anime Bar */}
-      <View style={styles.header}>
+      {/* Top Header Bar — Adapts to active UI Theme Pack */}
+      <View
+        style={[
+          styles.header,
+          skin.id === 'ios' && {
+            backgroundColor: 'rgba(22, 22, 24, 0.84)',
+            borderBottomWidth: 0.5,
+            borderBottomColor: 'rgba(255, 255, 255, 0.14)',
+          },
+          skin.id === 'material' && {
+            backgroundColor: palette.bgSurfaceSubtle,
+            borderBottomWidth: 0,
+          },
+          skin.id === 'janitor' && {
+            borderBottomColor: `rgba(${palette.accentRgb}, 0.25)`,
+          },
+        ]}
+      >
         <TouchableOpacity style={styles.iconBtn} onPress={onBack} accessibilityLabel="Back">
           <ArrowLeft size={20} color={colors.textPrimary} />
         </TouchableOpacity>
@@ -1918,9 +2102,8 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           <Animated.View
             style={[
               styles.headerMenuCard,
+              getCardSurfaceStyle(palette, skin),
               {
-                backgroundColor: palette.bgSurface,
-                borderColor: `rgba(${palette.accentRgb}, 0.28)`,
                 opacity: headerMenuAnim,
                 transform: [
                   {
@@ -1957,6 +2140,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                   setChatControlTab('memory');
                   setShowChatControlModal(true);
                 },
+              },
+              {
+                label: 'Dynamic Cast',
+                Icon: Users,
+                onPress: () => handleOpenCastSheet(),
               },
               {
                 label: 'Customize',
@@ -2347,6 +2535,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                   style={[
                     styles.bubbleContainer,
                     isUser ? styles.bubbleUser : styles.bubbleBot,
+                    getBubbleSurfaceStyle(palette, skin, isUser),
                     isSelected && styles.bubbleSelected,
                   ]}
                   onPress={() => setSelectedMessageId(isSelected ? null : msg.id)}
@@ -2669,6 +2858,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             <Animated.View
               style={[
                 styles.actionDeck,
+                getCardSurfaceStyle(palette, skin),
                 {
                   opacity: actionDeckAnim,
                   transform: [
@@ -2780,6 +2970,42 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                     </Text>
                   </View>
                 </TouchableOpacity>
+
+                {/* 5. Dynamic Cast & Scene */}
+                <TouchableOpacity
+                  style={[
+                    styles.actionGridTile,
+                    { width: '100%' },
+                    castCandidate && {
+                      borderColor: `rgba(${palette.accentRgb}, 0.5)`,
+                      backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
+                    },
+                  ]}
+                  onPress={() => {
+                    setShowActionDeck(false);
+                    handleOpenCastSheet(castCandidate?.name);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.actionGridIconBox, { backgroundColor: `rgba(${palette.accentRgb}, 0.14)` }]}>
+                    <Users size={16} color={palette.accent} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.actionGridTitle}>
+                      {castCandidate ? `+ Add ${castCandidate.name} to Cast` : 'Dynamic Cast & Scene'}
+                    </Text>
+                    <Text style={styles.actionGridSub} numberOfLines={1}>
+                      {castCandidate
+                        ? 'Suggested from chat • Tap to add'
+                        : castMembers.some(m => !m.isPrimary)
+                          ? castMembers
+                              .filter(m => !m.isPrimary)
+                              .map(m => `${m.name} · ${m.presence.charAt(0).toUpperCase() + m.presence.slice(1)}`)
+                              .join(', ')
+                          : 'Manage cast presence & traits'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
               </View>
             </Animated.View>
           )}
@@ -2788,7 +3014,22 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           <View
             style={[
               styles.unifiedComposerCard,
-              { shadowColor: palette.accent },
+              {
+                borderRadius: skin.inputRadius,
+                borderWidth: skin.id === 'material' ? 0 : Math.max(0.75, skin.cardBorderWidth),
+                borderColor:
+                  skin.id === 'janitor'
+                    ? `rgba(${palette.accentRgb}, 0.35)`
+                    : 'rgba(255, 255, 255, 0.14)',
+                backgroundColor:
+                  skin.surfaceMode === 'tonal'
+                    ? palette.bgSurfaceSubtle
+                    : skin.surfaceMode === 'frosted'
+                      ? 'rgba(28, 28, 30, 0.85)'
+                      : palette.bgSurface,
+                shadowColor: skin.cardGlowOpacity > 0 ? palette.accent : '#000',
+                shadowOpacity: skin.cardGlowOpacity > 0 ? 0.2 : 0.15,
+              },
               isInputExpanded && [styles.unifiedComposerCardExpanded, { borderColor: palette.accent }],
             ]}
           >
@@ -2862,6 +3103,19 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                   >
                     <Plus size={18} color={showActionDeck ? palette.bgDark : palette.accent} />
                   </Animated.View>
+                  {Boolean(castCandidate) && !showActionDeck && (
+                    <View
+                      style={{
+                        position: 'absolute',
+                        top: 5,
+                        right: 5,
+                        width: 7,
+                        height: 7,
+                        borderRadius: 4,
+                        backgroundColor: palette.accent,
+                      }}
+                    />
+                  )}
                 </TouchableOpacity>
 
                 {/* Persona Selector Pill (Avatar + Name + Chevron) */}
@@ -2935,7 +3189,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 
                 {isStreaming ? (
                   <TouchableOpacity
-                    style={styles.stopBtn}
+                    style={[styles.stopBtn, { borderRadius: skin.buttonRadius }]}
                     onPress={() => {
                       aiProviderService.abortGeneration();
                       setIsStreaming(false);
@@ -2951,7 +3205,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                   <TouchableOpacity
                     style={[
                       styles.sendBtnLime,
-                      { backgroundColor: palette.accent },
+                      { backgroundColor: palette.accent, borderRadius: skin.buttonRadius },
                       !inputText.trim() && styles.sendBtnDisabled,
                     ]}
                     onPress={handleSend}
@@ -2967,6 +3221,229 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           </View>
         </View>
       </KeyboardAvoidingView>
+
+      {/* ================= MODAL: DYNAMIC CAST & SCENE ================= */}
+      <BottomSheetModal
+        visible={showCastSheet}
+        onClose={() => setShowCastSheet(false)}
+      >
+        <View style={styles.modalHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Users size={18} color={palette.accent} />
+            <Text style={styles.modalTitle}>Dynamic Cast & Scene</Text>
+          </View>
+          <TouchableOpacity onPress={() => setShowCastSheet(false)}>
+            <X size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={{ maxHeight: 420 }} keyboardShouldPersistTaps="handled">
+          {/* Scene Location & Time */}
+          <View style={{ paddingHorizontal: 16, marginBottom: 14 }}>
+            <Text style={{ color: '#94a3b8', fontSize: 11.5, fontWeight: '700', marginBottom: 6 }}>
+              CURRENT SCENE (ANTI-TIMESKIP)
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TextInput
+                style={{
+                  flex: 1,
+                  backgroundColor: 'rgba(255,255,255,0.06)',
+                  borderRadius: skin.inputRadius,
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  color: '#FFFFFF',
+                  fontSize: 13,
+                }}
+                value={castLocationDraft}
+                onChangeText={setCastLocationDraft}
+                onEndEditing={handleSaveSceneLocationTime}
+                placeholder="Where? (e.g. Cafe, Library)"
+                placeholderTextColor="#64748b"
+              />
+              <TextInput
+                style={{
+                  flex: 1,
+                  backgroundColor: 'rgba(255,255,255,0.06)',
+                  borderRadius: skin.inputRadius,
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  color: '#FFFFFF',
+                  fontSize: 13,
+                }}
+                value={castTimeDraft}
+                onChangeText={setCastTimeDraft}
+                onEndEditing={handleSaveSceneLocationTime}
+                placeholder="When? (e.g. Afternoon)"
+                placeholderTextColor="#64748b"
+              />
+            </View>
+          </View>
+
+          {/* Cast List */}
+          <View style={{ paddingHorizontal: 16, gap: 10, marginBottom: 14 }}>
+            <Text style={{ color: '#94a3b8', fontSize: 11.5, fontWeight: '700' }}>
+              CAST IN THIS SESSION
+            </Text>
+            {castMembers.map(member => {
+              const summary = getConfirmedCharacteristicsSummary(member);
+              const presenceColor =
+                member.presence === 'present'
+                  ? '#34d399'
+                  : member.presence === 'away'
+                    ? '#f59e0b'
+                    : '#94a3b8';
+              return (
+                <View
+                  key={member.id}
+                  style={[
+                    getCardSurfaceStyle(palette, skin),
+                    { padding: 12, gap: 6 },
+                  ]}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text style={{ color: '#FFFFFF', fontSize: 14.5, fontWeight: '700' }}>
+                      {member.name} {member.isPrimary ? '(Primary)' : ''}
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <TouchableOpacity
+                        onPress={() => handleCycleCastPresence(member)}
+                        style={{
+                          paddingHorizontal: 9,
+                          paddingVertical: 4,
+                          borderRadius: 999,
+                          backgroundColor: 'rgba(255,255,255,0.08)',
+                        }}
+                      >
+                        <Text style={{ color: presenceColor, fontSize: 11.5, fontWeight: '700' }}>
+                          {member.presence.toUpperCase()}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => handleToggleCastAi(member)}
+                        style={{
+                          paddingHorizontal: 9,
+                          paddingVertical: 4,
+                          borderRadius: 999,
+                          backgroundColor: member.aiControlled
+                            ? `rgba(${palette.accentRgb}, 0.18)`
+                            : 'rgba(255,255,255,0.06)',
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: member.aiControlled ? palette.accent : '#94a3b8',
+                            fontSize: 11.5,
+                            fontWeight: '700',
+                          }}
+                        >
+                          {member.aiControlled ? 'AI ON' : 'AI OFF'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <Text style={{ color: '#cbd5e1', fontSize: 12.5, lineHeight: 17 }}>
+                    {summary || (member.isPrimary ? 'Uses primary character card' : 'No characteristics added yet')}
+                  </Text>
+
+                  {!member.isPrimary && (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginTop: 2 }}>
+                      <TouchableOpacity
+                        onPress={async () => {
+                          const updated: DynamicCastMember = {
+                            ...member,
+                            singleTurnOnly: !member.singleTurnOnly,
+                            updatedAt: Date.now(),
+                          };
+                          await storageService.saveCastMember(updated);
+                          setCastMembers(prev => prev.map(m => (m.id === updated.id ? updated : m)));
+                        }}
+                      >
+                        <Text style={{ color: member.singleTurnOnly ? '#38bdf8' : '#94a3b8', fontSize: 12, fontWeight: '700' }}>
+                          {member.singleTurnOnly ? '1-Turn Only (Auto-Away)' : 'Persist in Scene'}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setEditingCastId(member.id);
+                          setCastDraftName(member.name);
+                          setCastDraftCharacteristics(summary);
+                        }}
+                      >
+                        <Text style={{ color: palette.accent, fontSize: 12, fontWeight: '700' }}>
+                          Edit Name &amp; Characteristics
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={async () => {
+                          if (!activeConversationId) return;
+                          await storageService.deleteCastMember(activeConversationId, character.id, member.id);
+                          setCastMembers(prev => prev.filter(m => m.id !== member.id));
+                        }}
+                      >
+                        <Text style={{ color: '#f87171', fontSize: 12, fontWeight: '600' }}>Remove</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+
+          {/* Simple Add / Edit Cast Form (Just Name & Characteristics) */}
+          <View style={{ paddingHorizontal: 16, paddingBottom: 18, gap: 8 }}>
+            <Text style={{ color: '#94a3b8', fontSize: 11.5, fontWeight: '700' }}>
+              {editingCastId ? 'EDIT CAST CHARACTER' : 'ADD CHARACTER TO CAST'}
+            </Text>
+            <TextInput
+              style={{
+                backgroundColor: 'rgba(255,255,255,0.06)',
+                borderRadius: skin.inputRadius,
+                paddingHorizontal: 12,
+                paddingVertical: 9,
+                color: '#FFFFFF',
+                fontSize: 13.5,
+              }}
+              value={castDraftName}
+              onChangeText={setCastDraftName}
+              placeholder="Character Name (e.g. Clara)"
+              placeholderTextColor="#64748b"
+            />
+            <TextInput
+              style={{
+                backgroundColor: 'rgba(255,255,255,0.06)',
+                borderRadius: skin.inputRadius,
+                paddingHorizontal: 12,
+                paddingVertical: 9,
+                color: '#FFFFFF',
+                fontSize: 13.5,
+                minHeight: 68,
+                textAlignVertical: 'top',
+              }}
+              multiline
+              value={castDraftCharacteristics}
+              onChangeText={setCastDraftCharacteristics}
+              placeholder="Characteristics (e.g. Kind highschool friend from the library, older than me, helps with work...)"
+              placeholderTextColor="#64748b"
+            />
+            <TouchableOpacity
+              onPress={handleSaveCastDraft}
+              activeOpacity={0.85}
+              style={{
+                backgroundColor: palette.accent,
+                borderRadius: skin.buttonRadius,
+                paddingVertical: 11,
+                alignItems: 'center',
+                marginTop: 2,
+              }}
+            >
+              <Text style={{ color: palette.bgDark, fontSize: 13.5, fontWeight: '800' }}>
+                {editingCastId ? 'Save Character Changes' : 'Add to Cast'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </BottomSheetModal>
 
       {/* ================= MODAL: MULTI-SESSION MANAGER ================= */}
       <BottomSheetModal

@@ -30,6 +30,7 @@ import {
   User,
   Settings as SettingsIcon,
   Server,
+  ShieldAlert,
 } from 'lucide-react-native';
 import { AppSettings, ProviderConfig } from '../types';
 import { useTheme } from '../theme/ThemeContext';
@@ -84,10 +85,11 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   onUpdateConfig,
   onFinish,
 }) => {
-  const { palette } = useTheme();
+  const { palette, skin } = useTheme();
   const { t } = useTranslation();
 
   const [step, setStep] = useState<StepIndex>(0);
+  const [ageConfirmed, setAgeConfirmed] = useState<boolean>(false);
   const stepAnim = useRef(new Animated.Value(1)).current;
   const stepSlide = useRef(new Animated.Value(0)).current;
 
@@ -120,17 +122,19 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   const tourAnim = useRef(new Animated.Value(1)).current;
 
   const animateToStep = (nextStep: StepIndex, direction: 1 | -1 = 1) => {
+    const outDur = Math.max(140, Math.round(skin.animation.enterDuration * 0.65));
+    const inDur = skin.animation.enterDuration;
     Animated.parallel([
       Animated.timing(stepAnim, {
         toValue: 0,
-        duration: 180,
-        easing: Easing.inOut(Easing.cubic),
+        duration: outDur,
+        easing: skin.animation.easing,
         useNativeDriver: true,
       }),
       Animated.timing(stepSlide, {
         toValue: -18 * direction,
-        duration: 180,
-        easing: Easing.inOut(Easing.cubic),
+        duration: outDur,
+        easing: skin.animation.easing,
         useNativeDriver: true,
       }),
     ]).start(() => {
@@ -139,14 +143,14 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       Animated.parallel([
         Animated.timing(stepAnim, {
           toValue: 1,
-          duration: 240,
-          easing: Easing.inOut(Easing.cubic),
+          duration: inDur,
+          easing: skin.animation.easing,
           useNativeDriver: true,
         }),
         Animated.timing(stepSlide, {
           toValue: 0,
-          duration: 240,
-          easing: Easing.inOut(Easing.cubic),
+          duration: inDur,
+          easing: skin.animation.easing,
           useNativeDriver: true,
         }),
       ]).start();
@@ -463,8 +467,71 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                 </View>
               </View>
 
+              <View
+                style={{
+                  width: '100%',
+                  marginTop: 20,
+                  padding: 14,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: 'rgba(251, 113, 133, 0.35)',
+                  backgroundColor: 'rgba(251, 113, 133, 0.08)',
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <ShieldAlert size={16} color="#FB7185" />
+                  <Text style={{ color: '#FDA4AF', fontSize: 13, fontWeight: '800' }}>
+                    18+ Mature Content Notice
+                  </Text>
+                </View>
+                <Text style={{ color: '#cbd5e1', fontSize: 12, lineHeight: 18 }}>
+                  NekoChat connects to community character catalogs (JanitorAI &amp; Chub.ai) and user-provided AI APIs that may include adult, NSFW, or mature fictional roleplay themes.
+                </Text>
+
+                <TouchableOpacity
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 10,
+                    marginTop: 12,
+                    paddingTop: 10,
+                    borderTopWidth: 1,
+                    borderTopColor: 'rgba(255,255,255,0.08)',
+                  }}
+                  onPress={() => setAgeConfirmed(prev => !prev)}
+                  activeOpacity={0.8}
+                >
+                  <View
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: 6,
+                      borderWidth: 1.5,
+                      borderColor: ageConfirmed ? palette.accent : '#64748b',
+                      backgroundColor: ageConfirmed ? palette.accent : 'transparent',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                    }}
+                  >
+                    {ageConfirmed && <Check size={13} color={palette.bgDark} />}
+                  </View>
+                  <Text style={{ color: '#f1f5f9', fontSize: 12, fontWeight: '700', flex: 1 }}>
+                    I confirm that I am 18 years or older (or legal age in my region)
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
               <TouchableOpacity
-                style={[styles.primaryBtn, { backgroundColor: palette.accent, width: '100%', marginTop: 28 }]}
+                style={[
+                  styles.primaryBtn,
+                  {
+                    backgroundColor: palette.accent,
+                    width: '100%',
+                    marginTop: 18,
+                    opacity: ageConfirmed ? 1 : 0.45,
+                  },
+                ]}
+                disabled={!ageConfirmed}
                 onPress={() => animateToStep(1, 1)}
                 activeOpacity={0.85}
               >

@@ -10,6 +10,12 @@ import { MessageSquare, Heart } from 'lucide-react-native';
 import { Character } from '../types';
 import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
+import { getCardSurfaceStyle } from '../theme/skins';
+import {
+  runEnterAnimation,
+  runPressInAnimation,
+  runPressOutAnimation,
+} from '../theme/animations';
 import { ThemePalette } from '../theme/colors';
 
 interface BentoChatCardProps {
@@ -23,37 +29,22 @@ export const BentoChatCard: React.FC<BentoChatCardProps> = ({
   onPress,
   onToggleFavorite,
 }) => {
-  const { palette } = useTheme();
+  const { palette, skin } = useTheme();
   const styles = useMemo(() => createStyles(palette), [palette]);
   const enterAnim = useRef(new Animated.Value(0)).current;
   const pressScale = useRef(new Animated.Value(1)).current;
   const heartScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    Animated.spring(enterAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-      friction: 8,
-      tension: 80,
-    }).start();
+    runEnterAnimation(enterAnim, skin.animation);
   }, []);
 
   const handlePressIn = () => {
-    Animated.spring(pressScale, {
-      toValue: 0.965,
-      useNativeDriver: true,
-      friction: 7,
-      tension: 180,
-    }).start();
+    runPressInAnimation(pressScale, skin.animation);
   };
 
   const handlePressOut = () => {
-    Animated.spring(pressScale, {
-      toValue: 1,
-      useNativeDriver: true,
-      friction: 6,
-      tension: 140,
-    }).start();
+    runPressOutAnimation(pressScale, skin.animation);
   };
 
   const handleFavPress = () => {
@@ -90,7 +81,7 @@ export const BentoChatCard: React.FC<BentoChatCardProps> = ({
       ]}
     >
     <TouchableOpacity
-      style={styles.cardContainer}
+      style={[styles.cardContainer, getCardSurfaceStyle(palette, skin)]}
       onPress={onPress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
