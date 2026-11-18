@@ -50,3 +50,4 @@ src/services/mysqlBackendService.ts
 
 # Internal local blueprints
 NEKOCHAT_BLUEPRINT_ROADMAP.md
+NEKOCHAT_ARCHITECTURE_REFACTOR_IMPLEMENTATION.md
