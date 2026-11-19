@@ -23,6 +23,14 @@
   <a href="#-verification--tests">Tests</a>
 </p>
 
+<br />
+
+<img src="docs/screenshots/showcase-banner.png" alt="NekoChat Mobile Showcase — My Chats (Grid / Accordion), Chat Room (Novel / Bubble), Studio, and Settings" width="100%" />
+
+<br /><br />
+
+<img src="docs/screenshots/skins-showcase.png" alt="NekoChat UI Skins & Palettes — Neko OLED, Classic, Material You, and HIG iPhone" width="100%" />
+
 </div>
 
 ---
