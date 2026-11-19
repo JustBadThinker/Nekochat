@@ -1067,9 +1067,9 @@ export const aiProviderService = {
         (dynamicCastBlock
           ? `- Stay in character for the AI-controlled cast member(s) present in the current scene.\n`
           : `- Stay in character as ${chatCharName}.\n`) +
-        `- Actions, body language, and narration ONLY in *single asterisks* (rendered as italic). Never use *single asterisks* for bold words.\n` +
+        `- Wrap ALL narration, actions, body language, and scene descriptions in *single asterisks* (closed at the end of each paragraph, rendered as italic). Never leave narration unformatted, and never use *single asterisks* for bold.\n` +
         `- Spoken dialogue in "double quotes".\n` +
-        `- Bold emphasis, key sounds, or dramatic words ONLY in **double asterisks** (never single asterisks).\n` +
+        `- Bold emphasis, key sounds, or dramatic words ONLY in **double asterisks** (never use ***triple asterisks***).\n` +
         `- System readouts, notes, or \`inline code\` in \`backticks\`.\n` +
         `- Do not speak or act on behalf of ${userName}.`
       );

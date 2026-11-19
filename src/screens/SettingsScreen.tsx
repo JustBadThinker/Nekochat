@@ -8,7 +8,7 @@
  * 4. Theming & Appearance Modal
  */
 
-import React, { useState, useEffect , useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -73,6 +73,7 @@ interface SettingsScreenProps {
   settings: AppSettings;
   onUpdateSettings: (s: AppSettings) => void;
   onReplayOnboarding?: () => void;
+  onScrollDirectionChange?: (visible: boolean) => void;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
@@ -81,7 +82,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   settings,
   onUpdateSettings,
   onReplayOnboarding,
+  onScrollDirectionChange,
 }) => {
+  const lastScrollYRef = useRef(0);
   const { palette, skin } = useTheme();
   const { t } = useTranslation();
   const styles = useMemo(() => createStyles(palette), [palette]);
@@ -566,7 +569,20 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   };
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: palette.bgDark }]} contentContainerStyle={styles.contentContainer}>
+    <ScrollView
+      style={[styles.container, { backgroundColor: palette.bgDark }]}
+      contentContainerStyle={styles.contentContainer}
+      scrollEventThrottle={16}
+      onScroll={e => {
+        if (!onScrollDirectionChange) return;
+        const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+        const dy = y - lastScrollYRef.current;
+        lastScrollYRef.current = y;
+        if (y <= 14) onScrollDirectionChange(true);
+        else if (dy > 8 && y > 60) onScrollDirectionChange(false);
+        else if (dy < -8) onScrollDirectionChange(true);
+      }}
+    >
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* 1. LARGE HEALTH & LATENCY MONITOR DASHBOARD (User Requested)        */}
       {/* ══════════════════════════════════════════════════════════════════ */}

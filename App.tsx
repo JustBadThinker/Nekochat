@@ -30,6 +30,7 @@ const TABS: TabScreen[] = ['chats', 'discover', 'studio', 'settings'];
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabScreen>('chats');
   const [isDiscoverMatchMode, setIsDiscoverMatchMode] = useState(false);
+  const [isDockVisible, setIsDockVisible] = useState(true);
   const [pagerWidth, setPagerWidth] = useState<number>(() => {
     const w = Dimensions.get('window').width;
     return Platform.OS === 'web' ? Math.min(w, 1080) : w;
@@ -313,6 +314,7 @@ export default function App() {
   }
 
   const handleTabChange = (tab: TabScreen, recordHistory = true) => {
+    setIsDockVisible(true);
     if (recordHistory && tab !== activeTab) {
       const hist = tabHistoryRef.current;
       if (hist[hist.length - 1] !== tab) {
@@ -442,6 +444,7 @@ export default function App() {
                 onDeleteCharacter={handleDeleteCharacter}
                 onNavigateDiscover={() => handleTabChange('discover')}
                 onNavigateStudio={() => handleTabChange('studio')}
+                onScrollDirectionChange={setIsDockVisible}
               />
             </View>
 
@@ -452,6 +455,7 @@ export default function App() {
                 onStartChat={handleStartChat}
                 onToggleFavorite={handleToggleFavorite}
                 onMatchModeChange={setIsDiscoverMatchMode}
+                onScrollDirectionChange={setIsDockVisible}
               />
             </View>
 
@@ -460,6 +464,7 @@ export default function App() {
                 onStartChat={handleStartChat}
                 activePersona={activePersona}
                 onUpdateActivePersona={setActivePersona}
+                onScrollDirectionChange={setIsDockVisible}
               />
             </View>
 
@@ -470,6 +475,7 @@ export default function App() {
                 settings={settings}
                 onUpdateSettings={setSettings}
                 onReplayOnboarding={() => setForceShowOnboarding(true)}
+                onScrollDirectionChange={setIsDockVisible}
               />
             </View>
           </ScrollView>
@@ -481,6 +487,7 @@ export default function App() {
             activeTab={activeTab}
             onTabChange={handleTabChange}
             blurTargetRef={dockBlurTargetRef}
+            visible={isDockVisible}
           />
         )}
       </SafeAreaView>

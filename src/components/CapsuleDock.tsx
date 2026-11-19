@@ -32,15 +32,46 @@ interface CapsuleDockProps {
   activeTab: TabScreen;
   onTabChange: (tab: TabScreen) => void;
   blurTargetRef?: React.RefObject<React.ComponentRef<typeof View> | null>;
+  visible?: boolean;
 }
 
-export const CapsuleDock: React.FC<CapsuleDockProps> = ({ activeTab, onTabChange, blurTargetRef }) => {
+export const CapsuleDock: React.FC<CapsuleDockProps> = ({
+  activeTab,
+  onTabChange,
+  blurTargetRef,
+  visible = true,
+}) => {
   const insets = useSafeAreaInsets();
   const { palette, skin } = useTheme();
   const { t } = useTranslation();
   const activeIdx = Math.max(0, TAB_ITEMS.findIndex(t => t.key === activeTab));
   const [slideAnim] = useState(() => new Animated.Value(activeIdx * STEP_WIDTH));
   const [scaleAnims] = useState(() => TAB_ITEMS.map((_, i) => new Animated.Value(i === activeIdx ? 1.08 : 1)));
+  const [dockVisibilityAnim] = useState(() => new Animated.Value(visible ? 1 : 0));
+
+  useEffect(() => {
+    Animated.timing(dockVisibilityAnim, {
+      toValue: visible ? 1 : 0,
+      duration: visible
+        ? Math.max(300, skin.animation.enterDuration)
+        : Math.max(240, Math.round(skin.animation.enterDuration * 0.85)),
+      easing: skin.animation.easing,
+      useNativeDriver: true,
+    }).start();
+  }, [visible, dockVisibilityAnim, skin.animation]);
+
+  // Keep opacity at 1 so CSS backdrop-filter / native BlurView never drops its
+  // frosted blur mid-transition; slide cleanly via translateY only.
+  const dockAnimatedStyle = {
+    transform: [
+      {
+        translateY: dockVisibilityAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [130, 0],
+        }),
+      },
+    ],
+  };
 
   useEffect(() => {
     runDockSlideAnimation(slideAnim, activeIdx * STEP_WIDTH, skin.animation);
@@ -52,9 +83,11 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({ activeTab, onTabChange
 
   if (skin.navBarStyle === 'm3_nav_bar') {
     return (
-      <View
+      <Animated.View
+        pointerEvents={visible ? 'auto' : 'none'}
         style={[
           styles.dockedBarContainer,
+          dockAnimatedStyle,
           {
             backgroundColor: palette.bgSurfaceSubtle,
             borderTopWidth: 1,
@@ -98,15 +131,17 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({ activeTab, onTabChange
             </TouchableOpacity>
           );
         })}
-      </View>
+      </Animated.View>
     );
   }
 
   if (skin.navBarStyle === 'ios_tab_bar') {
     return (
-      <View
+      <Animated.View
+        pointerEvents={visible ? 'auto' : 'none'}
         style={[
           styles.dockedBarContainer,
+          dockAnimatedStyle,
           {
             backgroundColor: Platform.OS === 'web' ? 'rgba(22, 22, 24, 0.72)' : 'rgba(22, 22, 24, 0.82)',
             borderTopWidth: 0.5,
@@ -158,17 +193,18 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({ activeTab, onTabChange
             </TouchableOpacity>
           );
         })}
-      </View>
+      </Animated.View>
     );
   }
 
   return (
-    <View
+    <Animated.View
       style={[
         styles.dockContainer,
+        dockAnimatedStyle,
         { bottom: Math.max(Platform.OS === 'ios' ? 24 : 16, insets.bottom + 8) },
       ]}
-      pointerEvents="box-none"
+      pointerEvents={visible ? 'box-none' : 'none'}
     >
       <View
         style={[
@@ -255,7 +291,7 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({ activeTab, onTabChange
           );
         })}
       </View>
-    </View>
+    </Animated.View>
   );
 };
 

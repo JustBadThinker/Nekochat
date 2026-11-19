@@ -1775,7 +1775,10 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   };
 
   const renderFormattedText = (text: string, isUser: boolean, isNovel: boolean) => {
-    const regex = /(\*\*\*[\s\S]*?(?:\*\*\*|$)|\*\*[\s\S]*?(?:\*\*|$)|"[^"]*"|“[^”]*”|「[^」]*」|\*(?!\*)(?:[^*\n]|\*\*[\s\S]*?\*\*)+?(?:\*|$)|`[^`]*?`)/g;
+    // Keep ** and *** scoped to closed spans within a single line/paragraph so an
+    // unclosed asterisk never swallows the rest of the message into bold-italic.
+    const regex =
+      /(\*\*\*[^\n]+?\*\*\*|\*\*[^\n]+?\*\*|"[^"]*"|“[^”]*”|「[^」]*」|\*(?!\*)(?:[^*\n]|\*\*[^\n*]+?\*\*)+?\*|`[^`\n]+?`)/g;
     const parts = text.split(regex);
     const baseTextColor = isUser ? '#FFFFFF' : isNovel ? '#e2e8f0' : colors.textPrimary;
     const baseStyle = isUser
@@ -1790,27 +1793,24 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       <Text style={[baseStyle, { color: baseTextColor, fontSize: chatFontSize, lineHeight: Math.round(chatFontSize * 1.48) }]}>
         {parts.map((part, index) => {
           if (!part) return null;
-          if (part.startsWith('***')) {
-            const inner = part.endsWith('***') && part.length > 6 ? part.slice(3, -3) : part.slice(3);
-            return (
-              <Text
-                key={index}
-                style={{
-                  color: isUser ? '#FFFFFF' : syntaxColors.bold,
-                  fontWeight: '800',
-                  fontStyle: 'italic',
-                }}
-              >
-                {inner}
-              </Text>
+          if (part.startsWith('***') && part.endsWith('***') && part.length > 6) {
+            const inner = part.slice(3, -3);
+            return renderBoldInline(
+              inner,
+              {
+                color: isUser ? '#FFFFFF' : syntaxColors.bold,
+                fontWeight: '800',
+                fontStyle: 'italic',
+              },
+              `bi-${index}`
             );
           }
-          if (part.startsWith('**')) {
-            const inner = part.endsWith('**') && part.length > 4 ? part.slice(2, -2) : part.slice(2);
-            return (
-              <Text key={index} style={{ color: isUser ? '#FFFFFF' : syntaxColors.bold, fontWeight: '800' }}>
-                {inner}
-              </Text>
+          if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+            const inner = part.slice(2, -2);
+            return renderBoldInline(
+              inner,
+              { color: isUser ? '#FFFFFF' : syntaxColors.bold, fontWeight: '800' },
+              `b-${index}`
             );
           }
           if (

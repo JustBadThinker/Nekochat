@@ -62,13 +62,16 @@ interface UserStudioScreenProps {
   onStartChat: (character: Character) => void;
   activePersona: Persona;
   onUpdateActivePersona: (persona: Persona) => void;
+  onScrollDirectionChange?: (visible: boolean) => void;
 }
 
 export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
   onStartChat,
   activePersona,
   onUpdateActivePersona,
+  onScrollDirectionChange,
 }) => {
+  const lastScrollYRef = useRef(0);
   const { palette, skin } = useTheme();
   const styles = useMemo(() => createStyles(palette), [palette]);
   const { t } = useTranslation();
@@ -686,17 +689,30 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={e => {
+          if (!onScrollDirectionChange) return;
+          const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+          const dy = y - lastScrollYRef.current;
+          lastScrollYRef.current = y;
+          if (y <= 14) onScrollDirectionChange(true);
+          else if (dy > 8 && y > 60) onScrollDirectionChange(false);
+          else if (dy < -8) onScrollDirectionChange(true);
+        }}
+      >
         {/* ================= TAB 1: MY CARDS ================= */}
         {activeTab === 'cards' && (
           <View>
             {/* Action Row */}
             <View style={styles.sectionHeaderRow}>
-              <View>
+              <View style={{ flex: 1, minWidth: 150 }}>
                 <Text style={styles.sectionHeading}>{t('studio.myCards')}</Text>
                 <Text style={styles.sectionDesc}>{t('studio.myCardsSub')}</Text>
               </View>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 <TouchableOpacity
                   style={styles.importButton}
                   onPress={() => setImportModalVisible(true)}
@@ -812,7 +828,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
           <View>
             {/* Action Row */}
             <View style={styles.sectionHeaderRow}>
-              <View>
+              <View style={{ flex: 1, minWidth: 150 }}>
                 <Text style={styles.sectionHeading}>User Personas</Text>
                 <Text style={styles.sectionDesc}>Select how AI characters perceive you</Text>
               </View>
@@ -897,11 +913,11 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
         {activeTab === 'lorebooks' && (
           <View>
             <View style={styles.sectionHeaderRow}>
-              <View>
+              <View style={{ flex: 1, minWidth: 150 }}>
                 <Text style={styles.sectionHeading}>{t('studio.codexTitle')}</Text>
                 <Text style={styles.sectionDesc}>{t('studio.codexSub')}</Text>
               </View>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 <TouchableOpacity
                   style={styles.importButton}
                   onPress={() => {
@@ -1517,8 +1533,10 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   },
   sectionHeaderRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 10,
     marginBottom: 16,
   },
   sectionHeading: {

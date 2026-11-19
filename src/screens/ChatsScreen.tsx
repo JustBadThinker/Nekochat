@@ -145,6 +145,7 @@ interface ChatsScreenProps {
   onDeleteCharacter?: (characterId: string) => void;
   onNavigateDiscover: () => void;
   onNavigateStudio?: () => void;
+  onScrollDirectionChange?: (visible: boolean) => void;
 }
 
 let cachedChatsViewMode: 'grid' | 'accordion' | null = null;
@@ -158,7 +159,9 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
   onDeleteCharacter,
   onNavigateDiscover,
   onNavigateStudio,
+  onScrollDirectionChange,
 }) => {
+  const lastScrollYRef = useRef(0);
   const [viewMode, setViewMode] = useState<'grid' | 'accordion'>(cachedChatsViewMode || 'grid');
   const [viewModeLoaded, setViewModeLoaded] = useState<boolean>(cachedChatsViewMode !== null);
   const [expandedCharId, setExpandedCharId] = useState<string | null>(null);
@@ -410,6 +413,16 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
         numColumns={viewMode === 'grid' ? 2 : 1}
         columnWrapperStyle={viewMode === 'grid' && groupedCharacters.length > 0 ? styles.columnWrapper : undefined}
         contentContainerStyle={styles.listContent}
+        scrollEventThrottle={16}
+        onScroll={e => {
+          if (!onScrollDirectionChange) return;
+          const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+          const dy = y - lastScrollYRef.current;
+          lastScrollYRef.current = y;
+          if (y <= 14) onScrollDirectionChange(true);
+          else if (dy > 8 && y > 60) onScrollDirectionChange(false);
+          else if (dy < -8) onScrollDirectionChange(true);
+        }}
         ListHeaderComponent={
           <>
             {/* Top Trending / Algorithmic Recommendations Tray */}

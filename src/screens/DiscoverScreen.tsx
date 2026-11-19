@@ -74,6 +74,7 @@ interface DiscoverScreenProps {
   onToggleFavorite?: (character: any) => void;
   onImportCard?: (character: any) => void;
   onMatchModeChange?: (isMatchMode: boolean) => void;
+  onScrollDirectionChange?: (visible: boolean) => void;
 }
 
 type TopMode = 'catalog' | 'foryou' | 'match';
@@ -90,6 +91,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   onToggleFavorite,
   onImportCard,
   onMatchModeChange,
+  onScrollDirectionChange,
 }) => {
   const { palette, skin } = useTheme();
   const { t } = useTranslation();
@@ -98,34 +100,69 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   // Top Primary Switcher: Catalog Grid / For You / Match Mode
   const [topMode, setTopMode] = useState<TopMode>('catalog');
   const [showCatalogDropdown, setShowCatalogDropdown] = useState(false);
-  const [catalogScrollMode, setCatalogScrollMode] = useState<'top' | 'compact' | 'floating'>('top');
+  const [catalogScrollMode, setCatalogScrollMode] = useState<'top' | 'compact' | 'floating_mid' | 'floating'>('top');
   const lastCatalogScrollYRef = useRef(0);
+  const upwardScrollAccumRef = useRef(0);
   const floatingHeaderAnim = useRef(new Animated.Value(0)).current;
+  const midRowAnim = useRef(new Animated.Value(0)).current;
+  const fullRowAnim = useRef(new Animated.Value(0)).current;
   const discoverContentRef = useRef<React.ComponentRef<typeof View> | null>(null);
 
   useEffect(() => {
     if (catalogScrollMode === 'top') {
       floatingHeaderAnim.setValue(0);
+      midRowAnim.setValue(0);
+      fullRowAnim.setValue(0);
       return;
     }
-    floatingHeaderAnim.setValue(0);
-    Animated.timing(floatingHeaderAnim, {
-      toValue: 1,
-      duration: Math.max(160, Math.round(skin.animation.enterDuration * 0.8)),
-      easing: skin.animation.easing,
-      useNativeDriver: true,
-    }).start();
-  }, [catalogScrollMode, floatingHeaderAnim, skin.animation]);
+    const showMid = catalogScrollMode === 'floating_mid' || catalogScrollMode === 'floating';
+    const showFull = catalogScrollMode === 'floating';
+    Animated.parallel([
+      Animated.timing(floatingHeaderAnim, {
+        toValue: 1,
+        duration: Math.max(280, skin.animation.enterDuration),
+        easing: skin.animation.easing,
+        useNativeDriver: true,
+      }),
+      Animated.timing(midRowAnim, {
+        toValue: showMid ? 1 : 0,
+        duration: Math.max(280, skin.animation.enterDuration),
+        easing: skin.animation.easing,
+        useNativeDriver: false,
+      }),
+      Animated.timing(fullRowAnim, {
+        toValue: showFull ? 1 : 0,
+        duration: Math.max(320, skin.animation.enterDuration),
+        easing: skin.animation.easing,
+        useNativeDriver: false,
+      }),
+    ]).start();
+  }, [catalogScrollMode, floatingHeaderAnim, midRowAnim, fullRowAnim, skin.animation]);
+
   const handleCatalogScroll = (event: any) => {
     const y = event?.nativeEvent?.contentOffset?.y ?? 0;
     const dy = y - lastCatalogScrollYRef.current;
     lastCatalogScrollYRef.current = y;
     if (y <= 14) {
+      upwardScrollAccumRef.current = 0;
       setCatalogScrollMode(prev => (prev === 'top' ? prev : 'top'));
+      onScrollDirectionChange?.(true);
     } else if (dy > 6 && y > 90) {
+      upwardScrollAccumRef.current = 0;
       setCatalogScrollMode(prev => (prev === 'compact' ? prev : 'compact'));
-    } else if (dy < -6 && y > 14) {
-      setCatalogScrollMode(prev => (prev === 'floating' ? prev : 'floating'));
+      onScrollDirectionChange?.(false);
+    } else if (dy < 0 && y > 14) {
+      upwardScrollAccumRef.current += Math.abs(dy);
+      if (dy < -6) {
+        onScrollDirectionChange?.(true);
+      }
+      if (upwardScrollAccumRef.current >= 220) {
+        setCatalogScrollMode(prev => (prev === 'floating' ? prev : 'floating'));
+      } else if (upwardScrollAccumRef.current >= 90) {
+        setCatalogScrollMode(prev =>
+          prev === 'floating' || prev === 'floating_mid' ? prev : 'floating_mid'
+        );
+      }
     }
   };
   const [forYouItems, setForYouItems] = useState<CommunityCharacter[]>([]);
@@ -788,7 +825,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         </View>
   );
 
-  const renderCatalogControls = () => (
+  const renderCatalogControls = (omitSearchBar: boolean = false) => (
           <>
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* 2. SUB-HEADER TOOLBAR: Explore All vs My Library & Sources         */}
@@ -907,7 +944,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* 3. SEARCH BAR                                                      */}
       {/* ══════════════════════════════════════════════════════════════════ */}
-      {renderSearchBarOnly()}
+      {!omitSearchBar && renderSearchBarOnly()}
 
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* 4. 18 CANONICAL TAG STRIP + DRAWER [🎛️] & EXPAND [⌵]               */}
@@ -1551,12 +1588,11 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
               backgroundColor: 'rgba(12, 14, 20, 0.52)',
               borderBottomWidth: 1,
               borderBottomColor: 'rgba(255, 255, 255, 0.08)',
-              opacity: floatingHeaderAnim,
               transform: [
                 {
                   translateY: floatingHeaderAnim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [-18, 0],
+                    outputRange: [-28, 0],
                   }),
                 },
               ],
@@ -1579,14 +1615,34 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
               pointerEvents="none"
             />
           )}
-          {catalogScrollMode === 'compact' ? (
-            renderSearchBarOnly(true)
-          ) : (
-            <View>
-              {renderTopPrimarySwitcher()}
-              {renderCatalogControls()}
-            </View>
-          )}
+          {/* Row 1 (always in floating/compact): Slim Search Bar */}
+          {renderSearchBarOnly(true)}
+
+          {/* Row 2 (slides in smoothly on first upward scroll): Primary Mode Switcher */}
+          <Animated.View
+            style={{
+              overflow: 'hidden',
+              maxHeight: midRowAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 64],
+              }),
+            }}
+          >
+            {renderTopPrimarySwitcher()}
+          </Animated.View>
+
+          {/* Row 3 (slides in smoothly on deeper upward scroll): Full Catalog Filters */}
+          <Animated.View
+            style={{
+              overflow: 'hidden',
+              maxHeight: fullRowAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 320],
+              }),
+            }}
+          >
+            {renderCatalogControls(true)}
+          </Animated.View>
         </Animated.View>
       )}
 
