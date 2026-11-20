@@ -22,7 +22,7 @@ export const nekoTheme: UiSkinTokens = {
   cardGlowRadius: 0,
   buttonRadius: 12,
   pillRadius: 10,
-  inputRadius: 14,
+  inputRadius: 12,
   sheetRadius: 24,
   grabberWidth: 36,
   grabberHeight: 4,

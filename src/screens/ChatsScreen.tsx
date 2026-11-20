@@ -166,6 +166,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
   const [viewModeLoaded, setViewModeLoaded] = useState<boolean>(cachedChatsViewMode !== null);
   const [expandedCharId, setExpandedCharId] = useState<string | null>(null);
   const [sessionSort, setSessionSort] = useState<'latest' | 'oldest' | 'messages'>('latest');
+  const [exitingCharIds, setExitingCharIds] = useState<Record<string, boolean>>({});
   const [selectModeCharId, setSelectModeCharId] = useState<string | null>(null);
   const [selectedSessionIds, setSelectedSessionIds] = useState<Record<string, boolean>>({});
   const [storyModalVisible, setStoryModalVisible] = useState(false);
@@ -320,6 +321,8 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
   };
 
   const handleDeleteCharCard = async (characterId: string) => {
+    setExitingCharIds(prev => ({ ...prev, [characterId]: true }));
+    await new Promise(resolve => setTimeout(resolve, 210));
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     if (selectedGroupChar?.id === characterId) {
       setSessionsSheetVisible(false);
@@ -331,6 +334,11 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
     }
     await onDeleteCharacter?.(characterId);
     await loadAllConversations();
+    setExitingCharIds(prev => {
+      const next = { ...prev };
+      delete next[characterId];
+      return next;
+    });
   };
 
   const handleToggleViewMode = (mode: 'grid' | 'accordion') => {
@@ -506,6 +514,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
                 character={item}
                 onPress={() => handleCardPress(item)}
                 onToggleFavorite={() => onToggleFavorite(item)}
+                isExiting={Boolean(exitingCharIds[item.id])}
               />
             );
           }

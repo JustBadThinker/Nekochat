@@ -1,4 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+/**
+ * CreatorProfileModal — Displays a community creator's bio, stats, and published cards.
+ * Let's be honest, we're all here to follow the creator who writes 4,000-token lorebooks.
+ */
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
   View,
@@ -10,6 +14,8 @@ import {
   StyleSheet,
   ActivityIndicator,
   Linking,
+  Animated,
+  Easing,
 } from 'react-native';
 import {
   X,
@@ -192,21 +198,87 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
     );
   }, [characters, searchQuery]);
 
+  const [bioExpanded, setBioExpanded] = useState(false);
+  const bioExpandAnim = useRef(new Animated.Value(0)).current;
+  const pageAnim = useRef(new Animated.Value(0)).current;
+  const isClosingRef = useRef(false);
+
+  useEffect(() => {
+    setBioExpanded(false);
+    bioExpandAnim.setValue(0);
+    if (visible) {
+      isClosingRef.current = false;
+      pageAnim.setValue(0);
+      Animated.timing(pageAnim, {
+        toValue: 1,
+        duration: 260,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [cleanHandle, visible, bioExpandAnim, pageAnim]);
+
+  const animateClose = () => {
+    if (isClosingRef.current) return;
+    isClosingRef.current = true;
+    Animated.timing(pageAnim, {
+      toValue: 0,
+      duration: 210,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => {
+      isClosingRef.current = false;
+      onClose();
+    });
+  };
+
+  const toggleBioExpanded = () => {
+    const next = !bioExpanded;
+    setBioExpanded(next);
+    Animated.timing(bioExpandAnim, {
+      toValue: next ? 1 : 0,
+      duration: 260,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  };
+
   if (!visible || !cleanHandle) return null;
 
   const avatarUri = profile?.avatarUrl || initialAvatarUrl || characters[0]?.avatarUrl;
   const memberSince = formatMemberSince(profile?.profileCreatedAt);
   const hasHtmlBio = Boolean(profile?.aboutMeHtml && profile.aboutMeHtml.trim().length > 0);
+  const plainBioText = (profile?.aboutMeHtml || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const isBioLong = plainBioText.length > 200;
   const botCountDisplay = profile?.charCount || characters.length;
 
   return (
     <Modal
       visible={visible}
-      animationType="slide"
-      transparent={false}
-      onRequestClose={onClose}
+      animationType="none"
+      transparent
+      onRequestClose={animateClose}
     >
-      <View style={[styles.container, { backgroundColor: colors.bg }]}>
+      <Animated.View
+        style={[
+          styles.container,
+          {
+            backgroundColor: colors.bg,
+            opacity: pageAnim,
+            transform: [
+              {
+                translateX: pageAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [340, 0],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
         {/* Top Bar (NekoChat Theme) */}
         <View
           style={[
@@ -215,7 +287,7 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
           ]}
         >
           <TouchableOpacity
-            onPress={onClose}
+            onPress={animateClose}
             style={[styles.iconBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
             activeOpacity={0.75}
           >
@@ -409,10 +481,44 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
               <Text style={[styles.sectionLabel, { color: colors.accent }]}>
                 CREATOR PROFILE
               </Text>
-              <RichHtmlRenderer
-                content={profile!.aboutMeHtml!}
-                baseColor={colors.textSecondary}
-              />
+              {isBioLong ? (
+                <>
+                  <Animated.View
+                    style={{
+                      overflow: 'hidden',
+                      maxHeight: bioExpandAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [96, 1200],
+                      }),
+                    }}
+                  >
+                    {bioExpanded ? (
+                      <RichHtmlRenderer
+                        content={profile!.aboutMeHtml!}
+                        baseColor={colors.textSecondary}
+                      />
+                    ) : (
+                      <Text style={{ color: colors.textSecondary, fontSize: 13.5, lineHeight: 20 }}>
+                        {plainBioText.slice(0, 200).trimEnd()}…
+                      </Text>
+                    )}
+                  </Animated.View>
+                  <TouchableOpacity
+                    onPress={toggleBioExpanded}
+                    activeOpacity={0.75}
+                    style={{ alignSelf: 'flex-start', marginTop: 8, paddingVertical: 4 }}
+                  >
+                    <Text style={{ color: colors.accent, fontSize: 12.5, fontWeight: '700' }}>
+                      {bioExpanded ? 'Show less ▲' : 'Read more ▼'}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <RichHtmlRenderer
+                  content={profile!.aboutMeHtml!}
+                  baseColor={colors.textSecondary}
+                />
+              )}
             </View>
           ) : null}
 
@@ -527,7 +633,7 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
             </View>
           )}
         </ScrollView>
-      </View>
+      </Animated.View>
     </Modal>
   );
 };

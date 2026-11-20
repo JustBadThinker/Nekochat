@@ -256,6 +256,7 @@ export interface ChatMessage {
   swipeIndex?: number;
   rawTemplate?: string;
   thought?: string;
+  backendPrompt?: string;
   imageUrl?: string;
   imagePrompt?: string;
   imageStyle?: string;

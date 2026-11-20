@@ -1,7 +1,8 @@
 /**
  * CommunityCharacterCard.tsx
- * Strictly ported from Warden AI (c:\Users\kanto\Documents\Work\Apps\Wardenai\src\components\character\CommunityCharacterCard.tsx)
- * Matches Gambar 2 Bento 2-column grid layout with 100% fidelity.
+ * 2-column Bento character card for the Discover catalog (cover art, SFW/NSFW badge,
+ * creator follow pill, tags, favorite & quick-chat actions).
+ * Zero hardcoded mock data — if the card looks cute, it's 100% real catalog aura (+1000 aura).
  */
 
 import React, { useState, useRef, useEffect , useMemo } from 'react';
@@ -48,6 +49,7 @@ interface CommunityCharacterCardProps {
   onToggleFollowCreator?: (creatorName: string, avatarUrl?: string) => void;
   onCreatorClick?: (creatorName: string) => void;
   onTagClick?: (tagId: string, tagName: string) => void;
+  isExiting?: boolean;
 }
 
 export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
@@ -63,6 +65,7 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
   onToggleFollowCreator,
   onCreatorClick,
   onTagClick,
+  isExiting = false,
 }) => {
   const { palette, skin } = useTheme();
   const styles = useMemo(() => createStyles(palette), [palette]);
@@ -78,6 +81,16 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
   useEffect(() => {
     runEnterAnimation(enterAnim, skin.animation);
   }, []);
+
+  useEffect(() => {
+    if (isExiting) {
+      Animated.timing(enterAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [isExiting, enterAnim]);
 
   const handlePressIn = () => {
     runPressInAnimation(pressScale, skin.animation);

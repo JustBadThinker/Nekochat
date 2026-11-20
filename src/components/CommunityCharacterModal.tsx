@@ -1,7 +1,8 @@
 /**
  * CommunityCharacterModal.tsx
- * Strictly ported from Warden AI (c:\Users\kanto\Documents\Work\Apps\Wardenai\src\components\character\CommunityCharacterModal.tsx)
- * Matches Gambar 3 community character modal with 100% fidelity.
+ * Full character detail sheet: fetches live bio/personality/greetings, renders HTML/Markdown,
+ * extracts gallery images, and lets you favorite, import, or jump straight into chat.
+ * Warning: reading too many 20-paragraph backstories may cause spontaneous "one more chat" syndrome.
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -197,7 +198,38 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
   const [isFollowing, setIsFollowing] = useState(false);
   const [isFav, setIsFav] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [galleryLightboxUrl, setGalleryLightboxUrl] = useState<string | null>(null);
   const tabFadeAnim = useRef(new Animated.Value(1)).current;
+  const modalAnim = useRef(new Animated.Value(0)).current;
+  const isClosingRef = useRef(false);
+
+  useEffect(() => {
+    if (visible) {
+      isClosingRef.current = false;
+      modalAnim.setValue(0);
+      Animated.timing(modalAnim, {
+        toValue: 1,
+        duration: 260,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [visible, modalAnim]);
+
+  const animateClose = (after?: () => void) => {
+    if (isClosingRef.current) return;
+    isClosingRef.current = true;
+    Animated.timing(modalAnim, {
+      toValue: 0,
+      duration: 210,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => {
+      isClosingRef.current = false;
+      onClose();
+      after?.();
+    });
+  };
 
   useEffect(() => {
     tabFadeAnim.setValue(0);
@@ -286,9 +318,31 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
     'JanitorAI-compatible character ready to roleplay.';
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity style={styles.modalCard} activeOpacity={1} onPress={(e: any) => e.stopPropagation?.()}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={() => animateClose()}>
+      <Animated.View style={[styles.overlay, { opacity: modalAnim }]}>
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => animateClose()} />
+        <Animated.View
+          style={[
+            styles.modalCard,
+            {
+              opacity: modalAnim,
+              transform: [
+                {
+                  translateY: modalAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [48, 0],
+                  }),
+                },
+                {
+                  scale: modalAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.96, 1],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* 1. TOP HERO ARTWORK BANNER (Matches Gambar 3)                       */}
           {/* ══════════════════════════════════════════════════════════════════ */}
@@ -341,8 +395,7 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
               <TouchableOpacity
                 style={styles.heroChatBtn}
                 onPress={() => {
-                  onStartChat(character, detail || undefined);
-                  onClose();
+                  animateClose(() => onStartChat(character, detail || undefined));
                 }}
                 activeOpacity={0.8}
               >
@@ -363,7 +416,7 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
 
               <TouchableOpacity
                 style={styles.heroCircleBtn}
-                onPress={onClose}
+                onPress={() => animateClose()}
                 activeOpacity={0.7}
                 accessibilityLabel="Close"
               >
@@ -477,16 +530,33 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
               </TouchableOpacity>
             </ScrollView>
 
-            <TouchableOpacity
-              style={styles.datacatLink}
-              onPress={() => {
-                Linking.openURL(`https://datacat.run/characters/${character.id}`).catch(() => {});
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.datacatLinkText}>Datacat Source</Text>
-              <ExternalLink size={11} color="#d4ff00" style={{ marginLeft: 3 }} />
-            </TouchableOpacity>
+            {(() => {
+              const isChubSource =
+                (character as any)?.source === 'chub' ||
+                String(character.id || '').startsWith('chub_') ||
+                String(avatarUrl || '').includes('chub.ai') ||
+                String(avatarUrl || '').includes('characterhub.org');
+              const chubPath = (character as any)?.fullPath || (detail as any)?.fullPath;
+              const sourceUrl = isChubSource
+                ? chubPath
+                  ? `https://chub.ai/characters/${chubPath}`
+                  : `https://chub.ai/characters/${String(character.id || '').replace(/^chub_/, '')}`
+                : `https://datacat.run/characters/${character.id}`;
+              return (
+                <TouchableOpacity
+                  style={styles.datacatLink}
+                  onPress={() => {
+                    Linking.openURL(sourceUrl).catch(() => {});
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.datacatLinkText}>
+                    {isChubSource ? 'Chub.ai Source' : 'Datacat Source'}
+                  </Text>
+                  <ExternalLink size={11} color="#d4ff00" style={{ marginLeft: 3 }} />
+                </TouchableOpacity>
+              );
+            })()}
           </View>
 
           {/* ══════════════════════════════════════════════════════════════════ */}
@@ -578,8 +648,7 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
                           ...(detail || (character as any)),
                           firstMessage: greet,
                         };
-                        onStartChat(character, customDetail);
-                        onClose();
+                        animateClose(() => onStartChat(character, customDetail));
                       }}
                     />
                   ))}
@@ -620,7 +689,7 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
                       <TouchableOpacity
                         key={`${item.url}-${idx}`}
                         style={styles.galleryCard}
-                        onPress={() => Linking.openURL(item.url).catch(() => {})}
+                        onPress={() => setGalleryLightboxUrl(item.url)}
                         activeOpacity={0.8}
                       >
                         <Image source={{ uri: item.url }} style={styles.galleryImage} />
@@ -672,8 +741,7 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
             <TouchableOpacity
               style={styles.footerStartBtn}
               onPress={() => {
-                onStartChat(character, detail || undefined);
-                onClose();
+                animateClose(() => onStartChat(character, detail || undefined));
               }}
               activeOpacity={0.85}
             >
@@ -681,8 +749,54 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
               <Text style={styles.footerStartBtnText}>Start Roleplay Now</Text>
             </TouchableOpacity>
           </View>
+        </Animated.View>
+      </Animated.View>
+
+      {/* In-App Gallery Image Lightbox */}
+      <Modal
+        visible={Boolean(galleryLightboxUrl)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setGalleryLightboxUrl(null)}
+      >
+        <TouchableOpacity
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(5, 7, 12, 0.94)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 16,
+          }}
+          activeOpacity={1}
+          onPress={() => setGalleryLightboxUrl(null)}
+        >
+          <TouchableOpacity
+            onPress={() => setGalleryLightboxUrl(null)}
+            activeOpacity={0.8}
+            style={{
+              position: 'absolute',
+              top: 42,
+              right: 20,
+              zIndex: 10,
+              width: 38,
+              height: 38,
+              borderRadius: 19,
+              backgroundColor: 'rgba(255,255,255,0.12)',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <X size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+          {galleryLightboxUrl ? (
+            <Image
+              source={{ uri: galleryLightboxUrl }}
+              style={{ width: '100%', height: '82%', borderRadius: 14 }}
+              resizeMode="contain"
+            />
+          ) : null}
         </TouchableOpacity>
-      </TouchableOpacity>
+      </Modal>
     </Modal>
   );
 };

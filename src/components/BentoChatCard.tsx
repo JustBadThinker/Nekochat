@@ -22,12 +22,14 @@ interface BentoChatCardProps {
   character: Character;
   onPress: () => void;
   onToggleFavorite?: () => void;
+  isExiting?: boolean;
 }
 
 export const BentoChatCard: React.FC<BentoChatCardProps> = ({
   character,
   onPress,
   onToggleFavorite,
+  isExiting = false,
 }) => {
   const { palette, skin } = useTheme();
   const styles = useMemo(() => createStyles(palette), [palette]);
@@ -38,6 +40,16 @@ export const BentoChatCard: React.FC<BentoChatCardProps> = ({
   useEffect(() => {
     runEnterAnimation(enterAnim, skin.animation);
   }, []);
+
+  useEffect(() => {
+    if (isExiting) {
+      Animated.timing(enterAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [isExiting, enterAnim]);
 
   const handlePressIn = () => {
     runPressInAnimation(pressScale, skin.animation);

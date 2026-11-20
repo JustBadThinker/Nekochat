@@ -23,6 +23,7 @@ import {
   Image,
   StyleSheet,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   ActivityIndicator,
   Modal,
@@ -200,12 +201,15 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     wallpaperUrl: string;
     overlayOpacity: number;
     blurRadius: number;
+    smartAutoOverlay?: boolean;
   }>({
     enableWallpaper: true,
     wallpaperUrl: character.coverUrl || character.avatar || '',
     overlayOpacity: 0.38,
     blurRadius: 6,
+    smartAutoOverlay: true,
   });
+  const [autoWallpaperDarkness, setAutoWallpaperDarkness] = useState<number | null>(null);
 
   // Character Profile Card Modal State (Header Name Tap)
   const [showCharacterCardModal, setShowCharacterCardModal] = useState(false);
@@ -230,9 +234,15 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [forbiddenWords, setForbiddenWords] = useState<string[]>([]);
   const [forbiddenWordInput, setForbiddenWordInput] = useState('');
   const [memoryReplacesOld, setMemoryReplacesOld] = useState(false);
+  const [autoMemoryEnabled, setAutoMemoryEnabled] = useState(false);
+  const [autoMemoryInterval, setAutoMemoryInterval] = useState(20);
+  const [visibleMessageCount, setVisibleMessageCount] = useState(40);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const [textStreamingEnabled, setTextStreamingEnabled] = useState(true);
   const [chatFontSize, setChatFontSize] = useState(15);
+  const [chatFontFamily, setChatFontFamily] = useState<'default' | 'serif' | 'monospace' | 'light'>('default');
+  const [expandedInspectorIds, setExpandedInspectorIds] = useState<Record<string, boolean>>({});
+  const inspectorScrollRefs = useRef<Record<string, React.ComponentRef<typeof ScrollView> | null>>({});
   const [expandedColorPicker, setExpandedColorPicker] = useState<'dialogue' | 'narration' | 'bold' | 'code' | null>(null);
   const [activeImageProvider, setActiveImageProvider] = useState<string>('');
   const [fetchedChatModels, setFetchedChatModels] = useState<{ id: string; name: string }[]>([]);
@@ -304,6 +314,17 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         } catch {}
       }
     });
+    AsyncStorage.getItem('@nekochat:active_custom_prompt').then(raw => {
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (typeof parsed?.text === 'string' && parsed.text.trim()) {
+            setCustomPrompt(prev => (prev && prev.trim() ? prev : parsed.text));
+            setActivePresetId(parsed.presetId ?? null);
+          }
+        } catch {}
+      }
+    });
     imageGenService.loadConfig().then(imgCfg => {
       if (imgCfg?.provider) {
         setActiveImageProvider(imgCfg.provider);
@@ -316,6 +337,9 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           if (typeof c.autoScrollEnabled === 'boolean') setAutoScrollEnabled(c.autoScrollEnabled);
           if (typeof c.textStreamingEnabled === 'boolean') setTextStreamingEnabled(c.textStreamingEnabled);
           if (typeof c.chatFontSize === 'number') setChatFontSize(c.chatFontSize);
+          if (c.chatFontFamily === 'default' || c.chatFontFamily === 'serif' || c.chatFontFamily === 'monospace' || c.chatFontFamily === 'light') {
+            setChatFontFamily(c.chatFontFamily);
+          }
         } catch {}
       }
     });
@@ -330,6 +354,10 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           if (typeof s.prefillText === 'string') setPrefillText(s.prefillText);
           if (Array.isArray(s.forbiddenWords)) setForbiddenWords(s.forbiddenWords);
           if (typeof s.memoryReplacesOld === 'boolean') setMemoryReplacesOld(s.memoryReplacesOld);
+          if (typeof s.autoMemoryEnabled === 'boolean') setAutoMemoryEnabled(s.autoMemoryEnabled);
+          if (typeof s.autoMemoryInterval === 'number' && s.autoMemoryInterval >= 4) {
+            setAutoMemoryInterval(s.autoMemoryInterval);
+          }
         } catch {}
       }
     });
@@ -343,6 +371,70 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       }
     });
   }, []);
+
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const sub = Keyboard.addListener(showEvt, () => {
+      if (autoScrollEnabled) {
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: true });
+        }, 80);
+      }
+    });
+    return () => sub.remove();
+  }, [autoScrollEnabled]);
+
+  useEffect(() => {
+    const uri = appearance.wallpaperUrl || character.coverUrl || character.avatar;
+    if (
+      Platform.OS !== 'web' ||
+      !appearance.enableWallpaper ||
+      appearance.smartAutoOverlay === false ||
+      !uri ||
+      typeof document === 'undefined'
+    ) {
+      setAutoWallpaperDarkness(null);
+      return;
+    }
+    let cancelled = false;
+    try {
+      const ImgCtor = (globalThis as any).Image;
+      if (!ImgCtor) return;
+      const img = new ImgCtor();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        if (cancelled) return;
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = 16;
+          canvas.height = 16;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return;
+          ctx.drawImage(img, 0, 0, 16, 16);
+          const data = ctx.getImageData(0, 0, 16, 16).data;
+          let sum = 0;
+          const pixels = data.length / 4;
+          for (let i = 0; i < data.length; i += 4) {
+            sum += (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) / 255;
+          }
+          const lum = sum / Math.max(1, pixels);
+          const smartOpacity = lum > 0.65 ? 0.76 : lum > 0.45 ? 0.62 : lum > 0.25 ? 0.48 : 0.36;
+          setAutoWallpaperDarkness(smartOpacity);
+        } catch {
+          setAutoWallpaperDarkness(0.56);
+        }
+      };
+      img.onerror = () => {
+        if (!cancelled) setAutoWallpaperDarkness(null);
+      };
+      img.src = uri;
+    } catch {
+      setAutoWallpaperDarkness(null);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [appearance.enableWallpaper, appearance.smartAutoOverlay, appearance.wallpaperUrl, character.coverUrl, character.avatar]);
 
   const handleFidgetScoreChange = (nextScore: number, nextStreak: number) => {
     setFidgetScore(nextScore);
@@ -504,35 +596,39 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
    * If no prior checkpoint exists, performs an initial synthesis.
    * Maximizes token efficiency (JanitorAI & Warden standard)!
    */
-  const handleIncrementalCheckpoint = async () => {
-    if (isSummarizingMemory || messages.length === 0) return;
+  const runIncrementalCheckpointForList = async (targetMessages: ChatMessage[], silent = false) => {
+    if (isSummarizingMemory || targetMessages.length === 0) return;
 
     const existingHasContent = hasValidMemory(chatMemory);
     const isFirstRun = !existingHasContent || lastCheckpointIndex < 0;
 
     const startIdx = isFirstRun ? 0 : Math.max(0, lastCheckpointIndex + 1);
     const contextPrefixIdx = isFirstRun ? 0 : Math.max(0, startIdx - 3);
-    const messagesToSummarize = messages.slice(startIdx);
+    const messagesToSummarize = targetMessages.slice(startIdx);
 
     if (messagesToSummarize.length === 0 && !isFirstRun) {
-      setMemoryNoticeText('✓ Already up-to-date with latest message!');
-      setTimeout(() => setMemoryNoticeText(''), 2500);
+      if (!silent) {
+        setMemoryNoticeText('✓ Already up-to-date with latest message!');
+        setTimeout(() => setMemoryNoticeText(''), 2500);
+      }
       return;
     }
 
     setIsSummarizingMemory(true);
-    setMemoryNoticeText(
-      isFirstRun
-        ? `Synthesizing initial story checkpoint (${messages.length} messages)...`
-        : `Synthesizing incremental checkpoint (${messagesToSummarize.length} new turns)...`
-    );
+    if (!silent) {
+      setMemoryNoticeText(
+        isFirstRun
+          ? `Synthesizing initial story checkpoint (${targetMessages.length} messages)...`
+          : `Synthesizing incremental checkpoint (${messagesToSummarize.length} new turns)...`
+      );
+    }
 
     try {
       const activeConfig = await resolveActiveConfig();
       const existingCount = (chatMemory.match(/\[Checkpoint\s*#?(\d+)/gi) || []).length;
       const nextNum = existingCount + 1;
 
-      const sliceForLlm = isFirstRun ? messages : messages.slice(contextPrefixIdx);
+      const sliceForLlm = isFirstRun ? targetMessages : targetMessages.slice(contextPrefixIdx);
 
       const newCheckpoint = await aiProviderService.summarizeChatToCheckpoint(
         character,
@@ -549,23 +645,31 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       const cleanExisting = chatMemory.replace(/<memory>\s*<\/memory>/gi, '').trim();
       const updated = cleanExisting && !isFirstRun ? `${cleanExisting}\n\n${newCheckpoint}` : newCheckpoint;
       setChatMemory(updated);
-      const newLastIdx = messages.length - 1;
+      const newLastIdx = targetMessages.length - 1;
       setLastCheckpointIndex(newLastIdx);
 
       await persistSessionMemory(activeConversationId, updated, newLastIdx);
 
-      setMemoryNoticeText(
-        isFirstRun
-          ? `✓ Initial Checkpoint created up to turn #${newLastIdx + 1}!`
-          : `✓ Checkpoint #${nextNum} saved up to turn #${newLastIdx + 1}!`
-      );
+      if (!silent) {
+        setMemoryNoticeText(
+          isFirstRun
+            ? `✓ Initial Checkpoint created up to turn #${newLastIdx + 1}!`
+            : `✓ Checkpoint #${nextNum} saved up to turn #${newLastIdx + 1}!`
+        );
+      }
     } catch (err: any) {
-      setMemoryNoticeText(`⚠️ Incremental summary failed: ${err.message || 'Error'}`);
+      if (!silent) {
+        setMemoryNoticeText(`⚠️ Incremental summary failed: ${err.message || 'Error'}`);
+      }
     } finally {
       setIsSummarizingMemory(false);
-      setTimeout(() => setMemoryNoticeText(''), 3500);
+      if (!silent) {
+        setTimeout(() => setMemoryNoticeText(''), 3500);
+      }
     }
   };
+
+  const handleIncrementalCheckpoint = () => runIncrementalCheckpointForList(messages, false);
 
   /**
    * 2. Full Story Rescan:
@@ -649,6 +753,8 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     prefillText: string;
     forbiddenWords: string[];
     memoryReplacesOld: boolean;
+    autoMemoryEnabled: boolean;
+    autoMemoryInterval: number;
   }> = {}) => {
     const payload = {
       responseLength: overrides.responseLength ?? responseLength,
@@ -658,6 +764,8 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       prefillText: overrides.prefillText ?? prefillText,
       forbiddenWords: overrides.forbiddenWords ?? forbiddenWords,
       memoryReplacesOld: overrides.memoryReplacesOld ?? memoryReplacesOld,
+      autoMemoryEnabled: overrides.autoMemoryEnabled ?? autoMemoryEnabled,
+      autoMemoryInterval: overrides.autoMemoryInterval ?? autoMemoryInterval,
     };
     await AsyncStorage.setItem(`@nekochat:chat_settings_${character.id}`, JSON.stringify(payload)).catch(() => {});
   };
@@ -666,13 +774,28 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     autoScrollEnabled: boolean;
     textStreamingEnabled: boolean;
     chatFontSize: number;
+    chatFontFamily: 'default' | 'serif' | 'monospace' | 'light';
   }> = {}) => {
     const payload = {
       autoScrollEnabled: overrides.autoScrollEnabled ?? autoScrollEnabled,
       textStreamingEnabled: overrides.textStreamingEnabled ?? textStreamingEnabled,
       chatFontSize: overrides.chatFontSize ?? chatFontSize,
+      chatFontFamily: overrides.chatFontFamily ?? chatFontFamily,
     };
     await AsyncStorage.setItem('@nekochat:customize_prefs', JSON.stringify(payload)).catch(() => {});
+  };
+
+  const resolveMessageFontFamily = (): string | undefined => {
+    if (chatFontFamily === 'serif') {
+      return Platform.select({ ios: 'Georgia', android: 'serif', web: 'Georgia, serif' });
+    }
+    if (chatFontFamily === 'monospace') {
+      return Platform.select({ ios: 'Courier', android: 'monospace', web: 'monospace' });
+    }
+    if (chatFontFamily === 'light') {
+      return Platform.select({ ios: 'Avenir-Light', android: 'sans-serif-light', web: 'system-ui, sans-serif' });
+    }
+    return undefined;
   };
 
   const getPromptHistory = (fullHistory: ChatMessage[]) => {
@@ -688,8 +811,8 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     [
       customPrompt.trim() ? `[Custom Chat Rules & Prompt: ${customPrompt.trim()}]` : '',
       responseLength === 'shorter'
-        ? '[Response Length: Keep replies concise and shorter (1-2 focused paragraphs).]'
-        : '',
+        ? '[Response Length: Shorter — keep replies concise and minimum length, maximum 5 paragraphs.]'
+        : '[Response Length: Standard — write rich, detailed roleplay replies of 6 to 9 well-paced paragraphs.]',
       forbiddenWords.length > 0
         ? `[Avoid using these words or phrases: ${forbiddenWords.join(', ')}]`
         : '',
@@ -708,7 +831,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         ? chatModel.trim()
         : baseCfg.model || baseCfg.defaultModel || 'gpt-4o-mini';
     const rawTokens = chatMaxTokens === 0 ? 0 : (chatMaxTokens ?? baseCfg.maxTokens ?? 4096);
-    const effectiveTokens = responseLength === 'shorter' ? (rawTokens > 0 ? Math.min(rawTokens, 600) : 600) : rawTokens;
+    const effectiveTokens = responseLength === 'shorter' ? (rawTokens > 0 ? Math.min(rawTokens, 950) : 950) : rawTokens;
     const isPerChatOverride =
       responseLength === 'shorter' ||
       (typeof chatMaxTokens === 'number' && chatMaxTokens !== (baseCfg.maxTokens ?? 4096));
@@ -748,6 +871,14 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const handleApplyCustomPrompt = async (text: string, presetId: string | null = null) => {
     setCustomPrompt(text);
     setActivePresetId(presetId);
+    if (text.trim()) {
+      await AsyncStorage.setItem(
+        '@nekochat:active_custom_prompt',
+        JSON.stringify({ presetId, text })
+      ).catch(() => {});
+    } else {
+      await AsyncStorage.removeItem('@nekochat:active_custom_prompt').catch(() => {});
+    }
     if (activeConversationId) {
       const conv = await storageService.getConversation(activeConversationId);
       if (conv) {
@@ -781,6 +912,8 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     await AsyncStorage.setItem('@nekochat:custom_prompt_presets', JSON.stringify(next));
     if (activePresetId === id) {
       setActivePresetId(null);
+      setCustomPrompt('');
+      await AsyncStorage.removeItem('@nekochat:active_custom_prompt').catch(() => {});
     }
   };
 
@@ -1190,6 +1323,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   ) => {
     setIsStreaming(true);
     let incomingAssistantText = '';
+    let capturedBackendPrompt = '';
 
     const assistantPlaceholderId = `bot-${Date.now()}`;
     setRevealState({ msgId: assistantPlaceholderId, shownWords: 0 });
@@ -1221,6 +1355,14 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       persona,
       activeConfig,
       {
+        onPromptBuilt: builtPrompt => {
+          capturedBackendPrompt = builtPrompt;
+          setMessages(prev =>
+            prev.map(m =>
+              m.id === assistantPlaceholderId ? { ...m, backendPrompt: builtPrompt } : m
+            )
+          );
+        },
         onChunk: chunk => {
           incomingAssistantText += chunk;
           if (textStreamingEnabled) {
@@ -1285,12 +1427,22 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             swipes: nextSwipes,
             swipeIndex: nextSwipes.length - 1,
             thought,
+            backendPrompt: capturedBackendPrompt || undefined,
             tokenCount,
             timestamp: Date.now(),
           };
           const finalMessages = historyWithUser.concat([finalMsg]);
           setMessages(finalMessages);
           await persistMessagesList(finalMessages);
+
+          const turnsSinceCheckpoint = finalMessages.length - 1 - lastCheckpointIndex;
+          if (
+            autoMemoryEnabled &&
+            !isSummarizingMemory &&
+            turnsSinceCheckpoint >= Math.max(4, autoMemoryInterval)
+          ) {
+            runIncrementalCheckpointForList(finalMessages, true).catch(() => {});
+          }
         },
       },
       {
@@ -1552,6 +1704,13 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       persona,
       activeConfig,
       {
+        onPromptBuilt: builtPrompt => {
+          setMessages(prev =>
+            prev.map((m, idx) =>
+              idx === lastIdx ? { ...m, backendPrompt: builtPrompt } : m
+            )
+          );
+        },
         onChunk: chunk => {
           setIsContinuingWait(false);
           continuedText += chunk;
@@ -1735,8 +1894,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     return () => clearInterval(timer);
   }, [revealState, messages, isStreaming]);
 
-  const renderBoldInline = (str: string, baseStyle: any, keyPrefix: string) => {
-    const inlineParts = str.split(/(\*\*\*[\s\S]+?\*\*\*|\*\*[\s\S]+?\*\*|\*(?!\*)[^*\n]+?\*)/g);
+  const renderBoldInline = (str: string, baseStyle: any, keyPrefix: string, highlightDialogueColor?: string) => {
+    const inlineRegex = highlightDialogueColor
+      ? /(\*\*\*[\s\S]+?\*\*\*|\*\*[\s\S]+?\*\*|\*(?!\*)[^*\n]+?\*|"[^"]*"|“[^”]*”|「[^」]*」)/g
+      : /(\*\*\*[\s\S]+?\*\*\*|\*\*[\s\S]+?\*\*|\*(?!\*)[^*\n]+?\*)/g;
+    const inlineParts = str.split(inlineRegex);
     if (inlineParts.length === 1) {
       return (
         <Text key={keyPrefix} style={baseStyle}>
@@ -1747,6 +1909,21 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     return (
       <Text key={keyPrefix} style={baseStyle}>
         {inlineParts.map((bp, bi) => {
+          if (
+            highlightDialogueColor &&
+            ((bp.startsWith('"') && bp.endsWith('"')) ||
+              (bp.startsWith('“') && bp.endsWith('”')) ||
+              (bp.startsWith('「') && bp.endsWith('」')))
+          ) {
+            return (
+              <Text
+                key={`${keyPrefix}-q-${bi}`}
+                style={[baseStyle, { color: highlightDialogueColor, fontStyle: 'normal', fontWeight: '500' }]}
+              >
+                {bp}
+              </Text>
+            );
+          }
           if (bp.startsWith('***') && bp.endsWith('***') && bp.length > 6) {
             return (
               <Text key={`${keyPrefix}-bi-${bi}`} style={[baseStyle, { color: syntaxColors.bold, fontWeight: '800', fontStyle: 'italic' }]}>
@@ -1777,6 +1954,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const renderFormattedText = (text: string, isUser: boolean, isNovel: boolean) => {
     // Keep ** and *** scoped to closed spans within a single line/paragraph so an
     // unclosed asterisk never swallows the rest of the message into bold-italic.
+    // (idk how this regex survived 10 edge cases either, please treat it as load-bearing)
     const regex =
       /(\*\*\*[^\n]+?\*\*\*|\*\*[^\n]+?\*\*|"[^"]*"|“[^”]*”|「[^」]*」|\*(?!\*)(?:[^*\n]|\*\*[^\n*]+?\*\*)+?\*|`[^`\n]+?`)/g;
     const parts = text.split(regex);
@@ -1789,8 +1967,26 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       ? styles.novelBotText
       : styles.bubbleBotText;
 
+    const msgFontFamily = resolveMessageFontFamily();
     return (
-      <Text style={[baseStyle, { color: baseTextColor, fontSize: chatFontSize, lineHeight: Math.round(chatFontSize * 1.48) }]}>
+      <Text
+        style={[
+          baseStyle,
+          {
+            color: baseTextColor,
+            fontSize: chatFontSize,
+            lineHeight: Math.round(chatFontSize * 1.48),
+            ...(msgFontFamily ? { fontFamily: msgFontFamily } : {}),
+            ...(appearance.enableWallpaper && isNovel
+              ? {
+                  textShadowColor: 'rgba(0, 0, 0, 0.72)',
+                  textShadowOffset: { width: 0, height: 1 },
+                  textShadowRadius: 3,
+                }
+              : {}),
+          },
+        ]}
+      >
         {parts.map((part, index) => {
           if (!part) return null;
           if (part.startsWith('***') && part.endsWith('***') && part.length > 6) {
@@ -1829,7 +2025,8 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             return renderBoldInline(
               inner,
               { color: isUser && !isNovel ? '#cbd5e1' : syntaxColors.narration, fontStyle: 'italic' },
-              `nar-${index}`
+              `nar-${index}`,
+              isUser ? '#FFFFFF' : syntaxColors.dialogue
             );
           }
           if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
@@ -1975,6 +2172,132 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     return renderFormattedText(content, isUser, isNovel);
   };
 
+  const formatInspectorPrompt = (raw: string): string =>
+    raw
+      .replace(/<!--[\s\S]*?-->/g, '')
+      .replace(/<(style|script)[^>]*>[\s\S]*?<\/\1>/gi, '')
+      .replace(/<img[^>]*>/gi, '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(p|div|li|h[1-6]|blockquote)>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/https?:\/\/[^\s)>\]]+/gi, '')
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\n[ \t]+/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+  const renderInspectorDrawer = (msg: ChatMessage, liveThought: string) => {
+    const cleanedPrompt = msg.backendPrompt ? formatInspectorPrompt(msg.backendPrompt) : '';
+    const hasPrompt = Boolean(cleanedPrompt);
+    const hasThought = Boolean(liveThought && liveThought.trim());
+    if (!hasPrompt && !hasThought) return null;
+    const isExpanded = Boolean(expandedInspectorIds[msg.id]);
+    return (
+      <View style={{ marginBottom: 8 }}>
+        <TouchableOpacity
+          onPress={() =>
+            setExpandedInspectorIds(prev => ({ ...prev, [msg.id]: !prev[msg.id] }))
+          }
+          activeOpacity={0.75}
+          style={{
+            alignSelf: 'flex-start',
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            paddingHorizontal: 10,
+            paddingVertical: 5,
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: `rgba(${palette.accentRgb}, 0.24)`,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          }}
+        >
+          <Brain size={12} color={`rgba(${palette.accentRgb}, 0.85)`} />
+          <Text style={{ color: `rgba(${palette.accentRgb}, 0.88)`, fontSize: 11.5, fontWeight: '700' }}>
+            Thinking {isExpanded ? '▲' : '▼'}
+          </Text>
+        </TouchableOpacity>
+        {isExpanded && (
+          <LinearGradient
+            colors={['rgba(0, 0, 0, 0.56)', 'rgba(0, 0, 0, 0.44)', 'rgba(0, 0, 0, 0.26)']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={{
+              marginTop: 6,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: 'rgba(255, 255, 255, 0.08)',
+              overflow: 'hidden',
+            }}
+          >
+            <ScrollView
+              ref={el => {
+                inspectorScrollRefs.current[msg.id] = el;
+              }}
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
+              onContentSizeChange={() => {
+                inspectorScrollRefs.current[msg.id]?.scrollToEnd({ animated: true });
+              }}
+              style={{ maxHeight: 220 }}
+              contentContainerStyle={{ padding: 10, gap: 10 }}
+            >
+              {hasPrompt && (
+                <View>
+                  <Text
+                    style={{
+                      color: `rgba(${palette.accentRgb}, 0.78)`,
+                      fontSize: 11,
+                      fontWeight: '800',
+                      fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+                      marginBottom: 4,
+                    }}
+                  >
+                    {'=====\nNekochat Backend\n====='}
+                  </Text>
+                  <Text selectable style={{ color: 'rgba(226, 232, 240, 0.72)', fontSize: 11.5, lineHeight: 16 }}>
+                    {cleanedPrompt}
+                  </Text>
+                </View>
+              )}
+              <View>
+                <Text
+                  style={{
+                    color: syntaxColors.thoughts,
+                    opacity: 0.78,
+                    fontSize: 11,
+                    fontWeight: '800',
+                    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+                    marginBottom: 4,
+                  }}
+                >
+                  {'=====\nAI Model thinking\n====='}
+                </Text>
+                <Text
+                  selectable
+                  style={{
+                    color: 'rgba(203, 213, 225, 0.68)',
+                    fontSize: 11.5,
+                    lineHeight: 16,
+                    fontStyle: 'italic',
+                  }}
+                >
+                  {hasThought ? liveThought : 'No model reasoning / <think> tokens were emitted for this turn.'}
+                </Text>
+              </View>
+            </ScrollView>
+          </LinearGradient>
+        )}
+      </View>
+    );
+  };
+
   const totalTokens = messages.reduce((acc, m) => acc + (m.tokenCount || estimateTokens(m.content)), 0);
 
   return (
@@ -2011,15 +2334,23 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               style={StyleSheet.absoluteFill}
             />
           )}
-          <LinearGradient
-            colors={[
-              `rgba(12, 14, 20, ${Math.max(0.28, appearance.overlayOpacity * 0.85)})`,
-              `rgba(12, 14, 20, ${Math.max(0.22, appearance.overlayOpacity * 0.72)})`,
-              `rgba(12, 14, 20, ${Math.max(0.48, appearance.overlayOpacity)})`,
-            ]}
-            locations={[0, 0.45, 1]}
-            style={StyleSheet.absoluteFill}
-          />
+          {(() => {
+            const effectiveOverlay =
+              appearance.smartAutoOverlay !== false
+                ? Math.max(appearance.overlayOpacity, autoWallpaperDarkness ?? 0.52)
+                : appearance.overlayOpacity;
+            return (
+              <LinearGradient
+                colors={[
+                  `rgba(12, 14, 20, ${Math.max(0.28, effectiveOverlay * 0.85)})`,
+                  `rgba(12, 14, 20, ${Math.max(0.22, effectiveOverlay * 0.72)})`,
+                  `rgba(12, 14, 20, ${Math.max(0.48, effectiveOverlay)})`,
+                ]}
+                locations={[0, 0.45, 1]}
+                style={StyleSheet.absoluteFill}
+              />
+            );
+          })()}
         </View>
       )}
 
@@ -2240,7 +2571,31 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           }
         }}
       >
-        {messages.map((msg, idx) => {
+        {messages.length > visibleMessageCount && (
+          <TouchableOpacity
+            onPress={() => setVisibleMessageCount(c => c + 40)}
+            activeOpacity={0.8}
+            style={{
+              alignSelf: 'center',
+              marginVertical: 10,
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+              borderRadius: 999,
+              borderWidth: 1,
+              borderColor: 'rgba(255,255,255,0.14)',
+              backgroundColor: 'rgba(15, 23, 42, 0.72)',
+            }}
+          >
+            <Text style={{ color: palette.accent, fontSize: 12, fontWeight: '700' }}>
+              Load earlier messages ({messages.length - visibleMessageCount} hidden)
+            </Text>
+          </TouchableOpacity>
+        )}
+        {(() => {
+          const hiddenCount = Math.max(0, messages.length - visibleMessageCount);
+          const visibleMessages = hiddenCount > 0 ? messages.slice(hiddenCount) : messages;
+          return visibleMessages.map((msg, localIdx) => {
+            const idx = hiddenCount + localIdx;
           const isUser = msg.role === 'user';
           const isSelected = selectedMessageId === msg.id;
           const isEditing = editingMessageId === msg.id;
@@ -2364,6 +2719,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                   )}
                 </View>
 
+                {!isUser && renderInspectorDrawer(msg, liveThought)}
                 {isWaitingPlaceholder ? (
                   <Text style={[styles.novelBotText, { color: 'rgba(226, 232, 240, 0.55)', fontStyle: 'italic' }]}>
                     Writing...
@@ -2541,7 +2897,8 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                   onPress={() => setSelectedMessageId(isSelected ? null : msg.id)}
                   activeOpacity={0.9}
                 >
-                  {isWaitingPlaceholder ? (
+                  {!isUser && renderInspectorDrawer(msg, liveThought)}
+                {isWaitingPlaceholder ? (
                     <Text style={[styles.bubbleBotText, { color: 'rgba(226, 232, 240, 0.55)', fontStyle: 'italic' }]}>
                       Writing...
                     </Text>
@@ -2706,7 +3063,8 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               </View>
             </View>
           );
-        })}
+          });
+        })()}
 
         {isStreaming && !fidgetOpen && (
           <View style={{ padding: 14, alignItems: 'center' }}>
@@ -4047,6 +4405,92 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                       </TouchableOpacity>
                     </View>
 
+                    {/* Per-chat Auto-Memory Switch & Customizable Interval */}
+                    <View
+                      style={{
+                        marginTop: 14,
+                        paddingTop: 12,
+                        borderTopWidth: 1,
+                        borderTopColor: 'rgba(255,255,255,0.08)',
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: '#f8fafc', fontSize: 13, fontWeight: '700' }}>
+                            Auto-Update Memory
+                          </Text>
+                          <Text style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 2 }}>
+                            {autoMemoryEnabled
+                              ? `Runs every ${autoMemoryInterval} messages in this chat (recommended: 20)`
+                              : 'Off for this chat — summarize manually above'}
+                          </Text>
+                        </View>
+                        <NekoSwitch
+                          value={autoMemoryEnabled}
+                          onValueChange={val => {
+                            setAutoMemoryEnabled(val);
+                            persistChatSettings({ autoMemoryEnabled: val, autoMemoryInterval });
+                          }}
+                        />
+                      </View>
+
+                      {autoMemoryEnabled && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                          {[10, 20, 30, 50].map(step => {
+                            const active = autoMemoryInterval === step;
+                            return (
+                              <TouchableOpacity
+                                key={step}
+                                onPress={() => {
+                                  setAutoMemoryInterval(step);
+                                  persistChatSettings({ autoMemoryInterval: step });
+                                }}
+                                style={{
+                                  paddingHorizontal: 10,
+                                  paddingVertical: 5,
+                                  borderRadius: 999,
+                                  borderWidth: 1,
+                                  borderColor: active ? palette.accent : 'rgba(255,255,255,0.14)',
+                                  backgroundColor: active ? `rgba(${palette.accentRgb}, 0.16)` : 'rgba(255,255,255,0.04)',
+                                }}
+                              >
+                                <Text style={{ color: active ? palette.accent : '#cbd5e1', fontSize: 11.5, fontWeight: '700' }}>
+                                  {step}{step === 20 ? ' (Rec)' : ''}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                          <TextInput
+                            value={String(autoMemoryInterval)}
+                            onChangeText={txt => {
+                              const num = parseInt(txt.replace(/[^0-9]/g, ''), 10);
+                              if (!isNaN(num) && num >= 4 && num <= 500) {
+                                setAutoMemoryInterval(num);
+                                persistChatSettings({ autoMemoryInterval: num });
+                              } else if (txt === '') {
+                                setAutoMemoryInterval(20);
+                              }
+                            }}
+                            keyboardType="number-pad"
+                            placeholder="20"
+                            placeholderTextColor="#64748b"
+                            style={{
+                              width: 52,
+                              paddingHorizontal: 8,
+                              paddingVertical: 4,
+                              borderRadius: 8,
+                              borderWidth: 1,
+                              borderColor: 'rgba(255,255,255,0.16)',
+                              backgroundColor: 'rgba(255,255,255,0.05)',
+                              color: '#f8fafc',
+                              fontSize: 12,
+                              textAlign: 'center',
+                            }}
+                          />
+                        </View>
+                      )}
+                    </View>
+
                     {memoryNoticeText ? (
                       <Text
                         style={{
@@ -4144,6 +4588,9 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                             );
                           })}
                         </View>
+                        <Text style={{ color: '#64748b', fontSize: 11, marginTop: 6 }}>
+                          Standard: 6–9 paragraphs · Shorter: concise (max 5 paragraphs)
+                        </Text>
                       </View>
 
                       {/* Generation Controls Drill-Down Row */}
@@ -4766,7 +5213,22 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                       <Text style={{ color: '#f8fafc', fontSize: 15, fontWeight: '700' }}>
                         Background image
                       </Text>
-                      {appearance.wallpaperUrl ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <View style={{ flex: 1, paddingRight: 10 }}>
+                        <Text style={{ color: '#e2e8f0', fontSize: 13, fontWeight: '600' }}>
+                          Smart Auto-Darken
+                        </Text>
+                        <Text style={{ color: '#64748b', fontSize: 11 }}>
+                          Automatically darkens bright wallpapers so text stays readable
+                        </Text>
+                      </View>
+                      <NekoSwitch
+                        value={appearance.smartAutoOverlay !== false}
+                        onValueChange={val => saveChatAppearance({ smartAutoOverlay: val } as any)}
+                      />
+                    </View>
+
+                    {appearance.wallpaperUrl ? (
                         <TouchableOpacity
                           style={{
                             width: 26,
@@ -4781,6 +5243,21 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                           <X size={14} color={palette.accent} />
                         </TouchableOpacity>
                       ) : null}
+                    </View>
+
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <View style={{ flex: 1, paddingRight: 10 }}>
+                        <Text style={{ color: '#e2e8f0', fontSize: 13, fontWeight: '600' }}>
+                          Smart Auto-Darken
+                        </Text>
+                        <Text style={{ color: '#64748b', fontSize: 11 }}>
+                          Automatically darkens bright wallpapers so text stays readable
+                        </Text>
+                      </View>
+                      <NekoSwitch
+                        value={appearance.smartAutoOverlay !== false}
+                        onValueChange={val => saveChatAppearance({ smartAutoOverlay: val } as any)}
+                      />
                     </View>
 
                     {appearance.wallpaperUrl ? (
@@ -4931,6 +5408,41 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                       minLabel="12px"
                       maxLabel="20px"
                     />
+
+                    <Text style={{ color: '#94a3b8', fontSize: 12, fontWeight: '700', marginTop: 10, marginBottom: 6 }}>
+                      Message Font
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                      {([
+                        { id: 'default', label: 'Default' },
+                        { id: 'serif', label: 'Serif' },
+                        { id: 'monospace', label: 'Mono' },
+                        { id: 'light', label: 'Light' },
+                      ] as const).map(f => {
+                        const active = chatFontFamily === f.id;
+                        return (
+                          <TouchableOpacity
+                            key={f.id}
+                            onPress={() => {
+                              setChatFontFamily(f.id);
+                              persistCustomizePrefs({ chatFontFamily: f.id });
+                            }}
+                            style={{
+                              paddingHorizontal: 12,
+                              paddingVertical: 6,
+                              borderRadius: 10,
+                              borderWidth: 1,
+                              borderColor: active ? palette.accent : 'rgba(255,255,255,0.14)',
+                              backgroundColor: active ? `rgba(${palette.accentRgb}, 0.16)` : 'rgba(255,255,255,0.04)',
+                            }}
+                          >
+                            <Text style={{ color: active ? palette.accent : '#cbd5e1', fontSize: 12, fontWeight: '700' }}>
+                              {f.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
 
                     <TouchableOpacity
                       style={{

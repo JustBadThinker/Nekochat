@@ -11,6 +11,8 @@ import {
 import { useTheme } from '../theme/ThemeContext';
 import { ThemePalette } from '../theme/colors';
 
+// DeskNekoWalker: certified emotional-support pixel cat.
+// Do not question the throw physics; it works on my machine ¯\_(ツ)_/¯
 const DESK_SPRITE_4X4 = require('../../assets/neko-desk-4x4.png');
 const NEKO_LIFTED_IMG = require('../../assets/neko-lifted.png');
 const NEKO_THROWN_IMG = require('../../assets/neko-thrown.png');

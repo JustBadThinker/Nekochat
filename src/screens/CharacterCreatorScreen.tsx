@@ -254,6 +254,7 @@ export const CharacterCreatorScreen: React.FC<CharacterCreatorScreenProps> = ({
             style={{ flex: 1 }}
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
+            automaticallyAdjustKeyboardInsets
             showsVerticalScrollIndicator={false}
           >
             {/* 1. Avatar & Live Card Preview */}

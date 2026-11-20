@@ -656,12 +656,26 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
     sfwOnly,
   ]);
 
+  const hasActiveFilters =
+    !sfwOnly ||
+    entityMode !== 'characters' ||
+    scopeMode !== 'all' ||
+    (selectedCategoryValues.length > 0 && !selectedCategoryValues.includes('all'));
+
   const renderSearchBarOnly = (compact: boolean = false) => (
-    <View style={[styles.searchContainer, compact && { paddingTop: 6, paddingBottom: 6 }]}>
+    <View
+      style={[
+        styles.searchContainer,
+        { flexDirection: 'row', alignItems: 'center', gap: 8 },
+        compact && { paddingTop: 6, paddingBottom: 6 },
+      ]}
+    >
       <View
         style={[
           styles.searchBarWrapper,
           {
+            flex: 1,
+            minHeight: 44,
             borderRadius: skin.inputRadius,
             borderWidth: skin.id === 'material' ? 0 : Math.max(0.75, skin.cardBorderWidth),
             backgroundColor:
@@ -700,278 +714,323 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           </View>
         )}
       </View>
+
+      <TouchableOpacity
+        style={[
+          styles.tagDrawerBtn,
+          {
+            width: 44,
+            height: 44,
+            borderRadius: skin.inputRadius,
+            marginRight: 0,
+          },
+        ]}
+        onPress={() => setIsTagDrawerOpen(true)}
+        activeOpacity={0.75}
+        accessibilityLabel="Filter Catalog"
+      >
+        <SlidersHorizontal size={16} color={palette.accent} />
+        {hasActiveFilters && (
+          <View
+            style={{
+              position: 'absolute',
+              top: 7,
+              right: 7,
+              width: 7,
+              height: 7,
+              borderRadius: 4,
+              backgroundColor: palette.accent,
+            }}
+          />
+        )}
+      </TouchableOpacity>
     </View>
   );
 
   const renderTopPrimarySwitcher = () => (
         <View style={{ zIndex: 40 }}>
-        <View style={styles.topPrimaryBar}>
-          <View style={styles.topPrimaryPill}>
-            <TouchableOpacity
-              style={[
-                styles.topPrimaryBtn,
-                (topMode === 'catalog' || topMode === 'foryou') && [
-                  styles.topPrimaryBtnActive,
-                  { backgroundColor: palette.accent },
-                ],
-              ]}
-              onPress={() => {
-                if (topMode === 'match') {
-                  setTopMode('catalog');
-                  setShowCatalogDropdown(false);
-                } else {
-                  setShowCatalogDropdown(prev => !prev);
-                }
-              }}
-              activeOpacity={0.8}
-            >
-              {topMode === 'foryou' ? (
-                <Sparkles size={13} color="#000000" style={{ marginRight: 5 }} />
-              ) : (
-                <LayoutGrid size={13} color={topMode === 'catalog' ? '#000000' : '#FFFFFF'} style={{ marginRight: 5 }} />
-              )}
-              <Text
-                style={[
-                  styles.topPrimaryBtnText,
-                  (topMode === 'catalog' || topMode === 'foryou') && styles.topPrimaryBtnTextActive,
-                ]}
-              >
-                {topMode === 'foryou' ? t('discover.forYou') : t('discover.catalogGrid')}
-              </Text>
-              <ChevronDown
-                size={13}
-                color={topMode === 'catalog' || topMode === 'foryou' ? '#000000' : '#FFFFFF'}
-                style={{
-                  marginLeft: 4,
-                  transform: [{ rotate: showCatalogDropdown ? '180deg' : '0deg' }],
-                }}
-              />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.topPrimaryBtn,
-                topMode === 'match' && [styles.topPrimaryBtnActive, { backgroundColor: palette.accent }],
-              ]}
-              onPress={() => {
-                setShowCatalogDropdown(false);
-                setTopMode('match');
-              }}
-              activeOpacity={0.8}
-            >
-              <Flame size={13} color={topMode === 'match' ? '#000000' : palette.accent} style={{ marginRight: 5 }} />
-              <Text style={[styles.topPrimaryBtnText, topMode === 'match' && styles.topPrimaryBtnTextActive]}>
-                {t('discover.matchMode')}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {showCatalogDropdown && (
-          <View
-            style={{
-              position: 'absolute',
-              top: 48,
-              alignSelf: 'center',
-              width: 205,
-              borderRadius: 16,
-              backgroundColor: 'rgba(14, 17, 26, 0.96)',
-              borderWidth: 1,
-              borderColor: `rgba(${palette.accentRgb}, 0.3)`,
-              padding: 6,
-              zIndex: 50,
-              shadowColor: '#000',
-              shadowOpacity: 0.45,
-              shadowRadius: 12,
-              elevation: 10,
-            }}
+        <View
+          style={[
+            styles.topPrimaryBar,
+            {
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              paddingHorizontal: 14,
+              gap: 8,
+            },
+          ]}
+        >
+          {/* Left: Mode Dropdown (Catalog Grid / For You / Match Mode) */}
+          <TouchableOpacity
+            style={[
+              styles.topPrimaryBtn,
+              styles.topPrimaryBtnActive,
+              {
+                backgroundColor: palette.accent,
+                minHeight: 40,
+                paddingHorizontal: 14,
+                borderRadius: 999,
+              },
+            ]}
+            onPress={() => setShowCatalogDropdown(prev => !prev)}
+            activeOpacity={0.8}
           >
-            {[
-              { id: 'catalog' as const, label: 'Catalog Grid', sub: 'Browse & filter all', Icon: LayoutGrid },
-              { id: 'foryou' as const, label: 'For You', sub: 'Algorithmic snap feed', Icon: Sparkles },
-            ].map(opt => {
-              const active = topMode === opt.id;
-              return (
+            {topMode === 'foryou' ? (
+              <Sparkles size={14} color="#000000" style={{ marginRight: 6 }} />
+            ) : topMode === 'match' ? (
+              <Flame size={14} color="#000000" style={{ marginRight: 6 }} />
+            ) : (
+              <LayoutGrid size={14} color="#000000" style={{ marginRight: 6 }} />
+            )}
+            <Text style={[styles.topPrimaryBtnText, styles.topPrimaryBtnTextActive]}>
+              {topMode === 'foryou'
+                ? t('discover.forYou')
+                : topMode === 'match'
+                  ? t('discover.matchMode')
+                  : t('discover.catalogGrid')}
+            </Text>
+            <ChevronDown
+              size={14}
+              color="#000000"
+              style={{
+                marginLeft: 5,
+                transform: [{ rotate: showCatalogDropdown ? '180deg' : '0deg' }],
+              }}
+            />
+          </TouchableOpacity>
+
+          {/* Right: JanitorAI | Chub.ai + Refresh */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            {activeTab === 'community' && enableExternalCatalogs && (
+              <View style={[styles.sourcePillSwitch, { minHeight: 40 }]}>
                 <TouchableOpacity
-                  key={opt.id}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 10,
-                    paddingHorizontal: 10,
-                    paddingVertical: 9,
-                    borderRadius: 11,
-                    backgroundColor: active ? `rgba(${palette.accentRgb}, 0.14)` : 'transparent',
-                  }}
+                  style={[
+                    styles.sourcePillBtn,
+                    { paddingHorizontal: 11, paddingVertical: 8 },
+                    catalogSource === 'janitor' && styles.sourcePillBtnActive,
+                  ]}
                   onPress={() => {
-                    setTopMode(opt.id);
-                    setShowCatalogDropdown(false);
+                    setCatalogSource('janitor');
+                    setCurrentPage(1);
                   }}
                   activeOpacity={0.8}
                 >
-                  <opt.Icon size={15} color={active ? palette.accent : '#94a3b8'} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: active ? palette.accent : '#f8fafc', fontSize: 13, fontWeight: '700' }}>
-                      {opt.label}
-                    </Text>
-                    <Text style={{ color: '#94a3b8', fontSize: 10.5 }}>{opt.sub}</Text>
-                  </View>
-                  {active && <Check size={14} color={palette.accent} />}
+                  <Text
+                    style={[
+                      styles.sourcePillText,
+                      catalogSource === 'janitor' && styles.sourcePillTextActive,
+                    ]}
+                  >
+                    JanitorAI
+                  </Text>
                 </TouchableOpacity>
-              );
-            })}
+
+                <TouchableOpacity
+                  style={[
+                    styles.sourcePillBtn,
+                    { paddingHorizontal: 11, paddingVertical: 8 },
+                    catalogSource === 'chub' && styles.sourcePillBtnActive,
+                  ]}
+                  onPress={() => {
+                    setCatalogSource('chub');
+                    setCurrentPage(1);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[
+                      styles.sourcePillText,
+                      catalogSource === 'chub' && styles.sourcePillTextActive,
+                    ]}
+                  >
+                    Chub.ai
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.iconBtn, { width: 40, height: 40, borderRadius: 20 }]}
+              onPress={() => fetchCharactersInitial(1)}
+              activeOpacity={0.7}
+              accessibilityLabel="Refresh Catalog Feed"
+            >
+              <RefreshCw size={15} color="#cbd5e1" />
+            </TouchableOpacity>
           </View>
-        )}
+        </View>
         </View>
   );
 
-  const renderCatalogControls = (omitSearchBar: boolean = false) => (
-          <>
-          {/* ══════════════════════════════════════════════════════════════════ */}
-          {/* 2. SUB-HEADER TOOLBAR: Explore All vs My Library & Sources         */}
-          {/* ══════════════════════════════════════════════════════════════════ */}
-          <View>
-            <View style={styles.subHeader}>
-              {/* Left: Explore vs Library */}
-              <View style={styles.viewSwitcher}>
-                <TouchableOpacity
-                  style={[styles.viewTabBtn, activeTab === 'community' && styles.viewTabBtnActive]}
-                  onPress={() => setActiveTab('community')}
-                  activeOpacity={0.8}
-                >
-                  <Compass size={13} color={activeTab === 'community' ? '#000000' : '#FFFFFF'} style={{ marginRight: 5 }} />
-                  <Text style={[styles.viewTabBtnText, activeTab === 'community' && styles.viewTabBtnTextActive]}>
-                    {t('discover.exploreAll')}
-                  </Text>
-                  <View style={styles.greenPulseDot} />
-                </TouchableOpacity>
+  const renderCatalogControls = (omitSearchBar: boolean = false) => {
+    const sortCycleLabel =
+      activeTab === 'library'
+        ? librarySubTab === 'latest'
+          ? '✨ Latest'
+          : librarySubTab === 'liked'
+            ? '❤️ Liked'
+            : '👤 Creators'
+        : communitySort === 'trending'
+          ? `🔥 ${t('discover.trending')}`
+          : communitySort === 'popular'
+            ? `❤️ ${t('discover.popular')}`
+            : `✨ ${t('discover.latest')}`;
 
-                <TouchableOpacity
-                  style={[styles.viewTabBtn, activeTab === 'library' && styles.viewTabBtnActive]}
-                  onPress={() => setActiveTab('library')}
-                  activeOpacity={0.8}
-                >
-                  <Bookmark size={13} color={activeTab === 'library' ? '#000000' : '#9ca3af'} style={{ marginRight: 5 }} />
-                  <Text style={[styles.viewTabBtnText, activeTab === 'library' ? styles.viewTabBtnTextActive : { color: '#9ca3af' }]}>
-                    {t('discover.myLibrary')}
-                  </Text>
-                  <View style={styles.libraryCountPill}>
-                    <Text style={styles.libraryCountText}>{characters.length}</Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
+    const handleCycleSort = () => {
+      if (activeTab === 'library') {
+        const order = ['latest', 'liked', 'creators'] as const;
+        const next = order[(order.indexOf(librarySubTab) + 1) % order.length];
+        setLibrarySubTab(next);
+        if (next === 'creators') setEntityMode('creators');
+        else if (entityMode === 'creators') setEntityMode('characters');
+      } else {
+        const order: CatalogSort[] = ['trending', 'popular', 'latest'];
+        const next = order[(order.indexOf(communitySort) + 1) % order.length];
+        setCommunitySort(next);
+      }
+    };
 
-              {/* Right: JanitorAI | Chub.ai toggle & Actions */}
-              <View style={styles.subHeaderRight}>
-                {activeTab === 'community' && (
-                  <>
-                    <View style={styles.sourcePillSwitch}>
-                      {showMysqlSource && (
-                        <TouchableOpacity
-                          style={[styles.sourcePillBtn, catalogSource === 'local_db' && styles.sourcePillBtnActive]}
-                          onPress={() => {
-                            setCatalogSource('local_db');
-                            setCurrentPage(1);
-                          }}
-                          activeOpacity={0.8}
-                        >
-                          <Text
-                            style={[
-                              styles.sourcePillText,
-                              catalogSource === 'local_db' && styles.sourcePillTextActive,
-                            ]}
-                          >
-                            MySQL DB
-                          </Text>
-                        </TouchableOpacity>
-                      )}
+    return (
+      <>
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* 2. SEARCH BAR + FILTER DRAWER BUTTON (44x44)                      */}
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {!omitSearchBar && renderSearchBarOnly()}
 
-                      {enableExternalCatalogs && (
-                        <>
-                          <TouchableOpacity
-                            style={[styles.sourcePillBtn, catalogSource === 'janitor' && styles.sourcePillBtnActive]}
-                            onPress={() => {
-                              setCatalogSource('janitor');
-                              setCurrentPage(1);
-                            }}
-                            activeOpacity={0.8}
-                          >
-                            <Text
-                              style={[
-                                styles.sourcePillText,
-                                catalogSource === 'janitor' && styles.sourcePillTextActive,
-                              ]}
-                            >
-                              JanitorAI
-                            </Text>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            style={[styles.sourcePillBtn, catalogSource === 'chub' && styles.sourcePillBtnActive]}
-                            onPress={() => {
-                              setCatalogSource('chub');
-                              setCurrentPage(1);
-                            }}
-                            activeOpacity={0.8}
-                          >
-                            <Text
-                              style={[
-                                styles.sourcePillText,
-                                catalogSource === 'chub' && styles.sourcePillTextActive,
-                              ]}
-                            >
-                              Chub.ai
-                            </Text>
-                          </TouchableOpacity>
-                        </>
-                      )}
-                    </View>
-
-                    <TouchableOpacity
-                      style={styles.iconBtn}
-                      onPress={() => fetchCharactersInitial(1)}
-                      activeOpacity={0.7}
-                      accessibilityLabel="Refresh Catalog Feed"
-                    >
-                      <RefreshCw size={13} color="#9ca3af" />
-                    </TouchableOpacity>
-                  </>
-                )}
-              </View>
-            </View>
-          </View>
-
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* 3. SEARCH BAR                                                      */}
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      {!omitSearchBar && renderSearchBarOnly()}
-
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* 4. 18 CANONICAL TAG STRIP + DRAWER [🎛️] & EXPAND [⌵]               */}
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      <View style={styles.tagStripContainer}>
-        <TouchableOpacity
-          style={styles.tagDrawerBtn}
-          onPress={() => setIsTagDrawerOpen(true)}
-          activeOpacity={0.7}
-          accessibilityLabel="Filter Drawer"
-        >
-          <SlidersHorizontal size={14} color={palette.accent} />
-        </TouchableOpacity>
-
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* 3. SINGLE SLIM HORIZONTAL STRIP: Explore / Library / Sort / SFW / Tags */}
+        {/* ══════════════════════════════════════════════════════════════════ */}
         <ScrollView
-          horizontal={!tagsExpanded}
+          horizontal
+          style={{ flexGrow: 0 }}
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={[styles.tagStripScroll, tagsExpanded && styles.tagStripWrapped]}
+          contentContainerStyle={{
+            paddingHorizontal: 14,
+            paddingTop: 2,
+            paddingBottom: 10,
+            alignItems: 'center',
+            gap: 8,
+          }}
         >
-          {POPULAR_COMMUNITY_CATEGORIES.map((chip, idx) => {
+          {/* Explore / Library segmented pills */}
+          <TouchableOpacity
+            style={[
+              styles.communityTagChip,
+              { minHeight: 38, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },
+              activeTab === 'community' && {
+                backgroundColor: `rgba(${palette.accentRgb}, 0.16)`,
+                borderColor: palette.accent,
+              },
+            ]}
+            onPress={() => setActiveTab('community')}
+            activeOpacity={0.8}
+          >
+            <Compass
+              size={13}
+              color={activeTab === 'community' ? palette.accent : '#9ca3af'}
+              style={{ marginRight: 5 }}
+            />
+            <Text
+              style={[
+                styles.communityTagText,
+                activeTab === 'community' && { color: palette.accent, fontWeight: '700' },
+              ]}
+            >
+              {t('discover.exploreAll')}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.communityTagChip,
+              { minHeight: 38, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },
+              activeTab === 'library' && {
+                backgroundColor: `rgba(${palette.accentRgb}, 0.16)`,
+                borderColor: palette.accent,
+              },
+            ]}
+            onPress={() => setActiveTab('library')}
+            activeOpacity={0.8}
+          >
+            <Bookmark
+              size={13}
+              color={activeTab === 'library' ? palette.accent : '#9ca3af'}
+              style={{ marginRight: 5 }}
+            />
+            <Text
+              style={[
+                styles.communityTagText,
+                activeTab === 'library' && { color: palette.accent, fontWeight: '700' },
+              ]}
+            >
+              {t('discover.myLibrary')} ({characters.length})
+            </Text>
+          </TouchableOpacity>
+
+          {/* Sort cycle pill */}
+          <TouchableOpacity
+            style={[
+              styles.communityTagChip,
+              {
+                minHeight: 38,
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingHorizontal: 12,
+                backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
+                borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+              },
+            ]}
+            onPress={handleCycleSort}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.communityTagText, { color: palette.accent, fontWeight: '700' }]}>
+              {sortCycleLabel}
+            </Text>
+            <ChevronDown size={12} color={palette.accent} style={{ marginLeft: 4 }} />
+          </TouchableOpacity>
+
+          {/* Quick SFW / NSFW toggle pill */}
+          <TouchableOpacity
+            style={[
+              styles.communityTagChip,
+              { minHeight: 38, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },
+              !sfwOnly && {
+                backgroundColor: 'rgba(244, 63, 94, 0.16)',
+                borderColor: 'rgba(244, 63, 94, 0.5)',
+              },
+            ]}
+            onPress={() => setSfwOnly(prev => !prev)}
+            activeOpacity={0.8}
+          >
+            {sfwOnly ? (
+              <EyeOff size={12} color="#9ca3af" style={{ marginRight: 5 }} />
+            ) : (
+              <Eye size={12} color="#fb7185" style={{ marginRight: 5 }} />
+            )}
+            <Text
+              style={[
+                styles.communityTagText,
+                !sfwOnly && { color: '#fb7185', fontWeight: '700' },
+              ]}
+            >
+              {sfwOnly ? 'SFW' : 'NSFW'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Tag Chips (soft tinted active state) */}
+          {POPULAR_COMMUNITY_CATEGORIES.map(chip => {
             const isSelected = selectedCategoryValues.includes(chip.value);
             return (
               <TouchableOpacity
                 key={chip.value}
                 style={[
                   styles.communityTagChip,
-                  isSelected && styles.communityTagChipActive,
+                  { minHeight: 38, justifyContent: 'center', paddingHorizontal: 12 },
+                  isSelected && {
+                    backgroundColor: `rgba(${palette.accentRgb}, 0.16)`,
+                    borderColor: palette.accent,
+                  },
                 ]}
                 onPress={() => handleToggleCategory(chip.value)}
                 activeOpacity={0.8}
@@ -979,7 +1038,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                 <Text
                   style={[
                     styles.communityTagText,
-                    isSelected && styles.communityTagTextActive,
+                    isSelected && { color: palette.accent, fontWeight: '700' },
                   ]}
                 >
                   {chip.value === 'all' ? 'All Tags' : `#${chip.value}`}
@@ -988,204 +1047,9 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             );
           })}
         </ScrollView>
-
-        <TouchableOpacity
-          style={styles.expandChevronBtn}
-          onPress={() => setTagsExpanded(prev => !prev)}
-          activeOpacity={0.7}
-        >
-          <ChevronDown
-            size={15}
-            color="#9ca3af"
-            style={{ transform: [{ rotate: tagsExpanded ? '180deg' : '0deg' }] }}
-          />
-        </TouchableOpacity>
-      </View>
-
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* 5. SEGMENTED FILTER PILLS (Characters | Creators & All | Limited) */}
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      <View style={styles.filterPillsRow}>
-        <View style={[styles.pillGroup, { flex: 1.2 }]}>
-          <TouchableOpacity
-            style={[styles.pillSegment, entityMode === 'characters' && styles.pillSegmentActive]}
-            onPress={() => setEntityMode('characters')}
-            activeOpacity={0.8}
-          >
-            <Text
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              style={[
-                styles.pillSegmentText,
-                entityMode === 'characters' && styles.pillSegmentTextActive,
-              ]}
-            >
-              {t('discover.characters')}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.pillSegment, entityMode === 'creators' && styles.pillSegmentActive]}
-            onPress={() => setEntityMode('creators')}
-            activeOpacity={0.8}
-          >
-            <Text
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              style={[
-                styles.pillSegmentText,
-                entityMode === 'creators' && styles.pillSegmentTextActive,
-              ]}
-            >
-              {t('discover.creators')}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={[styles.pillGroup, { flex: 0.9 }]}>
-          <TouchableOpacity
-            style={[styles.pillSegment, !sfwOnly && styles.pillSegmentActive]}
-            onPress={() => setSfwOnly(false)}
-            activeOpacity={0.8}
-          >
-            <Eye size={11} color={!sfwOnly ? '#000000' : '#9ca3af'} style={{ marginRight: 3 }} />
-            <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.pillSegmentText, !sfwOnly && styles.pillSegmentTextActive]}>
-              NSFW
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.pillSegment, sfwOnly && styles.pillSegmentActive]}
-            onPress={() => setSfwOnly(true)}
-            activeOpacity={0.8}
-          >
-            <EyeOff size={11} color={sfwOnly ? '#000000' : '#9ca3af'} style={{ marginRight: 3 }} />
-            <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.pillSegmentText, sfwOnly && styles.pillSegmentTextActive]}>
-              SFW
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Sort Bar: Trending | Popular | Latest (Community) OR Latest | Liked | Creators (My Library) */}
-      <View style={styles.scopeRow}>
-        <View style={styles.pillGroupFull}>
-          {activeTab === 'library' ? (
-            (['latest', 'liked', 'creators'] as const).map(tabKey => {
-              const isActive = librarySubTab === tabKey;
-              const label =
-                tabKey === 'latest'
-                  ? '✨ Latest'
-                  : tabKey === 'liked'
-                  ? '❤️ Liked'
-                  : '👤 Creators';
-              return (
-                <TouchableOpacity
-                  key={tabKey}
-                  style={[
-                    styles.pillSegment,
-                    isActive && [styles.pillSegmentActive, { backgroundColor: palette.accent }],
-                  ]}
-                  onPress={() => {
-                    setLibrarySubTab(tabKey);
-                    if (tabKey === 'creators') {
-                      setEntityMode('creators');
-                    } else if (entityMode === 'creators') {
-                      setEntityMode('characters');
-                    }
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    style={[styles.pillSegmentText, isActive && styles.pillSegmentTextActive]}
-                  >
-                    {label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })
-          ) : (
-            (['trending', 'popular', 'latest'] as CatalogSort[]).map(s => {
-              const isActive = communitySort === s;
-              const label =
-                s === 'trending'
-                  ? `🔥 ${t('discover.trending')}`
-                  : s === 'popular'
-                  ? `❤️ ${t('discover.popular')}`
-                  : `✨ ${t('discover.latest')}`;
-              return (
-                <TouchableOpacity
-                  key={s}
-                  style={[
-                    styles.pillSegment,
-                    isActive && [styles.pillSegmentActive, { backgroundColor: palette.accent }],
-                  ]}
-                  onPress={() => setCommunitySort(s)}
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                    style={[styles.pillSegmentText, isActive && styles.pillSegmentTextActive]}
-                  >
-                    {label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })
-          )}
-        </View>
-      </View>
-
-      {/* Scope Dropdown (All | Following | Favorites) & Count Row */}
-      <View style={styles.sortCountRow}>
-        <TouchableOpacity
-          ref={scopeBtnRef}
-          style={[styles.sortDropdownBtn, scopeDropdownOpen && styles.sortDropdownBtnActive]}
-          onPress={() => {
-            scopeBtnRef.current?.measureInWindow?.((x: number, y: number, _w: number, h: number) => {
-              if (typeof x === 'number' && typeof y === 'number') {
-                setScopeMenuPos({ top: y + h + 6, left: Math.max(12, x) });
-              }
-            });
-            setScopeDropdownOpen(prev => !prev);
-          }}
-          activeOpacity={0.8}
-        >
-          {scopeMode === 'all' ? (
-            <Globe size={12} color={palette.accent} style={{ marginRight: 5 }} />
-          ) : scopeMode === 'following' ? (
-            <Users size={12} color={palette.accent} style={{ marginRight: 5 }} />
-          ) : (
-            <Heart size={12} color={palette.accent} style={{ marginRight: 5 }} />
-          )}
-          <Text style={styles.sortDropdownText}>
-            {scopeMode === 'all'
-              ? 'All'
-              : scopeMode === 'following'
-              ? `Following${followedCreators.length > 0 ? ` (${followedCreators.length})` : ''}`
-              : 'Favorites'}
-          </Text>
-          <ChevronDown
-            size={12}
-            color={palette.accent}
-            style={{
-              marginLeft: 5,
-              transform: [{ rotate: scopeDropdownOpen ? '180deg' : '0deg' }],
-            }}
-          />
-        </TouchableOpacity>
-
-        <View style={styles.countBadge}>
-          <Text style={styles.countBadgeText}>
-            {displayedCharacters.length} companions loaded • Infinite Scroll
-          </Text>
-        </View>
-      </View>
-          </>
-  );
+      </>
+    );
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: palette.bgDark }]}>
@@ -1584,8 +1448,8 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
               left: 0,
               right: 0,
               zIndex: 45,
-              overflow: 'hidden',
-              backgroundColor: 'rgba(12, 14, 20, 0.52)',
+              overflow: showCatalogDropdown ? 'visible' : 'hidden',
+              backgroundColor: 'rgba(12, 14, 20, 0.72)',
               borderBottomWidth: 1,
               borderBottomColor: 'rgba(255, 255, 255, 0.08)',
               transform: [
@@ -1615,35 +1479,100 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
               pointerEvents="none"
             />
           )}
-          {/* Row 1 (always in floating/compact): Slim Search Bar */}
-          {renderSearchBarOnly(true)}
-
-          {/* Row 2 (slides in smoothly on first upward scroll): Primary Mode Switcher */}
+          {/* Row 1 (slides in smoothly on first upward scroll): Top Mode + Source Bar */}
           <Animated.View
             style={{
-              overflow: 'hidden',
+              zIndex: 50,
+              overflow: showCatalogDropdown ? 'visible' : 'hidden',
               maxHeight: midRowAnim.interpolate({
                 inputRange: [0, 1],
-                outputRange: [0, 64],
+                outputRange: [0, 68],
               }),
             }}
           >
             {renderTopPrimarySwitcher()}
           </Animated.View>
 
-          {/* Row 3 (slides in smoothly on deeper upward scroll): Full Catalog Filters */}
+          {/* Row 2 (always in floating/compact): Search + Filter */}
+          {renderSearchBarOnly(true)}
+
+          {/* Row 3 (slides in smoothly on deeper upward scroll): Single Horizontal Strip */}
           <Animated.View
             style={{
               overflow: 'hidden',
               maxHeight: fullRowAnim.interpolate({
                 inputRange: [0, 1],
-                outputRange: [0, 320],
+                outputRange: [0, 56],
               }),
             }}
           >
             {renderCatalogControls(true)}
           </Animated.View>
         </Animated.View>
+      )}
+
+      {/* Top-Level Mode Dropdown Popover (above FlatList cells & floating header) */}
+      {showCatalogDropdown && (
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => setShowCatalogDropdown(false)}
+          style={[StyleSheet.absoluteFill, { zIndex: 90 }]}
+        >
+          <View
+            style={{
+              position: 'absolute',
+              top: 56,
+              left: 14,
+              width: 220,
+              borderRadius: 16,
+              backgroundColor: 'rgba(14, 17, 26, 0.98)',
+              borderWidth: 1,
+              borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+              padding: 6,
+              zIndex: 100,
+              shadowColor: '#000',
+              shadowOpacity: 0.55,
+              shadowRadius: 16,
+              elevation: 20,
+            }}
+          >
+            {[
+              { id: 'catalog' as const, label: 'Catalog Grid', sub: 'Browse & filter all', Icon: LayoutGrid },
+              { id: 'foryou' as const, label: 'For You', sub: 'Algorithmic snap feed', Icon: Sparkles },
+              { id: 'match' as const, label: 'Match Mode', sub: 'Swipe character deck', Icon: Flame },
+            ].map(opt => {
+              const active = topMode === opt.id;
+              return (
+                <TouchableOpacity
+                  key={opt.id}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 10,
+                    paddingHorizontal: 10,
+                    paddingVertical: 10,
+                    borderRadius: 11,
+                    backgroundColor: active ? `rgba(${palette.accentRgb}, 0.14)` : 'transparent',
+                  }}
+                  onPress={() => {
+                    setTopMode(opt.id);
+                    setShowCatalogDropdown(false);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <opt.Icon size={15} color={active ? palette.accent : '#94a3b8'} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: active ? palette.accent : '#f8fafc', fontSize: 13, fontWeight: '700' }}>
+                      {opt.label}
+                    </Text>
+                    <Text style={{ color: '#94a3b8', fontSize: 10.5 }}>{opt.sub}</Text>
+                  </View>
+                  {active && <Check size={14} color={palette.accent} />}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </TouchableOpacity>
       )}
 
       {/* ══════════════════════════════════════════════════════════════════ */}
@@ -2086,9 +2015,21 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         onClose={() => setIsTagDrawerOpen(false)}
         selectedTagSlugs={selectedCategoryValues}
         onToggleTag={slug => handleToggleCategory(slug)}
-        onClearTags={() => setSelectedCategoryValues(['all'])}
+        onClearTags={() => {
+          setSelectedCategoryValues(['all']);
+          setEntityMode('characters');
+          setSfwOnly(true);
+          setScopeMode('all');
+        }}
         onApply={() => fetchCharactersInitial(1)}
         matchingCount={communityTotalCount}
+        entityMode={entityMode}
+        onChangeEntityMode={setEntityMode}
+        sfwOnly={sfwOnly}
+        onChangeSfwOnly={setSfwOnly}
+        scopeMode={scopeMode}
+        onChangeScopeMode={setScopeMode}
+        followedCount={followedCreators.length}
       />
     </View>
   );

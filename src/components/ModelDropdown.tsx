@@ -1,5 +1,6 @@
 /**
  * ModelDropdown — Animated dropdown selector for per-chat AI Engine Model override.
+ * Because sometimes you need a 70B brain just to argue with a tsundere properly.
  */
 
 import React, { useState, useEffect } from 'react';

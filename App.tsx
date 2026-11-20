@@ -16,6 +16,7 @@ import { storageService } from './src/services/storageService';
 import { characterService } from './src/services/characterService';
 import { communityCatalogService } from './src/services/communityCatalogService';
 import { CapsuleDock, TabScreen } from './src/components/CapsuleDock';
+import { TopPhoneNeko } from './src/components/TopPhoneNeko';
 import { SplashScreen } from './src/components/SplashScreen';
 import { OnboardingFlow } from './src/components/OnboardingFlow';
 import { PasscodeGate } from './src/components/PasscodeGate';
@@ -358,7 +359,7 @@ export default function App() {
                 {
                   translateX: chatRoomEnterAnim.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [28, 0],
+                    outputRange: [Math.min(pagerWidth || 380, 420), 0],
                   }),
                 },
               ],
@@ -373,12 +374,18 @@ export default function App() {
             onSelectPersona={setActivePersona}
             config={config}
             initialConversationId={activeConversationId || undefined}
-            onBack={async () => {
-              setActiveChatCharacter(null);
-              setActiveConversationId(null);
-              // Refresh active chat characters on return
-              const updated = await storageService.getCharacters();
-              setCharacters(updated);
+            onBack={() => {
+              Animated.timing(chatRoomEnterAnim, {
+                toValue: 0,
+                duration: 210,
+                useNativeDriver: true,
+              }).start(async () => {
+                setActiveChatCharacter(null);
+                setActiveConversationId(null);
+                // Refresh active chat characters on return
+                const updated = await storageService.getCharacters();
+                setCharacters(updated);
+              });
             }}
           />
         </Animated.View>
@@ -399,6 +406,7 @@ export default function App() {
         style={[styles.appContainer, { backgroundColor: themeBg }]}
       >
         <StatusBar style="light" />
+        <TopPhoneNeko containerWidth={pagerWidth} />
 
         {/* Horizontal Swipeable Pager across Chats, Discover, Studio, Settings */}
         <BlurTargetView

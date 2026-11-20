@@ -1,7 +1,8 @@
 /**
  * Character Management Service
- * Pure anime initial state matching Warden AI (INITIAL_CHARACTERS = []).
+ * Pure anime initial state (INITIAL_CHARACTERS = []).
  * Live trending characters are fetched directly from live community endpoints.
+ * Zero mock characters were harmed (or hardcoded) in the making of this service.
  */
 
 import { Character } from '../types';

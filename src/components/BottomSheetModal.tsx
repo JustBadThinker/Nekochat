@@ -47,9 +47,11 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
   const { palette, skin } = useTheme();
   const { height: windowHeight } = useWindowDimensions();
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [internalVisible, setInternalVisible] = useState(visible);
   const [translateY] = useState(() => new Animated.Value(420));
   const [backdropOpacity] = useState(() => new Animated.Value(0));
   const onCloseRef = useRef(onClose);
+  const isAnimatingOutRef = useRef(false);
 
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -72,12 +74,24 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
 
   useEffect(() => {
     if (visible) {
+      isAnimatingOutRef.current = false;
+      setInternalVisible(true);
       runSheetOpenAnimation(translateY, backdropOpacity, skin.animation);
+    } else if (internalVisible && !isAnimatingOutRef.current) {
+      isAnimatingOutRef.current = true;
+      runSheetCloseAnimation(translateY, backdropOpacity, skin.animation, () => {
+        isAnimatingOutRef.current = false;
+        setInternalVisible(false);
+      });
     }
-  }, [visible, translateY, backdropOpacity, skin.animation]);
+  }, [visible, internalVisible, translateY, backdropOpacity, skin.animation]);
 
   const animateClose = () => {
+    if (isAnimatingOutRef.current) return;
+    isAnimatingOutRef.current = true;
     runSheetCloseAnimation(translateY, backdropOpacity, skin.animation, () => {
+      isAnimatingOutRef.current = false;
+      setInternalVisible(false);
       onCloseRef.current();
     });
   };
@@ -119,9 +133,57 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
     })
   );
 
+  const isEventInsideScrolledChild = (evt: any): boolean => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      let node = evt?.nativeEvent?.target || evt?.target;
+      while (node && node !== document.body) {
+        if (typeof node.scrollTop === 'number' && node.scrollTop > 2) {
+          return true;
+        }
+        node = node.parentElement;
+      }
+    }
+    return false;
+  };
+
+  const [sheetPanResponder] = useState(() =>
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (evt, gesture) => {
+        if (isEventInsideScrolledChild(evt)) return false;
+        return gesture.dy > 16 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.6;
+      },
+      onPanResponderMove: (_, gesture) => {
+        if (gesture.dy > 0) {
+          translateY.setValue(gesture.dy);
+        }
+      },
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dy > 115 || (gesture.dy > 55 && gesture.vy > 0.75)) {
+          animateCloseRef.current();
+        } else {
+          Animated.spring(translateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            friction: 8,
+            tension: 120,
+          }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(translateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          friction: 8,
+          tension: 120,
+        }).start();
+      },
+    })
+  );
+
   return (
     <Modal
-      visible={visible}
+      visible={internalVisible}
       transparent
       animationType="none"
       onRequestClose={animateClose}
@@ -142,8 +204,9 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
           onPress={animateClose}
         />
 
-        {/* Sheet Card */}
+        {/* Sheet Card (supports swiping down anywhere on non-scrolling areas to dismiss) */}
         <Animated.View
+          {...sheetPanResponder.panHandlers}
           style={[
             styles.sheet,
             {
@@ -200,7 +263,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'transparent',
     justifyContent: 'flex-end',
-    ...GLASS.backdrop,
   },
   sheet: {
     overflow: 'hidden',

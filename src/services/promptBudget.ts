@@ -335,6 +335,12 @@ export function buildGeminiRequestBody(params: {
   return {
     systemInstruction: { parts: [{ text: params.systemInstruction }] },
     contents: toGeminiContents(params.turns),
+    safetySettings: [
+      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+    ],
     generationConfig: {
       temperature: typeof params.config.temperature === 'number' ? params.config.temperature : 0.85,
       topP: typeof params.config.topP === 'number' ? params.config.topP : 0.95,

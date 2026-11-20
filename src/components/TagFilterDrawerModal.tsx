@@ -1,17 +1,18 @@
 /**
  * TagFilterDrawerModal.tsx
- * Strictly ported from Warden AI (c:\Users\kanto\Documents\Work\Apps\Wardenai\src\components\character\TagFilterDrawer.tsx)
- * Multi-category community tag drawer with accordion expand/collapse.
+ * Multi-category community tag filter drawer with accordion expand/collapse and active tag chips.
+ * "Just browsing one tag" — famous last words before selecting 12 tropes at 2 AM.
  */
 
-import React, { useState , useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   ScrollView,
   StyleSheet,
-  Modal,
+  Animated,
+  Easing,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -22,10 +23,56 @@ import {
   Check,
   RotateCcw,
 } from 'lucide-react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
 import { ThemePalette } from '../theme/colors';
+import { BottomSheetModal } from './BottomSheetModal';
+
+const AnimatedTagAccordion: React.FC<{ isExpanded: boolean; children: React.ReactNode }> = ({
+  isExpanded,
+  children,
+}) => {
+  const anim = useRef(new Animated.Value(isExpanded ? 1 : 0)).current;
+  const [shouldRender, setShouldRender] = useState(isExpanded);
+
+  useEffect(() => {
+    if (isExpanded) {
+      setShouldRender(true);
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: 240,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }).start();
+    } else {
+      Animated.timing(anim, {
+        toValue: 0,
+        duration: 200,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: false,
+      }).start(({ finished }) => {
+        if (finished) setShouldRender(false);
+      });
+    }
+  }, [isExpanded, anim]);
+
+  if (!shouldRender && !isExpanded) return null;
+
+  return (
+    <Animated.View
+      style={{
+        overflow: 'hidden',
+        opacity: anim,
+        maxHeight: anim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0, 320],
+        }),
+      }}
+    >
+      {children}
+    </Animated.View>
+  );
+};
 
 interface TagCategoryItem {
   id: string;
@@ -133,6 +180,13 @@ interface TagFilterDrawerModalProps {
   onClearTags: () => void;
   onApply: () => void;
   matchingCount?: number;
+  entityMode?: 'characters' | 'creators';
+  onChangeEntityMode?: (mode: 'characters' | 'creators') => void;
+  sfwOnly?: boolean;
+  onChangeSfwOnly?: (sfw: boolean) => void;
+  scopeMode?: 'all' | 'following' | 'favorites';
+  onChangeScopeMode?: (scope: 'all' | 'following' | 'favorites') => void;
+  followedCount?: number;
 }
 
 export const TagFilterDrawerModal: React.FC<TagFilterDrawerModalProps> = ({
@@ -143,6 +197,13 @@ export const TagFilterDrawerModal: React.FC<TagFilterDrawerModalProps> = ({
   onClearTags,
   onApply,
   matchingCount = 200000,
+  entityMode = 'characters',
+  onChangeEntityMode,
+  sfwOnly = true,
+  onChangeSfwOnly,
+  scopeMode = 'all',
+  onChangeScopeMode,
+  followedCount = 0,
 }) => {
   const { palette } = useTheme();
   const styles = useMemo(() => createStyles(palette), [palette]);
@@ -157,23 +218,17 @@ export const TagFilterDrawerModal: React.FC<TagFilterDrawerModalProps> = ({
     setExpandedCats(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  if (!visible) return null;
-
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
-        <LinearGradient
-          pointerEvents="none"
-          colors={['rgba(6, 8, 14, 0.12)', 'rgba(6, 8, 14, 0.48)', 'rgba(6, 8, 14, 0.88)']}
-          locations={[0, 0.5, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-        <TouchableOpacity style={styles.sheetContainer} activeOpacity={1} onPress={(e: any) => e.stopPropagation?.()}>
-          {/* Header */}
-          <View style={styles.header}>
+    <BottomSheetModal
+      visible={visible}
+      onClose={onClose}
+      sheetStyle={{ paddingHorizontal: 0, paddingBottom: 0, maxHeight: '85%' }}
+    >
+      {/* Header */}
+      <View style={styles.header}>
             <View style={styles.headerLeft}>
               <SlidersHorizontal size={17} color={palette.accent} style={{ marginRight: 8 }} />
-              <Text style={styles.headerTitle}>Filter Characters by Tags</Text>
+              <Text style={styles.headerTitle}>Filter Catalog</Text>
             </View>
 
             <TouchableOpacity style={styles.closeBtn} onPress={onClose} activeOpacity={0.7}>
@@ -181,8 +236,100 @@ export const TagFilterDrawerModal: React.FC<TagFilterDrawerModalProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* Body: Accordion categories */}
+          {/* Body: Catalog Filters + Accordion Tag Categories */}
           <ScrollView style={styles.scrollBody} contentContainerStyle={styles.scrollContent}>
+            {(onChangeEntityMode || onChangeSfwOnly || onChangeScopeMode) && (
+              <View style={{ marginBottom: 16, gap: 12 }}>
+                {onChangeEntityMode && (
+                  <View>
+                    <Text style={[styles.categoryTitle, { marginBottom: 8 }]}>Display</Text>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      {(['characters', 'creators'] as const).map(mode => {
+                        const active = entityMode === mode;
+                        return (
+                          <TouchableOpacity
+                            key={mode}
+                            onPress={() => onChangeEntityMode(mode)}
+                            activeOpacity={0.8}
+                            style={[
+                              styles.pill,
+                              { flex: 1, minHeight: 42, justifyContent: 'center' },
+                              active && styles.pillSelected,
+                            ]}
+                          >
+                            <Text style={[styles.pillText, active && styles.pillTextSelected]}>
+                              {mode === 'characters' ? 'Characters' : 'Creators'}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
+
+                {onChangeSfwOnly && (
+                  <View>
+                    <Text style={[styles.categoryTitle, { marginBottom: 8 }]}>Content Rating</Text>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      {[
+                        { label: 'SFW Only', value: true },
+                        { label: 'Include NSFW', value: false },
+                      ].map(opt => {
+                        const active = sfwOnly === opt.value;
+                        return (
+                          <TouchableOpacity
+                            key={opt.label}
+                            onPress={() => onChangeSfwOnly(opt.value)}
+                            activeOpacity={0.8}
+                            style={[
+                              styles.pill,
+                              { flex: 1, minHeight: 42, justifyContent: 'center' },
+                              active && styles.pillSelected,
+                            ]}
+                          >
+                            <Text style={[styles.pillText, active && styles.pillTextSelected]}>
+                              {opt.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
+
+                {onChangeScopeMode && (
+                  <View>
+                    <Text style={[styles.categoryTitle, { marginBottom: 8 }]}>Scope</Text>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      {([
+                        { id: 'all', label: 'All' },
+                        { id: 'following', label: followedCount > 0 ? `Following (${followedCount})` : 'Following' },
+                        { id: 'favorites', label: 'Favorites' },
+                      ] as const).map(sc => {
+                        const active = scopeMode === sc.id;
+                        return (
+                          <TouchableOpacity
+                            key={sc.id}
+                            onPress={() => onChangeScopeMode(sc.id)}
+                            activeOpacity={0.8}
+                            style={[
+                              styles.pill,
+                              { flex: 1, minHeight: 42, justifyContent: 'center' },
+                              active && styles.pillSelected,
+                            ]}
+                          >
+                            <Text style={[styles.pillText, active && styles.pillTextSelected]}>
+                              {sc.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
+
             {CATEGORIES.map(cat => {
               const isExpanded = Boolean(expandedCats[cat.id]);
               const activeCount = cat.pills.filter(p =>
@@ -212,7 +359,7 @@ export const TagFilterDrawerModal: React.FC<TagFilterDrawerModalProps> = ({
                     )}
                   </TouchableOpacity>
 
-                  {isExpanded && (
+                  <AnimatedTagAccordion isExpanded={isExpanded}>
                     <View style={styles.pillsWrap}>
                       {cat.pills.map(pill => {
                         const isSelected = selectedTagSlugs.includes(pill.slug);
@@ -238,7 +385,7 @@ export const TagFilterDrawerModal: React.FC<TagFilterDrawerModalProps> = ({
                         );
                       })}
                     </View>
-                  )}
+                  </AnimatedTagAccordion>
                 </View>
               );
             })}
@@ -268,9 +415,7 @@ export const TagFilterDrawerModal: React.FC<TagFilterDrawerModalProps> = ({
               </Text>
             </TouchableOpacity>
           </View>
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </Modal>
+    </BottomSheetModal>
   );
 };
 
@@ -279,7 +424,6 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     flex: 1,
     backgroundColor: 'transparent',
     justifyContent: 'flex-end',
-    ...GLASS.backdrop,
   },
   sheetContainer: {
     backgroundColor: GLASS.bgModal,
