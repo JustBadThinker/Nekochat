@@ -16,7 +16,6 @@ import { storageService } from './src/services/storageService';
 import { characterService } from './src/services/characterService';
 import { communityCatalogService } from './src/services/communityCatalogService';
 import { CapsuleDock, TabScreen } from './src/components/CapsuleDock';
-import { TopPhoneNeko } from './src/components/TopPhoneNeko';
 import { SplashScreen } from './src/components/SplashScreen';
 import { OnboardingFlow } from './src/components/OnboardingFlow';
 import { PasscodeGate } from './src/components/PasscodeGate';
@@ -406,7 +405,6 @@ export default function App() {
         style={[styles.appContainer, { backgroundColor: themeBg }]}
       >
         <StatusBar style="light" />
-        <TopPhoneNeko containerWidth={pagerWidth} />
 
         {/* Horizontal Swipeable Pager across Chats, Discover, Studio, Settings */}
         <BlurTargetView

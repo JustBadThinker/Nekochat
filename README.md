@@ -58,7 +58,7 @@
 - **Memory Lifecycle Invalidation:** Editing, deleting, or regenerating a message automatically marks dependent non-pinned memories `stale` and flags pinned facts as `needs_review`.
 - **Novel & Bubble Reading Modes:** Switch between full-width novel prose and chat bubbles, with clickable avatars and a fullscreen image lightbox.
 - **Roleplay Polish:** Collapsible translucent **`Thinking` Inspector** (sanitized `Nekochat Backend` prompt + live `AI Model thinking` reasoning with auto-scroll), **`Standard` (6–9p) / `Shorter` (≤5p)** response length presets, word-by-word text reveal, message font presets (`Default`, `Serif`, `Mono`, `Light`), configurable dialogue/action/thought colors, `{{user}}` / `{{char}}` macros, alternate greeting cycling, **Smart Auto-Darken** chat wallpapers/blur, and TTS (`expo-speech`).
-- **Neko Companions:** **Top Phone Neko** sleeping or walking along the top edge of the phone, plus **Desk Neko** on the chat input bar with throw physics and an inline timing mini-game.
+- **Desk Neko:** Optional pixel Neko companion on the chat input bar with throw physics and an inline timing mini-game.
 
 <details>
 <summary><b>🔍 Discover & Community Catalogs (<code>DiscoverScreen</code>)</b></summary>
