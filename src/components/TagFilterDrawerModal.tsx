@@ -222,7 +222,7 @@ export const TagFilterDrawerModal: React.FC<TagFilterDrawerModalProps> = ({
     <BottomSheetModal
       visible={visible}
       onClose={onClose}
-      sheetStyle={{ paddingHorizontal: 0, paddingBottom: 0, maxHeight: '85%' }}
+      sheetStyle={{ paddingHorizontal: 0, paddingBottom: 0, height: '85%', maxHeight: '85%' }}
     >
       {/* Header */}
       <View style={styles.header}>
