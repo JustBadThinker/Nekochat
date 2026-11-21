@@ -55,14 +55,17 @@ Just want to install and chat? You don't need to touch any code.
 
 ## 🔑 What is BYOK?
 
-**BYOK = Bring Your Own Key.**
+**BYOK = Bring Your Own Key.** You connect your own API key (Gemini, OpenRouter, OpenAI, or a local model server on your Wi-Fi) instead of paying a NekoChat subscription. *(NekoChat does not bundle free AI credits — you bring your own API key or local endpoint.)*
 
-Instead of NekoChat charging you a monthly subscription or storing your chats on a company server:
-- You connect your own API key (Gemini, OpenRouter, OpenAI, or a local model server on your Wi-Fi).
-- Your app talks directly to your chosen AI provider.
-- **Zero accounts, zero login walls, zero remote chat storage.** On native builds, keys are stored in `expo-secure-store` (device keystore).
+### Your Data, Your Device. Your AI Provider, Your Choice.
 
-*(Honest caveat: NekoChat is a client app — it does not bundle free AI credits. You still need your own API key or local endpoint.)*
+- **Local Storage:** Conversations, memories, character cards, and app settings are stored locally on your device.
+- **No NekoChat Account:** NekoChat does not require an account or operate a centralized chat database.
+- **Direct AI Connection:** When you send a message, the relevant conversation context is sent directly to your selected AI provider for generation.
+- **Provider Privacy:** Data handling, retention, and logging depend on the AI provider's own privacy policy.
+- **Secure API Keys:** On native builds, API keys are stored using the device's secure storage (`expo-secure-store`).
+
+NekoChat does not operate a remote chat server. However, using a cloud AI provider means your prompts are transmitted to that provider.
 
 ---
 
