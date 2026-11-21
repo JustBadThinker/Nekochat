@@ -100,6 +100,29 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   // Top Primary Switcher: Catalog Grid / For You / Match Mode
   const [topMode, setTopMode] = useState<TopMode>('catalog');
   const [showCatalogDropdown, setShowCatalogDropdown] = useState(false);
+  const [catalogDropdownMounted, setCatalogDropdownMounted] = useState(false);
+  const catalogDropdownAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (showCatalogDropdown) {
+      setCatalogDropdownMounted(true);
+      Animated.timing(catalogDropdownAnim, {
+        toValue: 1,
+        duration: Math.max(180, skin.animation.enterDuration),
+        easing: skin.animation.easing,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(catalogDropdownAnim, {
+        toValue: 0,
+        duration: Math.max(150, Math.round(skin.animation.enterDuration * 0.8)),
+        easing: skin.animation.easing,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) setCatalogDropdownMounted(false);
+      });
+    }
+  }, [showCatalogDropdown, catalogDropdownAnim, skin.animation.enterDuration, skin.animation.easing]);
   const [catalogScrollMode, setCatalogScrollMode] = useState<'top' | 'compact' | 'floating_mid' | 'floating'>('top');
   const lastCatalogScrollYRef = useRef(0);
   const upwardScrollAccumRef = useRef(0);
@@ -359,16 +382,75 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
     }
   }, [communitySearch, selectedCategoryValues, communitySort, catalogSource, sfwOnly, activeTab]);
 
+  const TAG_ALIASES: Record<string, string> = {
+    dominance: 'dominant',
+    dom: 'dominant',
+    sub: 'submissive',
+    enemies: 'enemiestolovers',
+    demi: 'demihuman',
+    royal: 'royalty',
+    magic: 'magical',
+  };
+
+  const buildSmartCatalogQuery = () => {
+    const CHUB_TOPIC_ALIASES: Record<string, string> = {
+      noncon: 'non-con',
+      dubcon: 'dub-con',
+    };
+
+    const tokens = communitySearch.trim().split(/\s+/).filter(Boolean);
+    const resolvedTagValues = new Set(selectedCategoryValues.filter(v => v !== 'all'));
+    const extraChubTopics: string[] = [];
+    const datacatWords: string[] = [];
+    const chubWords: string[] = [];
+
+    for (const tok of tokens) {
+      if (tok.startsWith('#') && tok.length > 1) {
+        const rawSlug = tok.slice(1).toLowerCase().replace(/[^a-z0-9_-]/g, '');
+        const normalized = TAG_ALIASES[rawSlug] || rawSlug;
+        const matchedCat = POPULAR_COMMUNITY_CATEGORIES.find(
+          c => c.value.toLowerCase() === normalized && c.value !== 'all'
+        );
+        if (matchedCat) {
+          resolvedTagValues.add(matchedCat.value);
+        } else if (rawSlug) {
+          extraChubTopics.push(CHUB_TOPIC_ALIASES[rawSlug] || rawSlug);
+          datacatWords.push(rawSlug);
+        }
+      } else {
+        const cleaned = tok.replace(/^#+/, '');
+        if (cleaned) {
+          datacatWords.push(cleaned);
+          chubWords.push(cleaned);
+        }
+      }
+    }
+
+    const datacatSearch = datacatWords.join(' ').trim();
+    const chubSearch = chubWords.join(' ').trim();
+    const tagIds = POPULAR_COMMUNITY_CATEGORIES
+      .filter(c => resolvedTagValues.has(c.value) && c.tagId)
+      .map(c => c.tagId)
+      .join(',');
+    const chubTopics = Array.from(new Set([...resolvedTagValues, ...extraChubTopics])).join(',');
+
+    return {
+      datacatSearch: datacatSearch || undefined,
+      chubSearch: chubSearch || undefined,
+      tagIds: tagIds || undefined,
+      chubTag: chubTopics || undefined,
+    };
+  };
+
   const fetchCharactersInitial = async (page = 1) => {
     setCommunityLoading(true);
     setCommunityError(null);
+    const smartQuery = buildSmartCatalogQuery();
     try {
       if (catalogSource === 'janitor') {
-        const activeCats = POPULAR_COMMUNITY_CATEGORIES.filter(c => selectedCategoryValues.includes(c.value) && c.tagId);
-        const tagIds = activeCats.map(c => c.tagId).join(',');
         const res = await communityCatalogService.fetchDatacatCharacters({
-          search: communitySearch,
-          tagIds: tagIds || undefined,
+          search: smartQuery.datacatSearch,
+          tagIds: smartQuery.tagIds,
           page,
           limit: 12,
           sort: communitySort,
@@ -379,11 +461,9 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         setHasMore(res.hasMore);
         if (res.error) setCommunityError(res.error);
       } else {
-        const activeTags = selectedCategoryValues.filter(c => c !== 'all');
-        const activeTag = activeTags.length > 0 ? activeTags.join(',') : undefined;
         const res = await communityCatalogService.fetchChubCharacters({
-          search: communitySearch,
-          tag: activeTag,
+          search: smartQuery.chubSearch,
+          tag: smartQuery.chubTag,
           page,
           limit: 12,
           sort: communitySort,
@@ -408,15 +488,14 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
     if (communityLoading || isLoadingMore || !hasMore || scopeMode === 'favorites' || scopeMode === 'following') return;
     setIsLoadingMore(true);
     const nextPage = currentPage + 1;
+    const smartQuery = buildSmartCatalogQuery();
     try {
       let newChars: CommunityCharacter[] = [];
       let nextHasMore = false;
       if (catalogSource === 'janitor') {
-        const activeCats = POPULAR_COMMUNITY_CATEGORIES.filter(c => selectedCategoryValues.includes(c.value) && c.tagId);
-        const tagIds = activeCats.map(c => c.tagId).join(',');
         const res = await communityCatalogService.fetchDatacatCharacters({
-          search: communitySearch,
-          tagIds: tagIds || undefined,
+          search: smartQuery.datacatSearch,
+          tagIds: smartQuery.tagIds,
           page: nextPage,
           limit: 12,
           sort: communitySort,
@@ -425,11 +504,9 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         newChars = res.characters;
         nextHasMore = res.hasMore;
       } else {
-        const activeTags = selectedCategoryValues.filter(c => c !== 'all');
-        const activeTag = activeTags.length > 0 ? activeTags.join(',') : undefined;
         const res = await communityCatalogService.fetchChubCharacters({
-          search: communitySearch,
-          tag: activeTag,
+          search: smartQuery.chubSearch,
+          tag: smartQuery.chubTag,
           page: nextPage,
           limit: 12,
           sort: communitySort,
@@ -1511,70 +1588,6 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         </Animated.View>
       )}
 
-      {/* Top-Level Mode Dropdown Popover (above FlatList cells & floating header) */}
-      {showCatalogDropdown && (
-        <TouchableOpacity
-          activeOpacity={1}
-          onPress={() => setShowCatalogDropdown(false)}
-          style={[StyleSheet.absoluteFill, { zIndex: 90 }]}
-        >
-          <View
-            style={{
-              position: 'absolute',
-              top: 56,
-              left: 14,
-              width: 220,
-              borderRadius: 16,
-              backgroundColor: 'rgba(14, 17, 26, 0.98)',
-              borderWidth: 1,
-              borderColor: `rgba(${palette.accentRgb}, 0.35)`,
-              padding: 6,
-              zIndex: 100,
-              shadowColor: '#000',
-              shadowOpacity: 0.55,
-              shadowRadius: 16,
-              elevation: 20,
-            }}
-          >
-            {[
-              { id: 'catalog' as const, label: 'Catalog Grid', sub: 'Browse & filter all', Icon: LayoutGrid },
-              { id: 'foryou' as const, label: 'For You', sub: 'Algorithmic snap feed', Icon: Sparkles },
-              { id: 'match' as const, label: 'Match Mode', sub: 'Swipe character deck', Icon: Flame },
-            ].map(opt => {
-              const active = topMode === opt.id;
-              return (
-                <TouchableOpacity
-                  key={opt.id}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 10,
-                    paddingHorizontal: 10,
-                    paddingVertical: 10,
-                    borderRadius: 11,
-                    backgroundColor: active ? `rgba(${palette.accentRgb}, 0.14)` : 'transparent',
-                  }}
-                  onPress={() => {
-                    setTopMode(opt.id);
-                    setShowCatalogDropdown(false);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <opt.Icon size={15} color={active ? palette.accent : '#94a3b8'} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: active ? palette.accent : '#f8fafc', fontSize: 13, fontWeight: '700' }}>
-                      {opt.label}
-                    </Text>
-                    <Text style={{ color: '#94a3b8', fontSize: 10.5 }}>{opt.sub}</Text>
-                  </View>
-                  {active && <Check size={14} color={palette.accent} />}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </TouchableOpacity>
-      )}
-
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* 6. MAIN CONTENT: 2-COLUMN BENTO GRID WITH TRUE INFINITE SCROLL     */}
       {/* ══════════════════════════════════════════════════════════════════ */}
@@ -1952,6 +1965,90 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           )}
         </View>
       </Modal>
+
+      {/* Top-Level Mode Dropdown Popover (above Catalog Grid, For You, and Match Mode) */}
+      {catalogDropdownMounted && (
+        <View
+          pointerEvents={showCatalogDropdown ? 'auto' : 'none'}
+          style={[StyleSheet.absoluteFill, { zIndex: 999, elevation: 30 }]}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={() => setShowCatalogDropdown(false)}
+            style={StyleSheet.absoluteFill}
+          >
+            <Animated.View
+            style={{
+              position: 'absolute',
+              top: 56,
+              left: 14,
+              width: 220,
+              borderRadius: 16,
+              backgroundColor: 'rgba(14, 17, 26, 0.98)',
+              borderWidth: 1,
+              borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+              padding: 6,
+              zIndex: 1000,
+              shadowColor: '#000',
+              shadowOpacity: 0.55,
+              shadowRadius: 16,
+              elevation: 31,
+              opacity: catalogDropdownAnim,
+              transform: [
+                {
+                  translateY: catalogDropdownAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-10, 0],
+                  }),
+                },
+                {
+                  scale: catalogDropdownAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.95, 1],
+                  }),
+                },
+              ],
+            }}
+          >
+            {[
+              { id: 'catalog' as const, label: 'Catalog Grid', sub: 'Browse & filter all', Icon: LayoutGrid },
+              { id: 'foryou' as const, label: 'For You', sub: 'Algorithmic snap feed', Icon: Sparkles },
+              { id: 'match' as const, label: 'Match Mode', sub: 'Swipe character deck', Icon: Flame },
+            ].map(opt => {
+              const active = topMode === opt.id;
+              return (
+                <TouchableOpacity
+                  key={opt.id}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 10,
+                    paddingHorizontal: 10,
+                    paddingVertical: 10,
+                    borderRadius: 11,
+                    backgroundColor: active ? `rgba(${palette.accentRgb}, 0.14)` : 'transparent',
+                  }}
+                  onPress={() => {
+                    setTopMode(opt.id);
+                    setShowCatalogDropdown(false);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <opt.Icon size={15} color={active ? palette.accent : '#94a3b8'} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: active ? palette.accent : '#f8fafc', fontSize: 13, fontWeight: '700' }}>
+                      {opt.label}
+                    </Text>
+                    <Text style={{ color: '#94a3b8', fontSize: 10.5 }}>{opt.sub}</Text>
+                  </View>
+                  {active && <Check size={14} color={palette.accent} />}
+                </TouchableOpacity>
+              );
+            })}
+            </Animated.View>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* ══════════════════════════════════════════════════════════════════ */}
       {/* 7. COMMUNITY CHARACTER DETAIL MODAL                                */}
