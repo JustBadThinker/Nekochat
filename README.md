@@ -1,26 +1,28 @@
 <div align="center">
 
-# 🐾 NekoChat `(Beta)`
+# 🐾 NekoChat `(v0.2.1 Beta)`
 
-### **Your AI Roleplay World**
+### **Local-First AI Roleplay Client — Zero Login, Zero Remote Chat DB**
 
-*An open-source mobile-first roleplay chat client built with Expo, React Native, and TypeScript.*  
-*No accounts. No remote database. Your chats, memories, character cards, and API keys never leave your device.*
+*Built with Expo, React Native, and TypeScript. Your chats, memories, character cards, and API keys stay on your device.*  
+*(Yes, it's an indie project — built with way too much coffee and a stubborn pixel cat.)*
 
 <p>
+  <a href="https://github.com/JustBadThinker/Nekochat/releases/latest">
+    <img src="https://img.shields.io/badge/Download_APK-Latest_Release-D4FF00?style=for-the-badge&logo=android&logoColor=black" alt="Download Latest Android APK" />
+  </a>
   <img src="https://img.shields.io/badge/Expo-React_Native-000020?style=for-the-badge&logo=expo&logoColor=white" alt="Expo React Native" />
   <img src="https://img.shields.io/badge/TypeScript-Strict-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/Memory-SQLite_%2B_FTS5-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite FTS5" />
   <img src="https://img.shields.io/badge/BYOK-Zero_Login-10B981?style=for-the-badge" alt="BYOK Zero Login" />
   <img src="https://img.shields.io/badge/License-MIT_with_Attribution-F59E0B?style=for-the-badge" alt="MIT License" />
 </p>
 
 <p>
-  <a href="#-why-nekochat">Why NekoChat</a> •
-  <a href="#-core-features">Core Features</a> •
-  <a href="#-how-it-works">How It Works</a> •
-  <a href="#-getting-started">Getting Started</a> •
-  <a href="#-verification--tests">Tests</a>
+  <a href="#-for-users-beginners">For Users (Download)</a> •
+  <a href="#-what-is-byok">What is BYOK?</a> •
+  <a href="#-what-nekochat-actually-has">Features</a> •
+  <a href="#-for-developers--contributors">For Developers</a> •
+  <a href="#-credits--acknowledgements">Credits</a>
 </p>
 
 <br />
@@ -35,106 +37,84 @@
 
 ---
 
-## ✨ Why NekoChat?
+## 📱 For Users (Beginners)
 
-| Pillar | What It Means for You |
-| :--- | :--- |
-| 🔑 **True Unrestricted BYOK** | Plug in **Gemini, OpenRouter, OpenAI, or any OpenAI-compatible endpoint** (cloud or local LAN). No artificial 15K output cap — enter custom token limits or pick **`Unlimited (0)`** to let your provider decide. |
-| 🚫 **Zero Login, Zero Cloud DB** | Clone, add your API key, and chat immediately. No user accounts, no MySQL/backend setup, and no remote chat storage. |
-| 🧠 **On-Device SQLite + FTS5 Memory** | Native Android/iOS builds store conversations, structured state slots, and pinned facts in **SQLite** with **FTS5/BM25** recall for older rolled-off turns (`AsyncStorage` fallback on Web). |
-| 🌿 **Isolated Chat Branching** | Fork any conversation at any turn inside an atomic SQLite transaction (`withExclusiveTransactionAsync`) with **zero future-state leakage**. |
+Just want to install and chat? You don't need to touch any code.
 
----
+<p align="left">
+  <a href="https://github.com/JustBadThinker/Nekochat/releases/latest">
+    <img src="https://img.shields.io/badge/⬇️_Download_Android_APK-GitHub_Releases-10B981?style=for-the-badge" alt="Download Android APK" />
+  </a>
+</p>
 
-## 🚀 Core Features
-
-### 💬 Chats, Memory & Timeline Branching (`ChatsScreen` & `ChatRoomScreen`)
-- **Bento Grid & Dropdown Accordion:** Switch between a 2-column character grid and a single-focus accordion list with multi-session support per character.
-- **FTS5 / BM25 Long-Term Recall:** Older messages that roll off the active context window are searched locally per session and injected cleanly under `[RECALLED EARLIER IN THIS SESSION]`.
-- **Clean Timeline Branching (Native SQLite):** Tap **Branch** on any message to fork a new timeline (`Branch · Turn N`):
-  - Copies only messages up to the branch point with **fresh unique IDs** and FTS5 rows.
-  - Filters `session_memories` strictly by turn provenance — excluding future memories, unattributed notes, and state slots overwritten after the branch point.
-  - Strips future `<memory>` checkpoints so branches never get spoiled by later turns.
-- **Memory Lifecycle Invalidation:** Editing, deleting, or regenerating a message automatically marks dependent non-pinned memories `stale` and flags pinned facts as `needs_review`.
-- **Novel & Bubble Reading Modes:** Switch between full-width novel prose and chat bubbles, with clickable avatars and a fullscreen image lightbox.
-- **Roleplay Polish:** Collapsible translucent **`Thinking` Inspector** (sanitized `Nekochat Backend` prompt + live `AI Model thinking` reasoning with auto-scroll), **`Standard` (6–9p) / `Shorter` (≤5p)** response length presets, word-by-word text reveal, message font presets (`Default`, `Serif`, `Mono`, `Light`), configurable dialogue/action/thought colors, `{{user}}` / `{{char}}` macros, alternate greeting cycling, **Smart Auto-Darken** chat wallpapers/blur, and TTS (`expo-speech`).
-- **Desk Neko:** Optional pixel Neko companion on the chat input bar with throw physics and an inline timing mini-game.
-
-<details>
-<summary><b>🔍 Discover & Community Catalogs (<code>DiscoverScreen</code>)</b></summary>
-
-- **JanitorAI (Datacat) & Chub.ai:** Browse community characters and creators with infinite scroll, tag filtering, `Trending` / `Popular` / `Latest` sorting, `All` / `Following` / `Favorites` scope, `NSFW` / `SFW` toggle, and direct Chub.ai / Datacat source links.
-- **Rich Profiles:** HTML/Markdown description rendering with expandable bios, inline gallery lightbox, and alternate greetings preview.
-- **Match Mode (`TinderDeck`):** Swipe-to-match character deck with Undo, Favorite, Info, and instant Chat.
-
-</details>
-
-<details>
-<summary><b>🛠️ BYOK Engine, Security & User Studio (<code>SettingsScreen</code> & <code>UserStudioScreen</code>)</b></summary>
-
-- **Independent Context & Output Budgets (`promptBudget.ts`):** Separate `contextLimit` and `maxOutputTokens` with per-model overrides and endpoint-scoped metadata caching. Presets (`1K`, `4K`, `8K`, `15K`, `Unlimited`) plus custom values above `15K` and non-blocking budget warnings.
-- **Hardware-Backed Key Hygiene (`secureKeyStore.ts`):** Native API keys are stored in `expo-secure-store` with readback verification before stripping plaintext keys; `.neko` Data Vault exports strip `providers` and `apiKey` secrets.
-- **First-Time Onboarding:** Guided setup for UI language, AI provider/key presets (Gemini, OpenRouter, OpenAI, Anoman, Sumopod, local LAN), optional 4-digit passcode lock, and a skippable tour.
-- **User Studio:** Create, edit, and import character cards (`.json` / `.png` SillyTavern cards), manage User Personas, and build keyword-triggered Codex Lorebooks.
-- **Languages & Themes:** UI translations (`en`, `id`, `ja`, `es`, `zh`, `ko`) with optional AI language directives, plus dark palettes (`Midnight Cyber`, `Sakura Dusk`, `Warm Slate`, `Cyan`).
-
-</details>
+1. **Download & Install** the latest `.apk` from [GitHub Releases](https://github.com/JustBadThinker/Nekochat/releases/latest).
+2. **Add an API Key (BYOK)** during onboarding or in **Settings → AI Engine Suite** (Gemini has a free tier; OpenRouter, OpenAI, and local LAN endpoints also work).
+3. **Pick a Character** from **Discover** (JanitorAI / Datacat or Chub.ai), import a `.json` / `.png` card, or make your own in **Studio** — then start chatting.
 
 ---
 
-## 🏗️ How It Works
+## 🔑 What is BYOK?
 
-```text
-┌───────────────────────────────────────────────────────────────────┐
-│                      Your Device (Expo App)                       │
-│                                                                   │
-│  • Chats, Personas & Memories ──▶ Local SQLite + FTS5 (Native)    │
-│  • API Keys                   ──▶ Expo SecureStore (Native)       │
-│  • Prompt & Token Budget      ──▶ promptBudget.ts (On-Device)     │
-└───────────────┬───────────────────────────────────┬───────────────┘
-                │ Direct BYOK API Calls             │ Optional (Web CORS / Catalogs)
-                ▼                                   ▼
-   ┌─────────────────────────┐         ┌────────────────────────────┐
-   │    Your AI Provider     │         │  server.mjs (Port 3001)    │
-   │  Gemini / OpenRouter /  │◀────────│  Stateless Passthrough     │
-   │  OpenAI / Custom / LAN  │  /llm-  │  • Zero Accounts / Zero DB │
-   └─────────────────────────┘  proxy  │  • Datacat Catalog Proxy   │
-                                       └────────────────────────────┘
-```
+**BYOK = Bring Your Own Key.**
+
+Instead of NekoChat charging you a monthly subscription or storing your chats on a company server:
+- You connect your own API key (Gemini, OpenRouter, OpenAI, or a local model server on your Wi-Fi).
+- Your app talks directly to your chosen AI provider.
+- **Zero accounts, zero login walls, zero remote chat storage.** On native builds, keys are stored in `expo-secure-store` (device keystore).
+
+*(Honest caveat: NekoChat is a client app — it does not bundle free AI credits. You still need your own API key or local endpoint.)*
 
 ---
 
-## ⚡ Getting Started
+## ✨ What NekoChat Actually Has
+
+No buzzwords — here is what's actually built and working today:
+
+### 💬 Chats, Reading & Roleplay
+- **My Chats (`ChatsScreen`):** 2-column Bento grid or expandable Accordion list, multi-session support per character, and Timeline Branching (**Branch · Turn N**) to fork stories cleanly without future memory leaking back.
+- **Story/Novel & Bubble Modes (`ChatRoomScreen`):** Switch between full-width Novel prose and contained chat bubbles, with configurable dialogue/narration/thought colors and message font presets (`Default`, `Serif`, `Mono`, `Light`).
+- **Response Length & Thinking Inspector:** Choose `Standard` (6–9 paragraphs) or `Shorter` (max 5 paragraphs). Tap **Thinking** above an AI reply to view the sanitized prompt and any `<think>` / reasoning tokens emitted by reasoning models.
+- **Smart Auto-Darken Wallpapers:** Set a per-chat wallpaper or toggle **Apply background to all chats**. *(Note: on Web, brightness auto-sampling uses a 16×16 canvas and falls back to a 56% dark scrim if a remote image host blocks CORS.)*
+- **On-Device Memory & TTS:** Native builds use **SQLite + FTS5/BM25** recall for older rolled-off turns (`AsyncStorage` fallback on Web), manual/auto checkpoints, `[OOC: ...]` mode, and device TTS (`expo-speech`).
+- **Desk Neko:** A pixel cat that walks, grooms, and naps on top of the chat input bar — drag/toss her gently or tap her for a quick jump mini-game while waiting for replies.
+
+### 🔍 Discover & Codex
+- **Community Catalogs (`DiscoverScreen`):** Browse **JanitorAI (Datacat)** and **Chub.ai** across **Catalog Grid**, **For You**, and **Match Mode** with SFW/NSFW filtering and smart `#tag` search (maps aliases like `#dominance` → `#dominant` and strips literal `#` symbols).
+- **Dynamic Cast (`dynamicCastService.ts`):** Detects extra characters from multi-character cards as one-tap `+ Name` chips, and switches RPG/world cards to **Narrator / Game Master** mode.
+- **Studio & Codex Lorebooks:** Create or import SillyTavern V1/V2/V3 cards (`.json` / `.png`), manage User Personas, and attach keyword-triggered **Lorebooks** (SillyTavern JSON or JanitorAI static script extractor without `eval()`) to **any** character.
+- **In-App Help Center (`HelpCenterModal.tsx`):** Searchable guides inside **Settings → Help & Guides** and **"What is a Lorebook?"** links.
+
+### 🎨 Skins, Themes & Backups
+- **4 UI Skins & Dark Palettes:** `Neko OLED`, `Classic`, `Material You`, and `HIG (iPhone)` paired with `Midnight Cyber`, `Sakura Dusk`, `Amethyst`, `Cyber Cyan`, and `Warm Slate`.
+- **`.neko` Data Vault & Passcode Lock:** Export/import backups with API keys automatically stripped.
+
+---
+
+## 🛠️ For Developers & Contributors
+
+Want to run NekoChat locally, poke at the code, or open a PR? Welcome!
 
 ### Prerequisites
 - [Node.js](https://nodejs.org/) `v20+`
 - `npm`
-- [Expo Go](https://expo.dev/go) on Android or iOS (or a native development build)
+- [Expo Go](https://expo.dev/go) on Android/iOS, or an Android/iOS emulator / web browser
 
 ### Run Locally
-
 ```bash
-# 1. Install dependencies
+# 1. Clone and install
+git clone https://github.com/JustBadThinker/Nekochat.git
+cd Nekochat
 npm install
 
-# 2. (Optional) Start the stateless community catalog & Web CORS proxy (port 3001)
+# 2. (Optional, needed for Web CORS / Datacat catalog proxy)
 npm run proxy
 
-# 3. In another terminal, start the Expo development server
+# 3. Start Expo dev server
 npm start
+# or directly: npm run android | npm run ios | npm run web
 ```
 
-### Platform Commands
-| Target | Command |
-| :--- | :--- |
-| 🤖 **Android** | `npm run android` |
-| 🍎 **iOS** | `npm run ios` |
-| 🌐 **Web** | `npm run web` |
-
----
-
-## 🧪 Verification & Tests
-
+### Verify Before Committing
 ```bash
 # Typecheck
 npx tsc --noEmit
@@ -142,15 +122,36 @@ npx tsc --noEmit
 # Lint
 npx expo lint
 
-# Run unit & integration suites (Phases 1–6)
+# Unit & integration tests (Phases 1–6)
 node --test tests/phase1-memory-prompt.test.mjs tests/phase2-sqlite-migration.test.mjs tests/phase3-security-privacy.test.mjs tests/phase4-bm25-retrieval.test.mjs tests/phase5-memory-lifecycle.test.mjs tests/phase6-chat-branching.test.mjs
 ```
+
+### Project Map (Where Things Live)
+| Folder | What's Inside |
+| :--- | :--- |
+| `src/screens/` | Main screens (`ChatsScreen`, `DiscoverScreen`, `ChatRoomScreen`, `UserStudioScreen`, `SettingsScreen`) |
+| `src/components/chat/` | Extracted chat room modules (like `ChatBackgroundLayer.tsx`) |
+| `src/components/` | Shared UI (`BottomSheetModal`, `HelpCenterModal`, `CapsuleDock`, `DeskNekoWalker`, `TinderDeck`, etc.) |
+| `src/services/` | Storage (`SQLite` + `AsyncStorage`), AI providers, Lorebooks, Dynamic Cast, Prompt Budget, Vault |
+| `src/theme/` | UI Skins (`neko`, `classic`, `material`, `hig`) and color palettes |
+| `server.mjs` | Optional stateless local proxy on port `3001` for Web CORS & Datacat catalog requests |
+
+---
+
+## 🙏 Credits & Acknowledgements
+
+NekoChat wouldn't exist without these open-source tools and community specs:
+- **[Expo](https://expo.dev/) & [React Native](https://reactnative.dev/)** (`expo-sqlite`, `expo-secure-store`, `expo-blur`, `expo-linear-gradient`, `expo-speech`, `expo-file-system`, `expo-image-picker`, `expo-document-picker`)
+- **[Lucide Icons (`lucide-react-native`)](https://lucide.dev/)** for crisp icons across every screen
+- **[CryptoJS](https://github.com/brix/crypto-js)** for client-side Data Vault encryption helpers
+- **Community Character Card Specs:** SillyTavern Character Card V1 / V2 / V3 (`chara` / `ccv3` PNG metadata & JSON) and Lorebook V2 format
+- **Community Catalogs:** [Chub.ai](https://chub.ai/) and Datacat / JanitorAI public character ecosystems
 
 ---
 
 ## 🤝 Contributing & License
 
-Contributions, bug reports, and translations are welcome!  
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and [our PR template](.github/pull_request_template.md).
+Pull requests, bug reports, UI polish, and translations are always welcome!  
+Check [CONTRIBUTING.md](CONTRIBUTING.md) and our [PR template](.github/pull_request_template.md) before opening a PR.
 
 Licensed under the **MIT License with Attribution** — see [LICENSE](LICENSE) for details.
