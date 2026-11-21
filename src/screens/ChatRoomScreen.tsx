@@ -32,7 +32,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView, BlurTargetView } from 'expo-blur';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SmoothSlider } from '../components/SmoothSlider';
 import { ModelDropdown } from '../components/ModelDropdown';
@@ -74,6 +73,8 @@ import {
   Bookmark,
   GitBranch,
   Users,
+  BookOpen,
+  HelpCircle,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { compressImageFile } from '../utils/imageUtils';
@@ -106,13 +107,21 @@ import {
   createPrimaryCastMember,
   createProvisionalCastMember,
   detectCastCandidates,
+  extractCastCandidatesFromCard,
   getConfirmedCharacteristicsSummary,
+  isWorldOrRpgCard,
 } from '../services/dynamicCastService';
 import { calculateCost, estimateTokens } from '../services/tokenOptimizerService';
 import { tokenPriceService } from '../services/tokenPriceService';
 import { NekoPulseLoader } from '../components/NekoPulseLoader';
 import { InlineWaitFidget } from '../components/InlineWaitFidget';
 import { DeskNekoWalker } from '../components/DeskNekoWalker';
+import { HelpCenterModal } from '../components/HelpCenterModal';
+import {
+  ChatBackgroundLayer,
+  ChatAppearanceConfig,
+  GLOBAL_CHAT_APPEARANCE_KEY,
+} from '../components/chat/ChatBackgroundLayer';
 import { ThemePalette } from '../theme/colors';
 
 interface ChatRoomScreenProps {
@@ -195,25 +204,18 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [generatedImage, setGeneratedImage] = useState<{ imageUrl: string; prompt: string } | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
 
-  // Chat Appearance & Wallpaper State
-  const [appearance, setAppearance] = useState<{
-    enableWallpaper: boolean;
-    wallpaperUrl: string;
-    overlayOpacity: number;
-    blurRadius: number;
-    smartAutoOverlay?: boolean;
-  }>({
+  // Chat Appearance & Wallpaper State (supports per-chat or global "apply to all chats")
+  const [appearance, setAppearance] = useState<ChatAppearanceConfig>({
     enableWallpaper: true,
     wallpaperUrl: character.coverUrl || character.avatar || '',
     overlayOpacity: 0.38,
     blurRadius: 6,
     smartAutoOverlay: true,
+    applyToAllChats: false,
   });
-  const [autoWallpaperDarkness, setAutoWallpaperDarkness] = useState<number | null>(null);
 
   // Character Profile Card Modal State (Header Name Tap)
   const [showCharacterCardModal, setShowCharacterCardModal] = useState(false);
-  const wallpaperTargetRef = useRef<React.ComponentRef<typeof View> | null>(null);
 
   // Chat Control Modal State (3-Dot Button: Memory, Per-Chat Model, Syntax Colors)
   const [showChatControlModal, setShowChatControlModal] = useState(false);
@@ -227,7 +229,9 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [showNewPresetForm, setShowNewPresetForm] = useState(false);
   const [newPresetName, setNewPresetName] = useState('');
   const [newPresetBody, setNewPresetBody] = useState('');
-  const [settingsSubView, setSettingsSubView] = useState<'main' | 'generation' | 'custom_prompt' | 'new_custom_prompt' | 'prefill' | 'forbidden_words'>('main');
+  const [settingsSubView, setSettingsSubView] = useState<'main' | 'generation' | 'custom_prompt' | 'new_custom_prompt' | 'prefill' | 'forbidden_words' | 'lorebooks'>('main');
+  const [attachedLorebookIds, setAttachedLorebookIds] = useState<string[]>(character.lorebookIds || []);
+  const [helpLorebookVisible, setHelpLorebookVisible] = useState(false);
   const [responseLength, setResponseLength] = useState<'standard' | 'shorter'>('standard');
   const [prefillEnabled, setPrefillEnabled] = useState(false);
   const [prefillText, setPrefillText] = useState('');
@@ -353,6 +357,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           if (typeof s.prefillEnabled === 'boolean') setPrefillEnabled(s.prefillEnabled);
           if (typeof s.prefillText === 'string') setPrefillText(s.prefillText);
           if (Array.isArray(s.forbiddenWords)) setForbiddenWords(s.forbiddenWords);
+          if (Array.isArray(s.attachedLorebookIds)) setAttachedLorebookIds(s.attachedLorebookIds);
           if (typeof s.memoryReplacesOld === 'boolean') setMemoryReplacesOld(s.memoryReplacesOld);
           if (typeof s.autoMemoryEnabled === 'boolean') setAutoMemoryEnabled(s.autoMemoryEnabled);
           if (typeof s.autoMemoryInterval === 'number' && s.autoMemoryInterval >= 4) {
@@ -383,58 +388,6 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     });
     return () => sub.remove();
   }, [autoScrollEnabled]);
-
-  useEffect(() => {
-    const uri = appearance.wallpaperUrl || character.coverUrl || character.avatar;
-    if (
-      Platform.OS !== 'web' ||
-      !appearance.enableWallpaper ||
-      appearance.smartAutoOverlay === false ||
-      !uri ||
-      typeof document === 'undefined'
-    ) {
-      setAutoWallpaperDarkness(null);
-      return;
-    }
-    let cancelled = false;
-    try {
-      const ImgCtor = (globalThis as any).Image;
-      if (!ImgCtor) return;
-      const img = new ImgCtor();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        if (cancelled) return;
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = 16;
-          canvas.height = 16;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) return;
-          ctx.drawImage(img, 0, 0, 16, 16);
-          const data = ctx.getImageData(0, 0, 16, 16).data;
-          let sum = 0;
-          const pixels = data.length / 4;
-          for (let i = 0; i < data.length; i += 4) {
-            sum += (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) / 255;
-          }
-          const lum = sum / Math.max(1, pixels);
-          const smartOpacity = lum > 0.65 ? 0.76 : lum > 0.45 ? 0.62 : lum > 0.25 ? 0.48 : 0.36;
-          setAutoWallpaperDarkness(smartOpacity);
-        } catch {
-          setAutoWallpaperDarkness(0.56);
-        }
-      };
-      img.onerror = () => {
-        if (!cancelled) setAutoWallpaperDarkness(null);
-      };
-      img.src = uri;
-    } catch {
-      setAutoWallpaperDarkness(null);
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [appearance.enableWallpaper, appearance.smartAutoOverlay, appearance.wallpaperUrl, character.coverUrl, character.avatar]);
 
   const handleFidgetScoreChange = (nextScore: number, nextStreak: number) => {
     setFidgetScore(nextScore);
@@ -752,6 +705,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     prefillEnabled: boolean;
     prefillText: string;
     forbiddenWords: string[];
+    attachedLorebookIds: string[];
     memoryReplacesOld: boolean;
     autoMemoryEnabled: boolean;
     autoMemoryInterval: number;
@@ -763,6 +717,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       prefillEnabled: overrides.prefillEnabled ?? prefillEnabled,
       prefillText: overrides.prefillText ?? prefillText,
       forbiddenWords: overrides.forbiddenWords ?? forbiddenWords,
+      attachedLorebookIds: overrides.attachedLorebookIds ?? attachedLorebookIds,
       memoryReplacesOld: overrides.memoryReplacesOld ?? memoryReplacesOld,
       autoMemoryEnabled: overrides.autoMemoryEnabled ?? autoMemoryEnabled,
       autoMemoryInterval: overrides.autoMemoryInterval ?? autoMemoryInterval,
@@ -958,26 +913,45 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 
   const loadChatAppearance = async () => {
     try {
-      const saved = await AsyncStorage.getItem(`@nekochat:chat_appearance_${character.id}`);
-      if (saved) {
-        setAppearance(prev => ({ ...prev, ...JSON.parse(saved) }));
+      const [savedGlobal, savedLocal] = await Promise.all([
+        AsyncStorage.getItem(GLOBAL_CHAT_APPEARANCE_KEY),
+        AsyncStorage.getItem(`@nekochat:chat_appearance_${character.id}`),
+      ]);
+      const globalParsed = savedGlobal ? (JSON.parse(savedGlobal) as Partial<ChatAppearanceConfig>) : null;
+      const localParsed = savedLocal ? (JSON.parse(savedLocal) as Partial<ChatAppearanceConfig>) : null;
+
+      if (globalParsed?.applyToAllChats) {
+        setAppearance(prev => ({ ...prev, ...globalParsed, applyToAllChats: true }));
+      } else if (localParsed) {
+        setAppearance(prev => ({ ...prev, ...localParsed }));
       } else {
         setAppearance({
           enableWallpaper: true,
           wallpaperUrl: character.coverUrl || character.avatar || '',
           overlayOpacity: 0.38,
           blurRadius: 6,
+          smartAutoOverlay: true,
+          applyToAllChats: false,
         });
       }
-    } catch {}
+    } catch (err) {
+      console.warn('[ChatAppearance] Failed to load saved wallpaper preferences:', err);
+    }
   };
 
-  const saveChatAppearance = async (updates: Partial<typeof appearance>) => {
+  const saveChatAppearance = async (updates: Partial<ChatAppearanceConfig>) => {
     const next = { ...appearance, ...updates };
     setAppearance(next);
     try {
       await AsyncStorage.setItem(`@nekochat:chat_appearance_${character.id}`, JSON.stringify(next));
-    } catch {}
+      if (next.applyToAllChats) {
+        await AsyncStorage.setItem(GLOBAL_CHAT_APPEARANCE_KEY, JSON.stringify(next));
+      } else if (updates.applyToAllChats === false) {
+        await AsyncStorage.removeItem(GLOBAL_CHAT_APPEARANCE_KEY);
+      }
+    } catch (err) {
+      console.warn('[ChatAppearance] Failed to save wallpaper preferences:', err);
+    }
   };
 
   const handlePickWallpaper = async () => {
@@ -1105,10 +1079,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const handleOpenCastSheet = async (prefillName?: string) => {
     setShowHeaderMenu(false);
     if (activeConversationId && !castMembers.some(m => m.isPrimary)) {
+      const isRpg = isWorldOrRpgCard(character);
       const primary = createPrimaryCastMember({
         conversationId: activeConversationId,
         characterId: character.id,
-        name: chatCharName,
+        name: isRpg ? 'Narrator / Game Master' : chatCharName,
       });
       await storageService.saveCastMember(primary);
       setCastMembers(prev => [primary, ...prev]);
@@ -1124,10 +1099,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     if (!cleanName || !activeConversationId) return;
     let current = castMembers;
     if (!current.some(m => m.isPrimary)) {
+      const isRpg = isWorldOrRpgCard(character);
       const primary = createPrimaryCastMember({
         conversationId: activeConversationId,
         characterId: character.id,
-        name: chatCharName,
+        name: isRpg ? 'Narrator / Game Master' : chatCharName,
       });
       await storageService.saveCastMember(primary);
       current = [primary, ...current];
@@ -1341,12 +1317,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 
     const activeConfig = await resolveActiveConfig();
     const extraContext = buildExtraContext();
-    const effectiveChar: Character = extraContext
-      ? {
-          ...character,
-          scenario: `${character.scenario || ''}\n${extraContext}`.trim(),
-        }
-      : character;
+    const effectiveChar: Character = {
+      ...character,
+      lorebookIds: Array.from(new Set([...(character.lorebookIds || []), ...attachedLorebookIds])),
+      ...(extraContext ? { scenario: `${character.scenario || ''}\n${extraContext}`.trim() } : {}),
+    };
 
     await aiProviderService.streamChat(
       effectiveChar,
@@ -1690,12 +1665,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 
     const activeConfig = await resolveActiveConfig();
     const extraContext = buildExtraContext();
-    const effectiveChar: Character = extraContext
-      ? {
-          ...character,
-          scenario: `${character.scenario || ''}\n${extraContext}`.trim(),
-        }
-      : character;
+    const effectiveChar: Character = {
+      ...character,
+      lorebookIds: Array.from(new Set([...(character.lorebookIds || []), ...attachedLorebookIds])),
+      ...(extraContext ? { scenario: `${character.scenario || ''}\n${extraContext}`.trim() } : {}),
+    };
 
     await aiProviderService.streamChat(
       effectiveChar,
@@ -2307,52 +2281,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         behavior="padding"
         keyboardVerticalOffset={0}
       >
-      {/* ── Background Wallpaper, Gaussian Blur & Dark Overlay (Blueprint Section D) ── */}
-      {appearance.enableWallpaper && (
-        <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="none">
-          <BlurTargetView ref={wallpaperTargetRef} style={StyleSheet.absoluteFill}>
-            <Image
-              source={{ uri: appearance.wallpaperUrl || character.coverUrl || character.avatar }}
-              style={[
-                StyleSheet.absoluteFill,
-                Platform.OS === 'web' && appearance.blurRadius > 0
-                  ? ({
-                      filter: `blur(${appearance.blurRadius}px)`,
-                      transform: [{ scale: 1.08 }],
-                    } as any)
-                  : {},
-              ]}
-              resizeMode="cover"
-            />
-          </BlurTargetView>
-          {Platform.OS !== 'web' && appearance.blurRadius > 0 && (
-            <BlurView
-              intensity={Math.min(100, Math.max(8, Math.round(appearance.blurRadius * 4)))}
-              tint="dark"
-              blurMethod="dimezisBlurView"
-              blurTarget={wallpaperTargetRef}
-              style={StyleSheet.absoluteFill}
-            />
-          )}
-          {(() => {
-            const effectiveOverlay =
-              appearance.smartAutoOverlay !== false
-                ? Math.max(appearance.overlayOpacity, autoWallpaperDarkness ?? 0.52)
-                : appearance.overlayOpacity;
-            return (
-              <LinearGradient
-                colors={[
-                  `rgba(12, 14, 20, ${Math.max(0.28, effectiveOverlay * 0.85)})`,
-                  `rgba(12, 14, 20, ${Math.max(0.22, effectiveOverlay * 0.72)})`,
-                  `rgba(12, 14, 20, ${Math.max(0.48, effectiveOverlay)})`,
-                ]}
-                locations={[0, 0.45, 1]}
-                style={StyleSheet.absoluteFill}
-              />
-            );
-          })()}
-        </View>
-      )}
+      {/* ── Background Wallpaper, Blur & Readability Scrim ── */}
+      <ChatBackgroundLayer
+        appearance={appearance}
+        fallbackUri={character.coverUrl || character.avatar}
+      />
 
       {/* Top Header Bar — Adapts to active UI Theme Pack */}
       <View
@@ -3642,6 +3575,46 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             <Text style={{ color: '#94a3b8', fontSize: 11.5, fontWeight: '700' }}>
               CAST IN THIS SESSION
             </Text>
+            {(() => {
+              const cardSuggestions = extractCastCandidatesFromCard({
+                character,
+                userName: persona.name || 'User',
+                existingCast: castMembers,
+              });
+              if (cardSuggestions.length === 0) return null;
+              return (
+                <View style={{ gap: 6, marginBottom: 4 }}>
+                  <Text style={{ color: '#64748b', fontSize: 11, fontWeight: '600' }}>
+                    Detected from card — tap to add:
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                    {cardSuggestions.map(s => (
+                      <TouchableOpacity
+                        key={s.name}
+                        onPress={() => {
+                          setEditingCastId(null);
+                          setCastDraftName(s.name);
+                          setCastDraftCharacteristics(s.draftCharacteristics || '');
+                        }}
+                        activeOpacity={0.8}
+                        style={{
+                          paddingHorizontal: 10,
+                          paddingVertical: 5,
+                          borderRadius: 999,
+                          borderWidth: 1,
+                          borderColor: `rgba(${palette.accentRgb}, 0.38)`,
+                          backgroundColor: `rgba(${palette.accentRgb}, 0.1)`,
+                        }}
+                      >
+                        <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '700' }}>
+                          + {s.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              );
+            })()}
             {castMembers.map(member => {
               const summary = getConfirmedCharacteristicsSummary(member);
               const presenceColor =
@@ -4656,6 +4629,25 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                             <ChevronRight size={15} color="#64748b" />
                           </View>
                         </TouchableOpacity>
+
+                        <View style={styles.settingsHairline} />
+
+                        <TouchableOpacity
+                          style={styles.settingsDrillRow}
+                          onPress={() => setSettingsSubView('lorebooks')}
+                          activeOpacity={0.75}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <BookOpen size={15} color={palette.accent} />
+                            <Text style={styles.settingsRowLabel}>Attached Lorebooks</Text>
+                          </View>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={styles.settingsRowValue}>
+                              {attachedLorebookIds.length > 0 ? `${attachedLorebookIds.length} active` : 'Global only'}
+                            </Text>
+                            <ChevronRight size={15} color="#64748b" />
+                          </View>
+                        </TouchableOpacity>
                       </View>
                     </View>
                   )}
@@ -4990,6 +4982,98 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                     </View>
                   )}
 
+                  {/* ── SUB-VIEW: ATTACHED LOREBOOKS ── */}
+                  {settingsSubView === 'lorebooks' && (
+                    <View>
+                      <TouchableOpacity
+                        style={styles.settingsSubHeader}
+                        onPress={() => setSettingsSubView('main')}
+                        activeOpacity={0.75}
+                      >
+                        <ChevronLeft size={18} color="#f8fafc" />
+                        <Text style={styles.settingsSubHeaderTitle}>Attached Lorebooks</Text>
+                      </TouchableOpacity>
+
+                      <View style={[styles.settingsBentoCard, { marginBottom: 10 }]}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                          <Text style={{ color: '#94a3b8', fontSize: 12, flex: 1, lineHeight: 17 }}>
+                            Attach any Codex Lorebook to {character.name} — works with JanitorAI, Chub.ai, and custom cards.
+                          </Text>
+                          <TouchableOpacity
+                            onPress={() => setHelpLorebookVisible(true)}
+                            activeOpacity={0.8}
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 4,
+                              paddingHorizontal: 9,
+                              paddingVertical: 6,
+                              borderRadius: 9,
+                              borderWidth: 1,
+                              borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+                              backgroundColor: `rgba(${palette.accentRgb}, 0.1)`,
+                            }}
+                          >
+                            <HelpCircle size={13} color={palette.accent} />
+                            <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '700' }}>
+                              What is a Lorebook?
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+
+                      {lorebooks.length === 0 ? (
+                        <View style={styles.settingsBentoCard}>
+                          <Text style={{ color: '#cbd5e1', fontSize: 13, fontWeight: '600', marginBottom: 4 }}>
+                            No Lorebooks Created Yet
+                          </Text>
+                          <Text style={{ color: '#64748b', fontSize: 12, lineHeight: 17 }}>
+                            Create or import a Lorebook in Studio → Codex, then come back here to attach it to any character.
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={[styles.settingsBentoCard, { paddingVertical: 6 }]}>
+                          {lorebooks.map((lb, idx) => {
+                            const active = attachedLorebookIds.includes(lb.id);
+                            return (
+                              <React.Fragment key={lb.id}>
+                                {idx > 0 && <View style={styles.settingsHairline} />}
+                                <View
+                                  style={{
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    paddingVertical: 10,
+                                    gap: 10,
+                                  }}
+                                >
+                                  <View style={{ flex: 1 }}>
+                                    <Text style={{ color: '#f8fafc', fontSize: 13.5, fontWeight: '700' }}>
+                                      {lb.title}
+                                    </Text>
+                                    <Text style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 2 }} numberOfLines={1}>
+                                      {lb.entries.length} entries · {lb.description || 'Keyword-triggered lore'}
+                                    </Text>
+                                  </View>
+                                  <NekoSwitch
+                                    value={active}
+                                    onValueChange={val => {
+                                      const next = val
+                                        ? Array.from(new Set([...attachedLorebookIds, lb.id]))
+                                        : attachedLorebookIds.filter(id => id !== lb.id);
+                                      setAttachedLorebookIds(next);
+                                      persistChatSettings({ attachedLorebookIds: next });
+                                    }}
+                                  />
+                                </View>
+                              </React.Fragment>
+                            );
+                          })}
+                        </View>
+                      )}
+                    </View>
+                  )}
+
                   {/* ── SUB-VIEW: PREFILL (Image 5) ── */}
                   {settingsSubView === 'prefill' && (
                     <View>
@@ -5213,22 +5297,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                       <Text style={{ color: '#f8fafc', fontSize: 15, fontWeight: '700' }}>
                         Background image
                       </Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                      <View style={{ flex: 1, paddingRight: 10 }}>
-                        <Text style={{ color: '#e2e8f0', fontSize: 13, fontWeight: '600' }}>
-                          Smart Auto-Darken
-                        </Text>
-                        <Text style={{ color: '#64748b', fontSize: 11 }}>
-                          Automatically darkens bright wallpapers so text stays readable
-                        </Text>
-                      </View>
-                      <NekoSwitch
-                        value={appearance.smartAutoOverlay !== false}
-                        onValueChange={val => saveChatAppearance({ smartAutoOverlay: val } as any)}
-                      />
-                    </View>
-
-                    {appearance.wallpaperUrl ? (
+                      {appearance.wallpaperUrl ? (
                         <TouchableOpacity
                           style={{
                             width: 26,
@@ -5256,7 +5325,22 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                       </View>
                       <NekoSwitch
                         value={appearance.smartAutoOverlay !== false}
-                        onValueChange={val => saveChatAppearance({ smartAutoOverlay: val } as any)}
+                        onValueChange={val => saveChatAppearance({ smartAutoOverlay: val })}
+                      />
+                    </View>
+
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                      <View style={{ flex: 1, paddingRight: 10 }}>
+                        <Text style={{ color: '#e2e8f0', fontSize: 13, fontWeight: '600' }}>
+                          Apply background to all chats
+                        </Text>
+                        <Text style={{ color: '#64748b', fontSize: 11 }}>
+                          Use this wallpaper & darkness across every character
+                        </Text>
+                      </View>
+                      <NekoSwitch
+                        value={Boolean(appearance.applyToAllChats)}
+                        onValueChange={val => saveChatAppearance({ applyToAllChats: val })}
                       />
                     </View>
 
@@ -5593,6 +5677,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               <Text style={[styles.appearanceDoneText, { color: palette.bgDark }]}>{t('chat.applyClose')}</Text>
             </TouchableOpacity>
       </BottomSheetModal>
+      <HelpCenterModal
+        visible={helpLorebookVisible}
+        onClose={() => setHelpLorebookVisible(false)}
+        initialArticleId="lorebooks"
+      />
     </SafeAreaView>
   );
 };

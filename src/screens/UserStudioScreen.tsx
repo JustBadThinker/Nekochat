@@ -48,6 +48,7 @@ import {
   FileText,
   AlertCircle,
   BookOpen,
+  HelpCircle,
 } from 'lucide-react-native';
 import { Character, CharacterScenario, Persona, ContentRating, Lorebook, LorebookEntry } from '../types';
 import { colors } from '../theme/colors';
@@ -57,6 +58,7 @@ import { parseJanitorLorebookJson } from '../services/lorebookService';
 import { compressImageFile, ANIME_DEFAULT_FALLBACK } from '../utils/imageUtils';
 import { ThemePalette } from '../theme/colors';
 import { CharacterCreatorScreen } from './CharacterCreatorScreen';
+import { HelpCenterModal } from '../components/HelpCenterModal';
 
 interface UserStudioScreenProps {
   onStartChat: (character: Character) => void;
@@ -79,6 +81,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
   const [userCharacters, setUserCharacters] = useState<Character[]>([]);
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [lorebooks, setLorebooks] = useState<Lorebook[]>([]);
+  const [helpLorebookVisible, setHelpLorebookVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   // Character Modal State
@@ -920,6 +923,14 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 <TouchableOpacity
                   style={styles.importButton}
+                  onPress={() => setHelpLorebookVisible(true)}
+                  activeOpacity={0.8}
+                >
+                  <HelpCircle size={14} color={palette.accent} style={{ marginRight: 5 }} />
+                  <Text style={styles.importButtonText}>What is a Lorebook?</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.importButton}
                   onPress={() => {
                     setLoreImportTitle('');
                     setLoreImportJson('');
@@ -1469,6 +1480,12 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
               </TouchableOpacity>
             </ScrollView>
       </BottomSheetModal>
+
+      <HelpCenterModal
+        visible={helpLorebookVisible}
+        onClose={() => setHelpLorebookVisible(false)}
+        initialArticleId="lorebooks"
+      />
     </SafeAreaView>
   );
 };

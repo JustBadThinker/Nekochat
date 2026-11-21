@@ -1007,12 +1007,15 @@ export const aiProviderService = {
       }
     }
 
-    // Lorebook / JanitorAI Script keyword matching
+    // Lorebook / JanitorAI Script keyword matching (merges character + persona attached IDs)
     if (options?.lorebooks && options.lorebooks.length > 0) {
+      const combinedAttached = Array.from(
+        new Set([...(character.lorebookIds || []), ...(persona?.lorebookIds || [])])
+      );
       const matchedEntries = matchLorebookEntries(options.lorebooks, history, userMessage, {
         charName: chatCharName,
         userName,
-        attachedIds: persona?.lorebookIds,
+        attachedIds: combinedAttached.length > 0 ? combinedAttached : undefined,
       });
 
       if (matchedEntries.length > 0) {

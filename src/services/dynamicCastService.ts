@@ -150,6 +150,124 @@ export function detectCastCandidates(params: {
   return Array.from(found.values());
 }
 
+/**
+ * Heuristic check for world/RPG/narrator cards that do not represent a single
+ * fixed primary character (e.g. "Dark Forest RPG", "Isekai Simulator").
+ */
+export function isWorldOrRpgCard(character: {
+  name?: string;
+  subtitle?: string;
+  tags?: string[];
+}): boolean {
+  const title = `${character.name || ''} ${character.subtitle || ''}`;
+  if (/\b(rpg|simulator|world\s*sim|sandbox|game\s*master|narrator|dungeon\s*master|text\s*adventure)\b/i.test(title)) {
+    return true;
+  }
+  const tags = (character.tags || []).map(t => String(t).toLowerCase());
+  return tags.some(t => t === 'rpg' || t === 'simulator' || t === 'world' || t === 'narrator');
+}
+
+/**
+ * Scans a multi-character card's text fields for named characters (e.g.
+ * `**Elena** - ...`, `Name: Marcus`, `Elena: "..."`) so the Cast Sheet can
+ * suggest them as one-tap additions without auto-creating cast silently.
+ */
+export function extractCastCandidatesFromCard(params: {
+  character: {
+    name?: string;
+    description?: string;
+    personality?: string;
+    background?: string;
+    scenario?: string;
+    firstMessage?: string;
+  };
+  userName: string;
+  existingCast: DynamicCastMember[];
+}): CastCandidateSuggestion[] {
+  const rawBlob = [
+    params.character.description,
+    params.character.personality,
+    params.character.background,
+    params.character.scenario,
+    params.character.firstMessage,
+  ]
+    .filter(Boolean)
+    .join('\n')
+    .replace(/<[^>]*>/g, ' ');
+
+  if (!rawBlob.trim()) return [];
+
+  const excluded = new Set<string>([
+    (params.character.name || '').toLowerCase(),
+    params.userName.toLowerCase(),
+    'narrator',
+    'system',
+    'scenario',
+    'overview',
+    'world',
+    'personality',
+    'appearance',
+    'background',
+    'description',
+    'rules',
+    'notes',
+    'summary',
+  ]);
+  for (const m of params.existingCast) {
+    excluded.add(m.name.toLowerCase());
+    for (const a of m.aliases || []) excluded.add(a.toLowerCase());
+  }
+
+  const found = new Map<string, CastCandidateSuggestion>();
+  const addFromCard = (rawName: string, snippet?: string) => {
+    const clean = normalizeName(rawName);
+    if (!isLikelyNameToken(clean, excluded)) return;
+    const key = clean.toLowerCase();
+    if (found.has(key) || found.size >= 6) return;
+    const displayName = clean.charAt(0).toUpperCase() + clean.slice(1);
+    found.set(key, {
+      name: displayName,
+      signal: 'introduction',
+      suggestedPresence: 'present',
+      suggestedAiControlled: true,
+      draftCharacteristics: snippet ? snippet.trim().slice(0, 140) : undefined,
+    });
+  };
+
+  // 1. Explicit "Name: X" or "**X** - desc" or "### X" lines
+  const lines = rawBlob.split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const nameField = trimmed.match(/^(?:[-*•]\s*)?(?:name|character)\s*[:=-]\s*([A-Z][a-zA-Z'-]{1,20})\b/i);
+    if (nameField) {
+      addFromCard(nameField[1]);
+      continue;
+    }
+
+    const boldBullet = trimmed.match(/^(?:[-*•\d.]+\s*)?\*\*([A-Z][a-zA-Z'-]{1,20})\*\*\s*(?:[:—–-]\s*(.+))?/);
+    if (boldBullet) {
+      addFromCard(boldBullet[1], boldBullet[2]);
+      continue;
+    }
+
+    const heading = trimmed.match(/^#{1,4}\s*([A-Z][a-zA-Z'-]{1,20})\b(?:\s*[:—–-]\s*(.+))?/);
+    if (heading) {
+      addFromCard(heading[1], heading[2]);
+      continue;
+    }
+
+    // Dialogue speaker labels like `Elena: "Wait..."`
+    const speaker = trimmed.match(/^(?:\*\*)?([A-Z][a-zA-Z'-]{1,20})(?:\*\*)?\s*:\s*["“*]/);
+    if (speaker) {
+      addFromCard(speaker[1]);
+    }
+  }
+
+  return Array.from(found.values());
+}
+
 export function createPrimaryCastMember(params: {
   conversationId: string;
   characterId: string;
@@ -289,6 +407,7 @@ export function buildDynamicCastPromptSection(params: {
   userName: string;
   castMembers: DynamicCastMember[];
   sceneState?: SceneContinuityState | null;
+  isRpgNarrator?: boolean;
   maxTokens?: number;
 }): string {
   const maxTokens = params.maxTokens ?? 450;
@@ -303,8 +422,13 @@ export function buildDynamicCastPromptSection(params: {
         (params.sceneState?.unresolvedActions?.length || 0) > 0
     );
 
-  // If no side cast, no primary presence/control override, and no scene state, keep single-char prompt untouched
-  if (sideCast.length === 0 && !hasScene && (!primaryOverride || (primaryOverride.presence === 'present' && primaryOverride.aiControlled))) {
+  // If no side cast, no primary presence/control override, no RPG narrator mode, and no scene state, keep single-char prompt untouched
+  if (
+    sideCast.length === 0 &&
+    !hasScene &&
+    !params.isRpgNarrator &&
+    (!primaryOverride || (primaryOverride.presence === 'present' && primaryOverride.aiControlled))
+  ) {
     return '';
   }
 
@@ -357,6 +481,10 @@ export function buildDynamicCastPromptSection(params: {
         '- Multi-Character Attribution: Prefix each character’s spoken lines or actions clearly (e.g. **Clara:** "..." / **Penelope:** "...").'
       );
     }
+  } else if (params.isRpgNarrator) {
+    lines.push(
+      `- RPG / Narrator Mode: Play the world, environment, and any NPCs ${params.userName} encounters naturally without forcing a single fixed character.`
+    );
   } else {
     lines.push(
       `- No AI-controlled character is marked present right now; narrate only the immediate environment without speaking for ${params.userName} or away characters.`

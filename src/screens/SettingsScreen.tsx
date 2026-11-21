@@ -46,6 +46,7 @@ import {
   Image as ImageIcon,
   Globe,
   Lock,
+  HelpCircle,
 } from 'lucide-react-native';
 import { ProviderConfig, AppSettings, Persona } from '../types';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -65,6 +66,7 @@ import { useTranslation } from '../i18n/LanguageContext';
 import { LANGUAGE_OPTIONS, UiLanguage, getDefaultLanguagePrompt } from '../i18n/translations';
 import { NekoLogoSvg } from '../components/NekoLogoSvg';
 import { BottomSheetModal } from '../components/BottomSheetModal';
+import { HelpCenterModal } from '../components/HelpCenterModal';
 import { NekoSwitch } from '../components/NekoSwitch';
 
 interface SettingsScreenProps {
@@ -90,7 +92,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const styles = useMemo(() => createStyles(palette), [palette]);
   // Modal Visibility State
   const [activeModal, setActiveModal] = useState<
-    'api' | 'theming' | 'language' | 'passcode' | 'vault' | 'personas' | 'tokens' | 'about' | 'voice' | 'image' | null
+    'api' | 'theming' | 'language' | 'passcode' | 'vault' | 'personas' | 'tokens' | 'about' | 'voice' | 'image' | 'help' | null
   >(null);
 
   const [passcodeEnabledDraft, setPasscodeEnabledDraft] = useState<boolean>(!!settings.passcodeEnabled);
@@ -811,6 +813,15 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               setPasscodeError('');
               setActiveModal('passcode');
             },
+          },
+          {
+            key: 'help',
+            Icon: HelpCircle,
+            title: 'Help & Guides',
+            subtitle: 'Lorebooks, BYOK, Skins & Tips',
+            badge: '6 Guides',
+            accentBadge: true,
+            onPress: () => setActiveModal('help'),
           },
           {
             key: 'about',
@@ -2500,6 +2511,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </View>
             </ScrollView>
       </BottomSheetModal>
+
+      <HelpCenterModal
+        visible={activeModal === 'help'}
+        onClose={() => setActiveModal(null)}
+      />
     </ScrollView>
   );
 };

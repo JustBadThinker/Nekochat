@@ -235,7 +235,7 @@ export const storageService = {
       const data = await AsyncStorage.getItem(KEYS.CHARACTERS);
       if (!data) return [];
       const list: Character[] = JSON.parse(data);
-      // Auto-purge any legacy mock characters from early prototypes
+      // Filter out old hardcoded starter IDs so users only see characters they actually imported or created.
       const cleaned = list.filter(
         c =>
           !c.id.startsWith('kaito-') &&
