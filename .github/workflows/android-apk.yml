@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release tag (e.g. v0.1.0-beta)'
+        description: 'Release tag (e.g. v0.2.1)'
         required: false
-        default: 'v0.1.0-beta'
+        default: 'v0.2.1'
 
 permissions:
   contents: write
@@ -69,14 +69,17 @@ jobs:
           body: |
             ## 🐾 NekoChat ${{ steps.apk.outputs.tag }}
 
-            Beta Android APK release of NekoChat — free, local-first AI roleplay & companion client.
+            Open-source, zero-login, local-first AI roleplay & companion client.
 
-            ### ✨ Highlights
-            - **Chats & Immersion**: 2-column Bento grid, Trending 24h Stories, Novel & Bubble chat modes, fullscreen avatar lightbox, and word-by-word reveal.
-            - **Roleplay Formatting & Reasoning Isolation**: Clean italicized actions, custom syntax colors, dynamic `{{user}}` / `{{char}}` macros, and `<think>` reasoning isolated in a collapsible Thinking window.
-            - **Desk Neko & Opt-In Fidget**: 4×4 pixel Neko pet walking/paw-licking on the input bar — tap her anytime to open the timing fidget & 4×1 interactive Neko.
-            - **Discover**: Live JanitorAI (Datacat) & Chub.ai Catalog Grid, rich HTML character & creator profiles, and Match Mode swipe deck.
-            - **Studio & BYOK Settings**: Character card creator/importer, User Personas, Codex Lorebooks, 4 dark OLED themes, and local BYOK AI provider settings.
+            ### ✨ What's New in v0.2.1
+            - **In-App Help Center & Per-Character Lorebooks**: Searchable Help Center (`Settings → Help & Guides`) with illustrated guides, plus per-character **Attached Lorebooks** in Chat Settings and `"What is a Lorebook?"` deep-links.
+            - **Thinking Inspector Drawer**: Collapsible translucent `Thinking` window above AI replies showing the sanitized `Nekochat Backend` prompt and `AI Model thinking` (`<think>` / reasoning) with auto-scroll.
+            - **Global & Smart Wallpapers**: Extracted `ChatBackgroundLayer` with **Smart Auto-Darken** and an **Apply background to all chats** toggle.
+            - **Roleplay Customization**: Message font presets (`Default`, `Serif`, `Mono`, `Light`) and `Standard` (6–9 paragraphs) / `Shorter` (max 5 paragraphs) response length presets.
+            - **Discover & Search Polish**: Animated mode dropdown (`Catalog Grid`, `For You`, `Match Mode`), smart `#tag` + alias search (`#dominance`, `#ntr`, `#noncon`, etc.), Chub.ai & Datacat source links, and inline gallery lightbox.
+            - **Dynamic Cast Upgrade**: Extracts multi-character card members as one-tap `+ Name` chips and supports **RPG / Narrator Mode** for world/scenario cards.
+            - **Smooth Motion**: Added ease-in/ease-out transitions and swipe-to-dismiss sheets across modals, accordions, and dropdowns.
+          generate_release_notes: true
           files: ${{ steps.apk.outputs.file }}
           draft: false
           prerelease: true

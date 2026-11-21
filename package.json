@@ -1,6 +1,6 @@
 {
   "name": "nekochat",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Free & Open-Source AI Roleplay Client",
   "main": "index.ts",
   "scripts": {
