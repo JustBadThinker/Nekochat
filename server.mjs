@@ -486,10 +486,18 @@ const server = http.createServer(async (req, res) => {
         if (v !== undefined) forwardHeaders[k] = v;
       }
 
+      const upstreamController = new AbortController();
+      req.on('close', () => {
+        if (!res.writableEnded) {
+          upstreamController.abort();
+        }
+      });
+
       const upstream = await fetch(String(targetUrl), {
         method: req.method || 'POST',
         headers: forwardHeaders,
         body: req.method === 'GET' || req.method === 'HEAD' ? undefined : bodyBuffer,
+        signal: upstreamController.signal,
       });
 
       res.statusCode = upstream.status;

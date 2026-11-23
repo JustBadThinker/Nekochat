@@ -157,7 +157,7 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({
             : {},
         ]}
       >
-        {Platform.OS !== 'web' && (
+        {Platform.OS === 'ios' && (
           <BlurView
             intensity={55}
             tint="dark"
@@ -230,7 +230,7 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({
             : {},
         ]}
       >
-        {Platform.OS !== 'web' && (
+        {Platform.OS === 'ios' && (
           <BlurView
             intensity={48}
             tint="dark"

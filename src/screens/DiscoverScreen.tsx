@@ -24,6 +24,10 @@ import {
   Animated,
   Easing,
   Modal,
+  RefreshControl,
+  useWindowDimensions,
+  LayoutAnimation,
+  UIManager,
 } from 'react-native';
 import {
   Search,
@@ -66,6 +70,10 @@ import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
 import { useTranslation } from '../i18n/LanguageContext';
 import { ThemePalette } from '../theme/colors';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 interface DiscoverScreenProps {
   characters: Character[];
@@ -130,6 +138,21 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   const midRowAnim = useRef(new Animated.Value(0)).current;
   const fullRowAnim = useRef(new Animated.Value(0)).current;
   const discoverContentRef = useRef<React.ComponentRef<typeof View> | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const isRefreshingRef = useRef(false);
+  const forYouLoadingMoreRef = useRef(false);
+
+  const handleRefreshCatalog = async () => {
+    if (isRefreshingRef.current || communityLoading) return;
+    isRefreshingRef.current = true;
+    setIsRefreshing(true);
+    try {
+      await fetchCharactersInitial();
+    } finally {
+      isRefreshingRef.current = false;
+      setIsRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     if (catalogScrollMode === 'top') {
@@ -190,7 +213,8 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   };
   const [forYouItems, setForYouItems] = useState<CommunityCharacter[]>([]);
   const [forYouLoading, setForYouLoading] = useState(false);
-  const [forYouHeight, setForYouHeight] = useState(560);
+  const { height: windowHeight } = useWindowDimensions();
+  const [forYouHeight, setForYouHeight] = useState(() => Math.max(560, Math.floor(windowHeight - 130)));
   const [forYouReadMoreChar, setForYouReadMoreChar] = useState<CommunityCharacter | null>(null);
   const [forYouReadMoreDetail, setForYouReadMoreDetail] = useState<CommunityCharacterDetail | null>(null);
   const [loadingForYouDetail, setLoadingForYouDetail] = useState(false);
@@ -288,6 +312,14 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   const [followingCharacters, setFollowingCharacters] = useState<CommunityCharacter[]>([]);
   const [followingLoading, setFollowingLoading] = useState<boolean>(false);
   const [favoriteCharacters, setFavoriteCharacters] = useState<CommunityCharacter[]>([]);
+  const favoriteIdSet = useMemo(
+    () => new Set(favoriteCharacters.map(f => f.id)),
+    [favoriteCharacters]
+  );
+  const followedCreatorSet = useMemo(
+    () => new Set(followedCreators.map(f => f.replace(/^@+/, '').toLowerCase())),
+    [followedCreators]
+  );
 
   // Toast
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -1148,7 +1180,10 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           <TinderDeck
             characters={communityCharacters.length > 0 ? communityCharacters : (characters as any)}
             activePersona={activePersona}
-            onBack={() => setTopMode('catalog')}
+            onBack={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setTopMode('catalog');
+            }}
             onMatchChat={onStartChat}
             onToggleFavorite={handleToggleCommunityFavorite}
             favoriteIds={new Set(favoriteCharacters.map(f => f.id))}
@@ -1156,10 +1191,10 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         </View>
       ) : topMode === 'foryou' ? (
         <View
-          style={{ flex: 1 }}
+          style={{ flex: 1, overflow: 'hidden' }}
           onLayout={e => {
             const h = Math.floor(e.nativeEvent.layout.height);
-            if (h > 200 && Math.abs(h - forYouHeight) > 4) {
+            if (h > 200 && Math.abs(h - forYouHeight) > 2) {
               setForYouHeight(h);
             }
           }}
@@ -1180,6 +1215,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             </View>
           ) : (
             <FlatList
+              style={{ flex: 1 }}
               data={forYouItems}
               keyExtractor={(item, idx) => `${item.id}_${idx}`}
               pagingEnabled
@@ -1187,11 +1223,22 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
               snapToInterval={forYouHeight}
               snapToAlignment="start"
               decelerationRate="fast"
+              disableIntervalMomentum
+              getItemLayout={(_, index) => ({
+                length: forYouHeight,
+                offset: forYouHeight * index,
+                index,
+              })}
+              initialNumToRender={2}
+              maxToRenderPerBatch={2}
+              windowSize={3}
+              removeClippedSubviews={Platform.OS === 'android'}
               viewabilityConfig={forYouViewabilityConfig}
               onViewableItemsChanged={onForYouViewableItemsChanged}
               onEndReachedThreshold={0.5}
               onEndReached={() => {
-                if (forYouLoading) return;
+                if (forYouLoading || forYouLoadingMoreRef.current) return;
+                forYouLoadingMoreRef.current = true;
                 matchAlgorithmService
                   .getNextBatch(12, activePersona)
                   .then(more => {
@@ -1203,14 +1250,15 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                       });
                     }
                   })
-                  .catch(() => {});
+                  .catch(() => {})
+                  .finally(() => {
+                    forYouLoadingMoreRef.current = false;
+                  });
               }}
               renderItem={({ item }) => {
-                const isLiked = favoriteCharacters.some(f => f.id === item.id);
+                const isLiked = favoriteIdSet.has(item.id);
                 const creatorHandle = (item.creatorName || 'creator').replace(/^@+/, '');
-                const isFollowing = followedCreators.some(
-                  f => f.replace(/^@+/, '').toLowerCase() === creatorHandle.toLowerCase()
-                );
+                const isFollowing = followedCreatorSet.has(creatorHandle.toLowerCase());
                 const imageUri = item.avatarUrl || (item as any).coverUrl || (item as any).avatar || '';
                 const tags: string[] = Array.isArray(item.tags)
                   ? item.tags.map((t: any) => (typeof t === 'string' ? t : t?.name || '')).filter(Boolean)
@@ -1225,67 +1273,12 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                   <View
                     style={{
                       height: forYouHeight,
-                      paddingHorizontal: 14,
-                      paddingTop: 6,
-                      paddingBottom: Math.max(16, insets.bottom + 14),
-                      justifyContent: 'space-between',
-                      gap: 8,
+                      paddingHorizontal: 10,
+                      paddingTop: 4,
+                      paddingBottom: Math.max(12, insets.bottom + 8),
                     }}
                   >
-                    {/* 1. Top Header Bento Card: Title + @creator + Follow */}
-                    <View
-                      style={{
-                        backgroundColor: 'rgba(20, 24, 36, 0.85)',
-                        borderRadius: 16,
-                        paddingHorizontal: 14,
-                        paddingVertical: 10,
-                        borderWidth: 1,
-                        borderColor: 'rgba(255,255,255,0.09)',
-                      }}
-                    >
-                      <Text style={{ color: '#f8fafc', fontSize: 17, fontWeight: '800' }} numberOfLines={1}>
-                        {item.name}
-                      </Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                          <View
-                            style={{
-                              width: 26,
-                              height: 26,
-                              borderRadius: 13,
-                              backgroundColor: `rgba(${palette.accentRgb}, 0.2)`,
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
-                          >
-                            <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '800' }}>
-                              {creatorHandle.charAt(0).toUpperCase()}
-                            </Text>
-                          </View>
-                          <Text style={{ color: '#cbd5e1', fontSize: 12.5, fontWeight: '600' }} numberOfLines={1}>
-                            @{creatorHandle}
-                          </Text>
-                        </View>
-                        <TouchableOpacity
-                          style={{
-                            paddingHorizontal: 12,
-                            paddingVertical: 5,
-                            borderRadius: 999,
-                            backgroundColor: isFollowing ? `rgba(${palette.accentRgb}, 0.16)` : 'rgba(255,255,255,0.08)',
-                            borderWidth: 1,
-                            borderColor: isFollowing ? palette.accent : 'rgba(255,255,255,0.16)',
-                          }}
-                          onPress={() => handleToggleFollowCreator(creatorHandle)}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={{ color: isFollowing ? palette.accent : '#f8fafc', fontSize: 11.5, fontWeight: '700' }}>
-                            {isFollowing ? 'Following' : 'Follow'}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-
-                    {/* 2. Full Art Frame with Progressive Black Linear Fade to Bottom Content */}
+                    {/* Full-Bleed Art Frame with TikTok-style Bottom Overlay (no right button column) */}
                     <View
                       style={{
                         flex: 1,
@@ -1314,75 +1307,118 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                         )}
                       </TouchableOpacity>
 
-                      {/* Progressive Linear Black Fade into Description, Tags & Start Chat */}
+                      {/* Progressive Linear Black Fade into @creator, Name, Description, Tags & Start Chat */}
                       <LinearGradient
-                        colors={['transparent', 'rgba(8,10,16,0.55)', 'rgba(8,10,16,0.92)', '#080a10']}
-                        locations={[0, 0.28, 0.62, 1]}
+                        colors={['transparent', 'rgba(8,10,16,0.58)', 'rgba(8,10,16,0.92)', '#080a10']}
+                        locations={[0, 0.25, 0.58, 1]}
                         style={{
                           position: 'absolute',
                           left: 0,
                           right: 0,
                           bottom: 0,
-                          paddingTop: 54,
+                          paddingTop: 64,
                           paddingHorizontal: 14,
                           paddingBottom: 14,
                           gap: 8,
                         }}
                       >
-                        {/* Floating Like & Chat pills aligned right above metadata */}
-                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8 }}>
-                          <TouchableOpacity
-                            style={{
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              gap: 5,
-                              paddingHorizontal: 11,
-                              paddingVertical: 6,
-                              borderRadius: 999,
-                              backgroundColor: 'rgba(10, 12, 18, 0.78)',
-                              borderWidth: 1,
-                              borderColor: isLiked ? palette.accent : 'rgba(255,255,255,0.18)',
-                            }}
-                            onPress={() => {
-                              handleToggleCommunityFavorite(item);
-                              matchAlgorithmService.recordUserLike(item, !isLiked).catch(() => {});
-                            }}
-                            activeOpacity={0.8}
-                          >
-                            <Heart
-                              size={13}
-                              color={isLiked ? palette.accent : '#f8fafc'}
-                              fill={isLiked ? palette.accent : 'transparent'}
-                            />
-                            <Text style={{ color: isLiked ? palette.accent : '#f8fafc', fontSize: 12, fontWeight: '700' }}>
-                              {Number(item.favoritesCount ?? (item as any).likesCount ?? 0) + (isLiked ? 1 : 0)}
+                        {/* Bottom-anchored @creator + Follow + inline Like/Chat pills */}
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, flex: 1 }}>
+                            <View
+                              style={{
+                                width: 24,
+                                height: 24,
+                                borderRadius: 12,
+                                backgroundColor: `rgba(${palette.accentRgb}, 0.22)`,
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <Text style={{ color: palette.accent, fontSize: 10.5, fontWeight: '800' }}>
+                                {creatorHandle.charAt(0).toUpperCase()}
+                              </Text>
+                            </View>
+                            <Text style={{ color: '#e2e8f0', fontSize: 12.5, fontWeight: '700', flexShrink: 1 }} numberOfLines={1}>
+                              @{creatorHandle}
                             </Text>
-                          </TouchableOpacity>
+                            <TouchableOpacity
+                              style={{
+                                paddingHorizontal: 10,
+                                paddingVertical: 4,
+                                borderRadius: 999,
+                                backgroundColor: isFollowing ? `rgba(${palette.accentRgb}, 0.2)` : 'rgba(255,255,255,0.12)',
+                                borderWidth: 1,
+                                borderColor: isFollowing ? palette.accent : 'rgba(255,255,255,0.22)',
+                              }}
+                              onPress={() => handleToggleFollowCreator(creatorHandle)}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={{ color: isFollowing ? palette.accent : '#f8fafc', fontSize: 11, fontWeight: '700' }}>
+                                {isFollowing ? 'Following' : 'Follow'}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
 
-                          <TouchableOpacity
-                            style={{
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              gap: 5,
-                              paddingHorizontal: 11,
-                              paddingVertical: 6,
-                              borderRadius: 999,
-                              backgroundColor: 'rgba(10, 12, 18, 0.78)',
-                              borderWidth: 1,
-                              borderColor: 'rgba(255,255,255,0.18)',
-                            }}
-                            onPress={() => {
-                              matchAlgorithmService.recordInteraction(item, 'chat').catch(() => {});
-                              onStartChat(item);
-                            }}
-                            activeOpacity={0.8}
-                          >
-                            <MessageCircle size={13} color="#f8fafc" />
-                            <Text style={{ color: '#f8fafc', fontSize: 12, fontWeight: '700' }}>
-                              {item.chatCount ?? (item as any).chatsCount ?? 0}
-                            </Text>
-                          </TouchableOpacity>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <TouchableOpacity
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 4,
+                                paddingHorizontal: 9,
+                                paddingVertical: 5,
+                                borderRadius: 999,
+                                backgroundColor: 'rgba(10, 12, 18, 0.72)',
+                                borderWidth: 1,
+                                borderColor: isLiked ? palette.accent : 'rgba(255,255,255,0.18)',
+                              }}
+                              onPress={() => {
+                                handleToggleCommunityFavorite(item);
+                                matchAlgorithmService.recordUserLike(item, !isLiked).catch(() => {});
+                              }}
+                              activeOpacity={0.8}
+                            >
+                              <Heart
+                                size={12.5}
+                                color={isLiked ? palette.accent : '#f8fafc'}
+                                fill={isLiked ? palette.accent : 'transparent'}
+                              />
+                              <Text style={{ color: isLiked ? palette.accent : '#f8fafc', fontSize: 11.5, fontWeight: '700' }}>
+                                {Number(item.favoritesCount ?? (item as any).likesCount ?? 0) + (isLiked ? 1 : 0)}
+                              </Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 4,
+                                paddingHorizontal: 9,
+                                paddingVertical: 5,
+                                borderRadius: 999,
+                                backgroundColor: 'rgba(10, 12, 18, 0.72)',
+                                borderWidth: 1,
+                                borderColor: 'rgba(255,255,255,0.18)',
+                              }}
+                              onPress={() => {
+                                matchAlgorithmService.recordInteraction(item, 'chat').catch(() => {});
+                                onStartChat(item);
+                              }}
+                              activeOpacity={0.8}
+                            >
+                              <MessageCircle size={12.5} color="#f8fafc" />
+                              <Text style={{ color: '#f8fafc', fontSize: 11.5, fontWeight: '700' }}>
+                                {item.chatCount ?? (item as any).chatsCount ?? 0}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
                         </View>
+
+                        {/* Character Name right above Character · tokens */}
+                        <Text style={{ color: '#f8fafc', fontSize: 18.5, fontWeight: '800', lineHeight: 22 }} numberOfLines={2}>
+                          {item.name}
+                        </Text>
 
                         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                           <Text style={{ color: '#e2e8f0', fontSize: 12, fontWeight: '600' }} numberOfLines={1}>
@@ -1546,7 +1582,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
               : {},
           ]}
         >
-          {Platform.OS !== 'web' && (
+          {Platform.OS === 'ios' && (
             <BlurView
               intensity={52}
               tint="dark"
@@ -1709,6 +1745,11 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           data={displayedCharacters}
           keyExtractor={item => item.id}
           numColumns={2}
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          windowSize={5}
+          updateCellsBatchingPeriod={50}
+          removeClippedSubviews={Platform.OS === 'android'}
           columnWrapperStyle={styles.twoColumnWrapper}
           contentContainerStyle={styles.cardsContainer}
           ListHeaderComponent={
@@ -1721,19 +1762,34 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
           scrollEventThrottle={16}
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.5}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefreshCatalog}
+              tintColor={palette.accent}
+              colors={[palette.accent]}
+            />
+          }
           renderItem={({ item }) => (
             <CommunityCharacterCard
               character={item}
-              onSelect={c => setSelectedCommunityChar(c)}
-              onStartChat={c => onStartChat(c)}
+              onSelect={c => {
+                matchAlgorithmService.recordInteraction(c, 'dwell').catch(() => {});
+                setSelectedCommunityChar(c);
+              }}
+              onStartChat={c => {
+                matchAlgorithmService.recordInteraction(c, 'chat').catch(() => {});
+                onStartChat(c);
+              }}
               onImport={c => {
+                matchAlgorithmService.recordInteraction(c, 'chat').catch(() => {});
                 onImportCard?.(c);
                 showToast(`✨ Imported "${c.name}" into My Library!`);
               }}
-              isBookmarked={favoriteCharacters.some(f => f.id === item.id)}
+              isBookmarked={favoriteIdSet.has(item.id)}
               onToggleBookmark={() => handleToggleCommunityFavorite(item)}
-              isFollowingCreator={followedCreators.some(
-                f => f.toLowerCase() === (item.creatorName || '').toLowerCase()
+              isFollowingCreator={followedCreatorSet.has(
+                (item.creatorName || '').replace(/^@+/, '').toLowerCase()
               )}
               onToggleFollowCreator={creatorName =>
                 handleToggleFollowCreator(creatorName)
@@ -2029,6 +2085,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                     backgroundColor: active ? `rgba(${palette.accentRgb}, 0.14)` : 'transparent',
                   }}
                   onPress={() => {
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                     setTopMode(opt.id);
                     setShowCatalogDropdown(false);
                   }}

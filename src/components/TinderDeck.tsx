@@ -228,7 +228,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
         toValue: { x: 0, y: 0 },
         friction: 6,
         tension: 50,
-        useNativeDriver: false,
+        useNativeDriver: true,
       }).start(() => {
         isAnimatingRef.current = false;
       });
@@ -245,7 +245,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
       toValue: { x: targetX, y: 15 },
       duration: Math.max(180, Math.round(skin.animation.enterDuration * 0.85)),
       easing: skin.animation.easing,
-      useNativeDriver: false,
+      useNativeDriver: true,
     }).start(() => handleNext());
 
     // Failsafe timer so card can never freeze on desktop or mobile
@@ -264,7 +264,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
         toValue: { x: 0, y: 0 },
         friction: 6,
         tension: 50,
-        useNativeDriver: false,
+        useNativeDriver: true,
       }).start(() => {
         isAnimatingRef.current = false;
       });
@@ -281,7 +281,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
       toValue: { x: targetX, y: 15 },
       duration: Math.max(180, Math.round(skin.animation.enterDuration * 0.85)),
       easing: skin.animation.easing,
-      useNativeDriver: false,
+      useNativeDriver: true,
     }).start(() => {
       onMatchChatRef.current?.(char);
       handleNext();
@@ -331,7 +331,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
             toValue: { x: 0, y: 0 },
             friction: 6,
             tension: 50,
-            useNativeDriver: false,
+            useNativeDriver: true,
           }).start();
         }
       },
@@ -341,7 +341,7 @@ export const TinderDeck: React.FC<TinderDeckProps> = ({
           toValue: { x: 0, y: 0 },
           friction: 6,
           tension: 50,
-          useNativeDriver: false,
+          useNativeDriver: true,
         }).start();
       },
     })

@@ -4,10 +4,14 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, Platform, ScrollView, Dimensions, Animated, BackHandler } from 'react-native';
+import { View, StyleSheet, Platform, ScrollView, Dimensions, Animated, Easing, BackHandler } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { BlurTargetView } from 'expo-blur';
+import { useFonts } from 'expo-font';
+import { Merriweather_400Regular } from '@expo-google-fonts/merriweather';
+import { JetBrainsMono_400Regular } from '@expo-google-fonts/jetbrains-mono';
+import { Inter_300Light } from '@expo-google-fonts/inter';
 import { Character, Persona, ProviderConfig, AppSettings } from './src/types';
 import { colors, applyThemePalette, getThemePalette } from './src/theme/colors';
 import { ThemeProvider } from './src/theme/ThemeContext';
@@ -28,6 +32,11 @@ import { UserStudioScreen } from './src/screens/UserStudioScreen';
 const TABS: TabScreen[] = ['chats', 'discover', 'studio', 'settings'];
 
 export default function App() {
+  useFonts({
+    Merriweather_400Regular,
+    JetBrainsMono_400Regular,
+    Inter_300Light,
+  });
   const [activeTab, setActiveTab] = useState<TabScreen>('chats');
   const [isDiscoverMatchMode, setIsDiscoverMatchMode] = useState(false);
   const [isDockVisible, setIsDockVisible] = useState(true);
@@ -377,6 +386,7 @@ export default function App() {
               Animated.timing(chatRoomEnterAnim, {
                 toValue: 0,
                 duration: 210,
+                easing: Easing.in(Easing.cubic),
                 useNativeDriver: true,
               }).start(async () => {
                 setActiveChatCharacter(null);

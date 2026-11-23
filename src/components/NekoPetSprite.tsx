@@ -7,22 +7,23 @@ import {
   Easing,
 } from 'react-native';
 
-const NEKO_SPRITE_SHEET = require('../../assets/neko-sprite-sheet.png');
+const PIXEL_KITTEN_SHEET = require('../../assets/pixel-kitten-sheet.png');
+const SHEET_COLS = 8;
+const SHEET_ROWS = 10;
 
 export type NekoMood = 'idle' | 'happy' | 'hifive';
 
 interface NekoPetSpriteProps {
   mood: NekoMood;
-  size?: number; // Height in px (width is 3:4 to match 543x724)
+  size?: number; // Height/width in px (1:1 square cells in 8x9 sheet)
   onPet?: () => void;
 }
 
 /**
- * 4-Frame Pixel Neko Companion:
- * Frame 0: Idle (open eyes)
- * Frame 1: Blink (closed eyes)
- * Frame 2: Happy / Petted (>▽< jump)
- * Frame 3: Paw High-Five (raised paw)
+ * Pixel Kitten Companion using the 8x9 Pixel Kitten Sprite Sheet:
+ * - Idle: row 0, col 0 (blink: col 1)
+ * - Happy / Petted: row 0, col 7 (hearts)
+ * - High-Five / Wave: row 8, col 2
  */
 export const NekoPetSprite: React.FC<NekoPetSpriteProps> = ({
   mood,
@@ -30,7 +31,7 @@ export const NekoPetSprite: React.FC<NekoPetSpriteProps> = ({
   onPet,
 }) => {
   const frameH = size;
-  const frameW = Math.round(size * 0.75); // Exact 543:724 = 3:4 ratio
+  const frameW = size;
 
   const [isBlinking, setIsBlinking] = useState(false);
 
@@ -134,14 +135,14 @@ export const NekoPetSprite: React.FC<NekoPetSpriteProps> = ({
     }
   }, [mood, hopY, popScale, tiltAnim]);
 
-  const frameIndex =
+  const spriteCell =
     mood === 'hifive'
-      ? 3
+      ? { row: 9, col: 2 }
       : mood === 'happy'
-      ? 2
+      ? { row: 9, col: 1 }
       : isBlinking
-      ? 1
-      : 0;
+      ? { row: 0, col: 1 }
+      : { row: 0, col: 0 };
 
   const rotate = tiltAnim.interpolate({
     inputRange: [-1, 0, 1],
@@ -169,11 +170,14 @@ export const NekoPetSprite: React.FC<NekoPetSpriteProps> = ({
         }}
       >
         <Image
-          source={NEKO_SPRITE_SHEET}
+          source={PIXEL_KITTEN_SHEET}
           style={{
-            width: frameW * 4,
-            height: frameH,
-            transform: [{ translateX: -frameIndex * frameW }],
+            width: frameW * SHEET_COLS,
+            height: frameH * SHEET_ROWS,
+            transform: [
+              { translateX: -spriteCell.col * frameW },
+              { translateY: -spriteCell.row * frameH },
+            ],
           }}
           resizeMode="stretch"
         />

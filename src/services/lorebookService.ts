@@ -7,20 +7,23 @@
  */
 
 import type { ChatMessage, Lorebook, LorebookEntry } from '../types';
-import { estimateTokens } from './tokenOptimizerService';
+import { toKeyArray } from './lorebookMatcher';
+import {
+  runLorebookEngine,
+  type LorebookEntryDiagnostic,
+  type LorebookMatchResult,
+  type LorebookPosition,
+  type LorebookRuntimeState,
+  type LorebookSelectedEntry,
+} from './lorebookEngine';
 
-function toKeyArray(raw: unknown): string[] {
-  if (Array.isArray(raw)) {
-    return raw.map(k => String(k).trim()).filter(Boolean);
-  }
-  if (typeof raw === 'string') {
-    return raw
-      .split(',')
-      .map(k => k.trim())
-      .filter(Boolean);
-  }
-  return [];
-}
+export type {
+  LorebookEntryDiagnostic,
+  LorebookMatchResult,
+  LorebookPosition,
+  LorebookRuntimeState,
+  LorebookSelectedEntry,
+};
 
 function normalizeEntry(raw: any, idx: number): LorebookEntry | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -35,6 +38,14 @@ function normalizeEntry(raw: any, idx: number): LorebookEntry | null {
   const probabilityRaw = typeof raw.probability === 'number' ? raw.probability : 100;
   const probability = Math.max(0, Math.min(100, probabilityRaw));
 
+  const posRaw = raw.position;
+  const position: LorebookEntry['position'] =
+    posRaw === 'before_char' || posRaw === 0
+      ? 'before_char'
+      : posRaw === 'before_history'
+        ? 'before_history'
+        : 'after_char';
+
   return {
     id: String(raw.id ?? raw.uid ?? `lb_entry_${Date.now()}_${idx}`),
     title,
@@ -45,9 +56,35 @@ function normalizeEntry(raw: any, idx: number): LorebookEntry | null {
     enabled: raw.disable === true ? false : raw.enabled !== false,
     selective: Boolean(raw.selective) && secondaryKeys.length > 0,
     constant: Boolean(raw.constant),
-    position: raw.position === 'before_char' ? 'before_char' : 'after_char',
+    position,
+    ...(typeof raw.depth === 'number' ? { depth: raw.depth } : {}),
     probability,
     useProbability: Boolean(raw.useProbability ?? (probability < 100)),
+    ...(typeof (raw.caseSensitive ?? raw.case_sensitive) === 'boolean'
+      ? { caseSensitive: Boolean(raw.caseSensitive ?? raw.case_sensitive) }
+      : {}),
+    ...(typeof (raw.matchWholeWords ?? raw.match_whole_words) === 'boolean'
+      ? { matchWholeWords: Boolean(raw.matchWholeWords ?? raw.match_whole_words) }
+      : {}),
+    ...(typeof (raw.scanDepth ?? raw.scan_depth) === 'number'
+      ? { scanDepth: Number(raw.scanDepth ?? raw.scan_depth) }
+      : {}),
+    ...(typeof raw.sticky === 'number' ? { sticky: raw.sticky } : {}),
+    ...(typeof raw.cooldown === 'number' ? { cooldown: raw.cooldown } : {}),
+    ...(typeof raw.delay === 'number' ? { delay: raw.delay } : {}),
+    ...(raw.group ? { group: String(raw.group) } : {}),
+    ...(typeof (raw.groupWeight ?? raw.group_weight) === 'number'
+      ? { groupWeight: Number(raw.groupWeight ?? raw.group_weight) }
+      : {}),
+    ...(typeof (raw.ignoreBudget ?? raw.ignore_budget) === 'boolean'
+      ? { ignoreBudget: Boolean(raw.ignoreBudget ?? raw.ignore_budget) }
+      : {}),
+    ...(typeof (raw.preventRecursion ?? raw.prevent_recursion) === 'boolean'
+      ? { preventRecursion: Boolean(raw.preventRecursion ?? raw.prevent_recursion) }
+      : {}),
+    ...(typeof (raw.excludeRecursion ?? raw.exclude_recursion) === 'boolean'
+      ? { excludeRecursion: Boolean(raw.excludeRecursion ?? raw.exclude_recursion) }
+      : {}),
   };
 }
 
@@ -205,83 +242,42 @@ export function parseJanitorLorebookJson(
   return { success: true, lorebook };
 }
 
-function applyLoreMacros(text: string, charName: string, userName: string): string {
-  return text
-    .replace(/\{\{\s*char\s*\}\}/gi, charName)
-    .replace(/\{\{\s*user\s*\}\}/gi, userName)
-    .replace(/<BOT>/g, charName)
-    .replace(/<USER>/g, userName);
+export function matchLorebookEntriesWithDiagnostics(
+  lorebooks: Lorebook[],
+  history: ChatMessage[],
+  userMessage: string,
+  opts: {
+    charName: string;
+    userName: string;
+    attachedIds?: string[];
+    chatLorebookIds?: string[];
+    runtimeState?: LorebookRuntimeState;
+    globalBudget?: number;
+    maxEntries?: number;
+    rng?: () => number;
+  }
+): LorebookMatchResult {
+  const hydrated = (lorebooks || []).map(lb => {
+    if (
+      (!lb.entries || lb.entries.length === 0) &&
+      lb.description &&
+      /^[\[{]|\b(?:var|let|const)\b|context\.(?:chat|character)/.test(lb.description.trim())
+    ) {
+      const parsed = parseJanitorLorebookJson(lb.description, lb.title);
+      if (parsed.success && parsed.lorebook && parsed.lorebook.entries.length > 0) {
+        return { ...lb, entries: parsed.lorebook.entries };
+      }
+    }
+    return lb;
+  });
+  return runLorebookEngine(hydrated, history, userMessage, opts);
 }
 
 export function matchLorebookEntries(
   lorebooks: Lorebook[],
   history: ChatMessage[],
   userMessage: string,
-  opts: { charName: string; userName: string; attachedIds?: string[] }
+  opts: { charName: string; userName: string; attachedIds?: string[]; chatLorebookIds?: string[] }
 ): { title: string; content: string; priority: number }[] {
-  if (!lorebooks || lorebooks.length === 0) return [];
-
-  const attachedSet = opts.attachedIds && opts.attachedIds.length > 0 ? new Set(opts.attachedIds) : null;
-  const activeBooks = attachedSet
-    ? lorebooks.filter(lb => attachedSet.has(lb.id) || lb.isPublic)
-    : lorebooks;
-
-  const candidates: { title: string; content: string; priority: number; budget: number }[] = [];
-
-  for (const lb of activeBooks) {
-    const depth = Math.max(1, lb.scanDepth || 6);
-    const scanText = (
-      history
-        .slice(-depth)
-        .map(m => m.content)
-        .join(' ') +
-      ' ' +
-      userMessage
-    ).toLowerCase();
-
-    for (const entry of lb.entries || []) {
-      if (!entry.enabled) continue;
-
-      let triggered = Boolean(entry.constant);
-      if (!triggered) {
-        const primaryHit = entry.keys.some(k => k.trim() && scanText.includes(k.trim().toLowerCase()));
-        if (primaryHit) {
-          if (entry.selective && entry.secondaryKeys && entry.secondaryKeys.length > 0) {
-            triggered = entry.secondaryKeys.some(
-              sk => sk.trim() && scanText.includes(sk.trim().toLowerCase())
-            );
-          } else {
-            triggered = true;
-          }
-        }
-      }
-
-      if (!triggered) continue;
-      if (entry.useProbability && typeof entry.probability === 'number' && entry.probability < 100) {
-        if (Math.random() * 100 > entry.probability) continue;
-      }
-
-      candidates.push({
-        title: entry.title,
-        content: applyLoreMacros(entry.content, opts.charName, opts.userName),
-        priority: entry.priority || 10,
-        budget: lb.tokenBudget || 1024,
-      });
-    }
-  }
-
-  candidates.sort((a, b) => b.priority - a.priority);
-
-  const selected: { title: string; content: string; priority: number }[] = [];
-  let usedTokens = 0;
-  const maxBudget = Math.max(...activeBooks.map(b => b.tokenBudget || 1024), 512);
-
-  for (const item of candidates) {
-    const cost = estimateTokens(`${item.title}: ${item.content}`) + 4;
-    if (selected.length > 0 && usedTokens + cost > maxBudget) break;
-    selected.push({ title: item.title, content: item.content, priority: item.priority });
-    usedTokens += cost;
-  }
-
-  return selected;
+  return runLorebookEngine(lorebooks, history, userMessage, opts).selected;
 }

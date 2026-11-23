@@ -6,12 +6,13 @@
 import { GoogleGenAI } from '@google/genai';
 import { Platform } from 'react-native';
 import { fetch as expoFetch } from 'expo/fetch';
-import { Character, CharacterScenario, ChatMessage, Lorebook, Persona, ProviderConfig } from '../types';
+import { Character, CharacterScenario, ChatMessage, Lorebook, Persona, ProviderConfig, TokenOptimizerLevel } from '../types';
 import { isOocMessage, cleanOocContent, estimateTokens } from './tokenOptimizerService';
+import { stripHistoryForPrompt, stripPromptText } from './tokenStripper';
 import { storageService } from './storageService';
 import { getSqliteConversationRepository } from './sqliteDatabase';
 import { buildDynamicCastPromptSection } from './dynamicCastService';
-import { matchLorebookEntries } from './lorebookService';
+import { matchLorebookEntriesWithDiagnostics } from './lorebookService';
 import { getDefaultLanguagePrompt } from '../i18n/translations';
 import {
   APPLICATION_SAFETY_POLICY,
@@ -21,6 +22,7 @@ import {
   normalizeEndpointIdentity,
   resolveContextBudget,
 } from './promptBudget';
+import { readOpenAiStream, StreamMetrics, StreamMode } from './openAiStream';
 export {
   APPLICATION_SAFETY_POLICY,
   buildGeminiRequestBody,
@@ -28,7 +30,9 @@ export {
   buildTurns,
   normalizeEndpointIdentity,
   resolveContextBudget,
+  readOpenAiStream,
 };
+export type { StreamMetrics, StreamMode };
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Provider Routing — single source of truth used by EVERY AI feature
@@ -159,83 +163,23 @@ export function isErrorMessage(m: ChatMessage): boolean {
   return Boolean((m as any).isError) || /^⚠️ Error/.test(m.content || '');
 }
 
-/** Reads an OpenAI-style SSE stream. Returns the full text. */
-// Streams SSE deltas from OpenAI-compatible endpoints (and gracefully survives
-// servers that ignore stream:true and dump the whole JSON like "here, figure it out").
-async function readOpenAiStream(res: Response, signal: AbortSignal, onDelta: (chunk: string) => void): Promise<string> {
-  let fullText = '';
-  const body: any = res.body;
-  if (!body || typeof body.getReader !== 'function') {
-    // Server ignored stream:true or runtime lacks streams → parse whole body
-    const raw = await res.text();
-    try {
-      const json = JSON.parse(raw);
-      fullText = json.choices?.[0]?.message?.content || json.choices?.[0]?.text || '';
-    } catch {
-      raw.split('\n').forEach(line => {
-        const l = line.trim();
-        if (!l.startsWith('data:') || l.includes('[DONE]')) return;
-        try {
-          const j = JSON.parse(l.slice(5).trim());
-          fullText += j.choices?.[0]?.delta?.content || '';
-        } catch {}
-      });
-    }
-    if (fullText) onDelta(fullText);
-    return fullText;
-  }
-
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let inReasoning = false;
-  while (true) {
-    if (signal.aborted) {
-      try { reader.cancel(); } catch {}
-      break;
-    }
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line.startsWith('data:')) continue;
-      const data = line.slice(5).trim();
-      if (!data || data === '[DONE]') continue;
-      try {
-        const json = JSON.parse(data);
-        if (json.error) throw new Error(json.error.message || JSON.stringify(json.error));
-        const delta = json.choices?.[0]?.delta || {};
-        const reasoning = delta.reasoning_content || delta.reasoning || '';
-        let chunk = '';
-        if (reasoning) {
-          chunk = (inReasoning ? '' : '<think>') + reasoning;
-          inReasoning = true;
-        }
-        if (delta.content) {
-          chunk += (inReasoning ? '</think>' : '') + delta.content;
-          inReasoning = false;
-        }
-        if (chunk) {
-          fullText += chunk;
-          onDelta(chunk);
-        }
-      } catch (e: any) {
-        if (e?.message && !/JSON/i.test(e.message)) throw e;
-      }
-    }
-  }
-  if (inReasoning) fullText += '</think>';
-  return fullText;
+export interface StreamUsageSummary {
+  promptTokens?: number;
+  outputTokens?: number;
+  thoughtsTokens?: number;
 }
 
 export interface StreamCallbacks {
   onChunk: (chunk: string) => void;
   onError: (error: Error) => void;
-  onComplete: (fullText: string, tokenEstimate: number, thought?: string) => void;
+  onComplete: (
+    fullText: string,
+    tokenEstimate: number,
+    thought?: string,
+    meta?: { aborted?: boolean; streamMode?: StreamMode; finishReason?: string; usage?: StreamUsageSummary }
+  ) => void;
   onPromptBuilt?: (systemPrompt: string) => void;
+  onStreamMetrics?: (metrics: StreamMetrics) => void;
 }
 
 export function extractThoughtAndContent(rawText: string): { thought?: string; content: string } {
@@ -373,6 +317,126 @@ export function extractCleanCharacterName(
   return raw;
 }
 
+export interface FetchedModelInfo {
+  id: string;
+  name: string;
+  contextLength?: number;
+  maxOutputTokens?: number;
+  priceLabel?: string;
+  contextLabel?: string;
+}
+
+const KNOWN_MODEL_PRICING_PER_1M: Record<string, { inUsd: number; outUsd: number; ctx?: number }> = {
+  'gemini-2.5-flash': { inUsd: 0.075, outUsd: 0.30, ctx: 1048576 },
+  'gemini-2.5-pro': { inUsd: 1.25, outUsd: 5.00, ctx: 1048576 },
+  'gemini-2.0-flash': { inUsd: 0.10, outUsd: 0.40, ctx: 1048576 },
+  'gemini-1.5-flash': { inUsd: 0.075, outUsd: 0.30, ctx: 1048576 },
+  'gemini-1.5-pro': { inUsd: 1.25, outUsd: 5.00, ctx: 2097152 },
+  'gpt-4o': { inUsd: 2.50, outUsd: 10.00, ctx: 128000 },
+  'gpt-4o-mini': { inUsd: 0.15, outUsd: 0.60, ctx: 128000 },
+  'gpt-4.1': { inUsd: 2.00, outUsd: 8.00, ctx: 1047576 },
+  'gpt-4.1-mini': { inUsd: 0.40, outUsd: 1.60, ctx: 1047576 },
+  'deepseek-chat': { inUsd: 0.14, outUsd: 0.28, ctx: 65536 },
+  'deepseek-reasoner': { inUsd: 0.55, outUsd: 2.19, ctx: 65536 },
+  'deepseek-r1': { inUsd: 0.55, outUsd: 2.19, ctx: 65536 },
+  'deepseek-v3': { inUsd: 0.14, outUsd: 0.28, ctx: 65536 },
+  'mistral-nemo': { inUsd: 0.02, outUsd: 0.04, ctx: 128000 },
+  'claude-3.5-sonnet': { inUsd: 3.00, outUsd: 15.00, ctx: 200000 },
+  'claude-3.7-sonnet': { inUsd: 3.00, outUsd: 15.00, ctx: 200000 },
+};
+
+function formatContextTokens(tokens?: number): string | undefined {
+  if (!tokens || !Number.isFinite(tokens) || tokens <= 0) return undefined;
+  if (tokens >= 1_000_000) {
+    const m = tokens / 1_000_000;
+    return `${Number.isInteger(m) ? m : m.toFixed(1)}M tok`;
+  }
+  if (tokens >= 1_000) {
+    return `${Math.round(tokens / 1_000)}k tok`;
+  }
+  return `${tokens} tok`;
+}
+
+function formatUsdPair(inPer1M: number, outPer1M: number): string {
+  if (inPer1M === 0 && outPer1M === 0) return 'Free';
+  const fmt = (v: number) => (v < 0.01 ? v.toFixed(4) : v < 1 ? v.toFixed(3).replace(/0+$/, '').replace(/\.$/, '') : v.toFixed(2));
+  return `$${fmt(inPer1M)} / $${fmt(outPer1M)}`;
+}
+
+function extractModelPriceAndContext(m: any, cleanId: string): {
+  contextLength?: number;
+  priceLabel?: string;
+  contextLabel?: string;
+} {
+  const rawCtx =
+    m?.context_length ??
+    m?.context_window ??
+    m?.inputTokenLimit ??
+    m?.max_model_len ??
+    m?.max_input_tokens ??
+    m?.limits?.context;
+  const parsedCtx = typeof rawCtx === 'number' && rawCtx > 0 ? rawCtx : Number(rawCtx) > 0 ? Number(rawCtx) : undefined;
+
+  let priceLabel: string | undefined;
+  const p = m?.pricing;
+
+  if (p && (p.prompt !== undefined || p.completion !== undefined)) {
+    const inTok = Number(p.prompt ?? 0);
+    const outTok = Number(p.completion ?? 0);
+    if (Number.isFinite(inTok) && Number.isFinite(outTok)) {
+      priceLabel = formatUsdPair(inTok * 1_000_000, outTok * 1_000_000);
+    }
+  } else if (
+    p &&
+    (p.idr_input !== undefined || p.idr_output !== undefined || String(p.currency || '').toUpperCase() === 'IDR')
+  ) {
+    const inIdr = Number(p.idr_input ?? p.input ?? m?.input_price ?? 0);
+    const outIdr = Number(p.idr_output ?? p.output ?? m?.output_price ?? 0);
+    if (Number.isFinite(inIdr) && Number.isFinite(outIdr) && (inIdr > 0 || outIdr > 0)) {
+      priceLabel = `Rp ${Math.round(inIdr).toLocaleString()} / Rp ${Math.round(outIdr).toLocaleString()}`;
+    }
+  } else {
+    const rawIn =
+      p?.input_per_1m ??
+      p?.input ??
+      m?.price_per_1m_input ??
+      m?.input_price ??
+      m?.pricing_input;
+    const rawOut =
+      p?.output_per_1m ??
+      p?.output ??
+      m?.price_per_1m_output ??
+      m?.output_price ??
+      m?.pricing_output;
+    if (rawIn !== undefined || rawOut !== undefined) {
+      const inVal = Number(rawIn ?? 0);
+      const outVal = Number(rawOut ?? 0);
+      if (Number.isFinite(inVal) && Number.isFinite(outVal)) {
+        const isPerToken = (inVal > 0 && inVal < 0.001) || (outVal > 0 && outVal < 0.001);
+        priceLabel = formatUsdPair(isPerToken ? inVal * 1_000_000 : inVal, isPerToken ? outVal * 1_000_000 : outVal);
+      }
+    }
+  }
+
+  const lowerId = cleanId.toLowerCase();
+  const tailId = lowerId.includes('/') ? lowerId.split('/').pop() || lowerId : lowerId;
+  const known =
+    KNOWN_MODEL_PRICING_PER_1M[lowerId] ||
+    KNOWN_MODEL_PRICING_PER_1M[tailId] ||
+    Object.entries(KNOWN_MODEL_PRICING_PER_1M).find(([k]) => tailId.startsWith(k))?.[1];
+
+  const finalCtx = parsedCtx ?? known?.ctx;
+  if (!priceLabel && known) {
+    priceLabel = formatUsdPair(known.inUsd, known.outUsd);
+  }
+
+  return {
+    contextLength: finalCtx,
+    priceLabel,
+    contextLabel: formatContextTokens(finalCtx),
+  };
+}
+
 export const aiProviderService = {
   abortController: null as AbortController | null,
 
@@ -390,7 +454,7 @@ export const aiProviderService = {
    * Fetches the real list of available models from the provider endpoint.
    * Zero-Mock: Returns the actual remote catalog, or clear error state.
    */
-  async fetchModels(provider: ProviderConfig): Promise<{ id: string; name: string; contextLength?: number }[]> {
+  async fetchModels(provider: ProviderConfig): Promise<FetchedModelInfo[]> {
     const route = resolveProviderRoute(provider);
 
     if (route.kind === 'gemini') {
@@ -404,11 +468,14 @@ export const aiProviderService = {
                 .filter((m: any) => String(m.name || '').includes('gemini'))
                 .map((m: any) => {
                   const cleanId = String(m.name || '').replace(/^models\//, '');
+                  const meta = extractModelPriceAndContext(m, cleanId);
                   return {
                     id: cleanId,
                     name: m.displayName ? `${m.displayName} (${cleanId})` : cleanId,
-                    contextLength: m.inputTokenLimit,
+                    contextLength: meta.contextLength ?? m.inputTokenLimit,
                     maxOutputTokens: m.outputTokenLimit,
+                    priceLabel: meta.priceLabel,
+                    contextLabel: meta.contextLabel,
                   };
                 });
               if (geminiList.length > 0) {
@@ -454,12 +521,18 @@ export const aiProviderService = {
       }
       const json = await res.json();
       const rawList = Array.isArray(json.data) ? json.data : Array.isArray(json.models) ? json.models : [];
-      const mapped = rawList.map((m: any) => ({
-        id: m.id || m.name,
-        name: m.name || m.id,
-        contextLength: m.context_length || m.context_window,
-        maxOutputTokens: m.top_provider?.max_completion_tokens || m.max_output_tokens,
-      }));
+      const mapped = rawList.map((m: any) => {
+        const cleanId = m.id || m.name;
+        const meta = extractModelPriceAndContext(m, String(cleanId || ''));
+        return {
+          id: cleanId,
+          name: m.name || m.id,
+          contextLength: meta.contextLength,
+          maxOutputTokens: m.top_provider?.max_completion_tokens || m.max_output_tokens,
+          priceLabel: meta.priceLabel,
+          contextLabel: meta.contextLabel,
+        };
+      });
       if (provider.id && mapped.length > 0) {
         const ep = normalizeEndpointIdentity(provider);
         const now = Date.now();
@@ -923,12 +996,15 @@ export const aiProviderService = {
       lorebooks?: Lorebook[];
       isContinue?: boolean;
       memory?: string;
+      extraContext?: string;
+      tokenOptimizer?: TokenOptimizerLevel;
     }
   ): Promise<void> {
     this.abortGeneration();
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
 
+    const optimizerLevel: TokenOptimizerLevel = options?.tokenOptimizer || 'off';
     const isOoc = isOocMessage(userMessage);
     const chatCharName = extractCleanCharacterName(
       character.name,
@@ -941,27 +1017,72 @@ export const aiProviderService = {
     // Build rich instructions with {{char}} / {{user}} macro expansion
     // Priority 1: Application-owned safety policy (separated from character & user prompts)
     const sections: string[] = [APPLICATION_SAFETY_POLICY];
+
+    // Lorebook / JanitorAI Script keyword matching (merges character + persona attached IDs)
+    let lorebookSummary = 'Lorebooks: none loaded';
+    let loreBeforeChar: string[] = [];
+    let loreAfterChar: string[] = [];
+    let loreBeforeHistory: string[] = [];
+    if (options?.lorebooks && options.lorebooks.length > 0) {
+      const combinedAttached = Array.from(
+        new Set([...(character.lorebookIds || []), ...(persona?.lorebookIds || [])])
+      );
+      const loreResult = matchLorebookEntriesWithDiagnostics(options.lorebooks, history, userMessage, {
+        charName: chatCharName,
+        userName,
+        attachedIds: combinedAttached.length > 0 ? combinedAttached : undefined,
+      });
+
+      const { selected: matchedEntries, byPosition, diagnostics } = loreResult;
+      loreBeforeChar = byPosition.before_char.map(e => `- ${e.title}: ${e.content}`);
+      loreAfterChar = byPosition.after_char.map(e => `- ${e.title}: ${e.content}`);
+      loreBeforeHistory = byPosition.before_history.map(e => `- ${e.title}: ${e.content}`);
+
+      const matchedDetails = matchedEntries
+        .map(e => `${e.title} [${e.activationSource}${e.matchedKeywords.length ? `:${e.matchedKeywords.join(',')}` : ''}]`)
+        .join(', ');
+      const skippedSummary = diagnostics.entries
+        .filter(e => e.status !== 'matched')
+        .slice(0, 6)
+        .map(e => `${e.entryTitle} (${e.status})`)
+        .join(', ');
+      lorebookSummary =
+        `Lorebooks: ${diagnostics.scannedBooks} active book(s), detected=${diagnostics.detectedCount}, selected=${diagnostics.matchedCount}/${diagnostics.totalEntries}, estTokens=${diagnostics.estimatedTokens}, recursive=${diagnostics.recursiveActivations}` +
+        (matchedDetails ? `\n  Injected: ${matchedDetails}` : '') +
+        (skippedSummary ? `\n  Skipped: ${skippedSummary}` : '');
+    }
+
+    if (loreBeforeChar.length > 0) {
+      sections.push(
+        `[WORLD LORE & BACKGROUND — BEFORE CHARACTER]\n(Preserve original lore terms and proper nouns verbatim.)\n${loreBeforeChar.join('\n')}`
+      );
+    }
+
     sections.push(
       `You are roleplaying as ${chatCharName}.\n` +
       `Identity: ${applyMacros(character.name, chatCharName, userName)} (${applyMacros(character.tagline || '', chatCharName, userName)})\n` +
-      `Personality: ${applyMacros(character.personality || '', chatCharName, userName)}\n` +
-      `Backstory: ${applyMacros(character.background || character.description || '', chatCharName, userName)}`
+      `Personality: ${stripPromptText(applyMacros(character.personality || '', chatCharName, userName), optimizerLevel)}\n` +
+      `Backstory: ${stripPromptText(applyMacros(character.background || character.description || '', chatCharName, userName), optimizerLevel)}`
     );
 
     if (character.systemPrompt) {
-      sections.push(`[CORE CHARACTER RULES]\n${applyMacros(character.systemPrompt, chatCharName, userName)}`);
+      sections.push(`[CORE CHARACTER RULES]\n${stripPromptText(applyMacros(character.systemPrompt, chatCharName, userName), optimizerLevel)}`);
     }
 
     if (options?.scenario) {
       sections.push(
-        `[ACTIVE SCENARIO: "${options.scenario.title}"]\nContext: ${applyMacros(options.scenario.description, chatCharName, userName)}${
+        `[ACTIVE SCENARIO: "${options.scenario.title}"]\nContext: ${stripPromptText(applyMacros(options.scenario.description, chatCharName, userName), optimizerLevel)}${
           options.scenario.scenarioInstructions
-            ? `\nScenario Directives: ${applyMacros(options.scenario.scenarioInstructions, chatCharName, userName)}`
+            ? `\nScenario Directives: ${stripPromptText(applyMacros(options.scenario.scenarioInstructions, chatCharName, userName), optimizerLevel)}`
             : ''
         }`
       );
     } else if (character.scenario) {
-      sections.push(`[SCENARIO CONTEXT]\n${applyMacros(character.scenario, chatCharName, userName)}`);
+      sections.push(`[SCENARIO CONTEXT]\n${stripPromptText(applyMacros(character.scenario, chatCharName, userName), optimizerLevel)}`);
+    }
+
+    if (options?.extraContext && options.extraContext.trim()) {
+      sections.push(`[CHAT CUSTOM RULES & OVERRIDES]\n${applyMacros(options.extraContext.trim(), chatCharName, userName)}`);
     }
 
     sections.push(
@@ -1007,22 +1128,10 @@ export const aiProviderService = {
       }
     }
 
-    // Lorebook / JanitorAI Script keyword matching (merges character + persona attached IDs)
-    if (options?.lorebooks && options.lorebooks.length > 0) {
-      const combinedAttached = Array.from(
-        new Set([...(character.lorebookIds || []), ...(persona?.lorebookIds || [])])
+    if (loreAfterChar.length > 0) {
+      sections.push(
+        `[WORLD LORE & BACKGROUND]\n(Preserve original lore terms and proper nouns verbatim.)\n${loreAfterChar.join('\n')}`
       );
-      const matchedEntries = matchLorebookEntries(options.lorebooks, history, userMessage, {
-        charName: chatCharName,
-        userName,
-        attachedIds: combinedAttached.length > 0 ? combinedAttached : undefined,
-      });
-
-      if (matchedEntries.length > 0) {
-        sections.push(
-          `[WORLD LORE & BACKGROUND]\n${matchedEntries.map(e => `- ${e.title}: ${e.content}`).join('\n')}`
-        );
-      }
     }
 
     if (config.customPrompt && config.customPrompt.trim()) {
@@ -1060,7 +1169,7 @@ export const aiProviderService = {
     if (options?.isContinue) {
       sections.push(
         `[DIRECTIVE: SCENE CONTINUATION]\n` +
-        `The previous response ended abruptly or was cut short. Continue the exact sentence or thought seamlessly without repetition, preamble, or greeting.`
+        `Continue seamlessly without repetition, preamble, or greeting. If the previous response ended mid-sentence, finish that sentence directly; if it ended a complete sentence or paragraph, continue on a new paragraph.`
       );
     } else if (isOoc) {
       const cleanQ = cleanOocContent(userMessage);
@@ -1094,7 +1203,8 @@ export const aiProviderService = {
       budget.outputReservationTokens +
       budget.safetyMargin;
 
-    const turns = buildTurns(history, userMessage, {
+    const stripResult = stripHistoryForPrompt(history, optimizerLevel);
+    const turns = buildTurns(stripResult.history, userMessage, {
       isContinue: options?.isContinue,
       contextLimit,
       reservedTokens,
@@ -1131,8 +1241,21 @@ export const aiProviderService = {
       }
     }
 
+    if (loreBeforeHistory.length > 0) {
+      sections.push(
+        `[WORLD LORE & BACKGROUND — BEFORE HISTORY]\n(Preserve original lore terms and proper nouns verbatim.)\n${loreBeforeHistory.join('\n')}`
+      );
+    }
+
     const systemInstruction = sections.join('\n\n');
-    callbacks.onPromptBuilt?.(systemInstruction);
+    const trimmedCount = Math.max(0, history.filter(m => m.role === 'user' || m.role === 'assistant').length - turns.length);
+    const hasCustomPrompt = Boolean((config.customPrompt && config.customPrompt.trim()) || (options?.extraContext && options.extraContext.trim()));
+    const inspectorSummary =
+      `[PROMPT BUDGET & PAYLOAD SUMMARY]\n` +
+      `Model: ${budget.rawModel || config.model || 'default'} · Context Limit: ${contextLimit} (${budget.contextSource}) · Max Output: ${maxOutputTokens || 'unlimited'}\n` +
+      `Turns Kept: ${turns.length} (trimmed ${trimmedCount} older) · Custom Prompt Included: ${hasCustomPrompt ? 'YES' : 'NO'} · Token Stripper: ${optimizerLevel}${stripResult.savedTokens > 0 ? ` (~${stripResult.savedTokens} tok saved)` : ''}\n` +
+      lorebookSummary;
+    callbacks.onPromptBuilt?.(`${systemInstruction}\n\n${inspectorSummary}`);
 
     const route = resolveProviderRoute(config);
 
@@ -1169,39 +1292,88 @@ export const aiProviderService = {
         }
 
         let fullText = '';
+        let finishReason: string | undefined;
+        let usage: StreamUsageSummary | undefined;
+
+        const processGeminiPayload = (parsed: any) => {
+          const blockReason = parsed?.promptFeedback?.blockReason;
+          if (blockReason && !finishReason) {
+            finishReason = String(blockReason);
+          }
+          const candFinish = parsed?.candidates?.[0]?.finishReason;
+          if (candFinish) {
+            finishReason = String(candFinish);
+          }
+          const um = parsed?.usageMetadata;
+          if (um) {
+            usage = {
+              promptTokens: typeof um.promptTokenCount === 'number' ? um.promptTokenCount : usage?.promptTokens,
+              outputTokens: typeof um.candidatesTokenCount === 'number' ? um.candidatesTokenCount : usage?.outputTokens,
+              thoughtsTokens: typeof um.thoughtsTokenCount === 'number' ? um.thoughtsTokenCount : usage?.thoughtsTokens,
+            };
+          }
+          const parts = parsed?.candidates?.[0]?.content?.parts || [];
+          let chunkText = '';
+          for (const p of parts) {
+            if (p?.text) {
+              chunkText += p.thought ? `<think>${p.text}</think>` : p.text;
+            }
+          }
+          if (chunkText) {
+            fullText += chunkText;
+            callbacks.onChunk(chunkText);
+          }
+        };
+
+        const processGeminiSseLine = (rawLine: string) => {
+          const trimmed = rawLine.trim();
+          if (!trimmed.startsWith('data:')) return;
+          const dataStr = trimmed.slice(5).trim();
+          if (!dataStr || dataStr === '[DONE]') return;
+          try {
+            processGeminiPayload(JSON.parse(dataStr));
+          } catch {}
+        };
+
         if (response.body && typeof response.body.getReader === 'function') {
           const reader = response.body.getReader();
           const decoder = new TextDecoder('utf-8');
           let buffer = '';
+          const onGeminiAbort = () => {
+            try {
+              reader.cancel();
+            } catch {}
+          };
+          signal.addEventListener('abort', onGeminiAbort, { once: true });
+          if (signal.aborted) onGeminiAbort();
 
-          while (true) {
-            if (signal.aborted) break;
-            const { value, done } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
+          try {
+            while (true) {
+              if (signal.aborted) {
+                onGeminiAbort();
+                break;
+              }
+              const { value, done } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split('\n');
+              buffer = lines.pop() || '';
 
-            for (const line of lines) {
-              const trimmed = line.trim();
-              if (!trimmed.startsWith('data:')) continue;
-              const dataStr = trimmed.slice(5).trim();
-              if (!dataStr || dataStr === '[DONE]') continue;
-              try {
-                const parsed = JSON.parse(dataStr);
-                const parts = parsed?.candidates?.[0]?.content?.parts || [];
-                let chunkText = '';
-                for (const p of parts) {
-                  if (p?.text) {
-                    chunkText += p.thought ? `<think>${p.text}</think>` : p.text;
-                  }
-                }
-                if (chunkText) {
-                  fullText += chunkText;
-                  callbacks.onChunk(chunkText);
-                }
-              } catch {}
+              for (const line of lines) {
+                processGeminiSseLine(line);
+              }
             }
+
+            if (!signal.aborted) {
+              buffer += decoder.decode();
+              if (buffer.trim()) {
+                for (const line of buffer.split('\n')) {
+                  processGeminiSseLine(line);
+                }
+              }
+            }
+          } finally {
+            signal.removeEventListener('abort', onGeminiAbort);
           }
         } else {
           // Non-streaming fallback if runtime has no ReadableStream
@@ -1217,18 +1389,15 @@ export const aiProviderService = {
             throw new Error(`Gemini API HTTP ${fallbackRes.status}: ${errText.slice(0, 220)}`);
           }
           const json = await fallbackRes.json();
-          const parts = json?.candidates?.[0]?.content?.parts || [];
-          for (const p of parts) {
-            if (p?.text) {
-              const t = p.thought ? `<think>${p.text}</think>` : p.text;
-              fullText += t;
-              callbacks.onChunk(t);
-            }
-          }
+          processGeminiPayload(json);
         }
 
         const { thought, content } = extractThoughtAndContent(fullText);
-        callbacks.onComplete(content, estimateTokens(fullText), thought);
+        callbacks.onComplete(content, estimateTokens(fullText), thought, {
+          aborted: signal.aborted,
+          finishReason,
+          usage,
+        });
       } else {
         if (!route.endpoint) {
           throw new Error('Custom Endpoint Base URL is empty. Set it in Settings → AI Engine.');
@@ -1253,7 +1422,8 @@ export const aiProviderService = {
           stream: true,
         });
 
-        if (typeof config.repetitionPenalty === 'number' && config.repetitionPenalty > 1.0 && route.isOpenRouter) {
+        const isOfficialOpenAi = /api\.openai\.com/i.test(endpointUrl);
+        if (typeof config.repetitionPenalty === 'number' && config.repetitionPenalty > 1.0 && !isOfficialOpenAi) {
           payload.repetition_penalty = config.repetitionPenalty;
         }
 
@@ -1261,6 +1431,7 @@ export const aiProviderService = {
           payload.include_reasoning = true;
         }
 
+        const requestStartedAt = Date.now();
         const res = await platformFetch(endpointUrl, {
           method: 'POST',
           headers,
@@ -1273,17 +1444,33 @@ export const aiProviderService = {
           throw new Error(describeHttpError(res.status, errBody, route.label));
         }
 
-        const fullText = await readOpenAiStream(res, signal, chunk => {
-          callbacks.onChunk(chunk);
+        const { fullText, metrics } = await readOpenAiStream(res, signal, {
+          requestStartedAt,
+          model: route.model,
+          endpoint: endpointUrl,
+          onDelta: chunk => {
+            callbacks.onChunk(chunk);
+          },
         });
 
+        if (metrics.streamMode === 'non-stream-fallback' || metrics.streamMode === 'sse-single-burst') {
+          console.warn(
+            `[NekoChat Stream] ${route.model} (${route.label}) did not stream incrementally: mode=${metrics.streamMode}, contentType="${metrics.contentType}", deltas=${metrics.deltaCount}`
+          );
+        }
+
         const { thought, content } = extractThoughtAndContent(fullText);
-        callbacks.onComplete(content || fullText, estimateTokens(fullText), thought);
+        metrics.finalCommittedAt = Date.now();
+        callbacks.onStreamMetrics?.(metrics);
+        callbacks.onComplete(content || fullText, estimateTokens(fullText), thought, {
+          aborted: metrics.aborted,
+          streamMode: metrics.streamMode,
+          finishReason: metrics.finishReason,
+        });
       }
     } catch (err: any) {
       if (signal?.aborted || err?.name === 'AbortError') {
-        callbacks.onChunk(' [Generation paused]');
-        callbacks.onComplete('', 0);
+        callbacks.onComplete('', 0, undefined, { aborted: true, streamMode: 'aborted' });
         return;
       }
       callbacks.onError(err instanceof Error ? err : new Error(String(err?.message || err)));
@@ -1509,6 +1696,74 @@ export const aiProviderService = {
         `</memory>`
       );
     }
-  }
+  },
+
+  /**
+   * Sends a controlled, non-streaming compatibility probe for the Capability Matrix.
+   * Returns raw HTTP status / response text / network error without mutating stored keys.
+   */
+  async probeCapabilityPrompt(
+    config: ProviderConfig,
+    prompt: string
+  ): Promise<{ httpStatus?: number; errorMessage?: string; responseText?: string; timedOut?: boolean; networkError?: boolean }> {
+    const route = resolveProviderRoute(config);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      if (route.kind === 'gemini') {
+        if (!route.apiKey) return { httpStatus: 401, errorMessage: 'Missing Gemini API key' };
+        const modelName = encodeURIComponent(route.model || 'gemini-2.5-flash');
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(route.apiKey)}`;
+        const res = await platformFetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.2, maxOutputTokens: 128 },
+          }),
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          const errText = await res.text().catch(() => '');
+          return { httpStatus: res.status, errorMessage: errText };
+        }
+        const json = await res.json();
+        const text = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text || '').join('') || '';
+        return { httpStatus: res.status, responseText: text };
+      }
+
+      if (!route.endpoint) return { httpStatus: 400, errorMessage: 'Missing endpoint URL' };
+      const endpointUrl = buildChatCompletionsUrl(route.endpoint);
+      const res = await platformFetch(endpointUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(route.apiKey ? { Authorization: `Bearer ${route.apiKey}` } : {}),
+          ...(route.isOpenRouter ? { 'HTTP-Referer': 'https://nekochat.app', 'X-Title': 'NekoChat' } : {}),
+          ...(config.customHeaders || {}),
+        },
+        body: JSON.stringify({
+          model: route.model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.2,
+          max_tokens: 128,
+          stream: false,
+        }),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        return { httpStatus: res.status, errorMessage: errText };
+      }
+      const json = await res.json();
+      const text = json?.choices?.[0]?.message?.content || json?.choices?.[0]?.text || '';
+      return { httpStatus: res.status, responseText: String(text) };
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return { timedOut: true, errorMessage: 'Timed out' };
+      return { networkError: true, errorMessage: String(err?.message || err) };
+    } finally {
+      clearTimeout(timer);
+    }
+  },
 };
 

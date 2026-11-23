@@ -67,6 +67,7 @@ import { LANGUAGE_OPTIONS, UiLanguage, getDefaultLanguagePrompt } from '../i18n/
 import { NekoLogoSvg } from '../components/NekoLogoSvg';
 import { BottomSheetModal } from '../components/BottomSheetModal';
 import { HelpCenterModal } from '../components/HelpCenterModal';
+import { CapabilityMatrixModal } from '../components/CapabilityMatrixModal';
 import { NekoSwitch } from '../components/NekoSwitch';
 
 interface SettingsScreenProps {
@@ -92,7 +93,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const styles = useMemo(() => createStyles(palette), [palette]);
   // Modal Visibility State
   const [activeModal, setActiveModal] = useState<
-    'api' | 'theming' | 'language' | 'passcode' | 'vault' | 'personas' | 'tokens' | 'about' | 'voice' | 'image' | 'help' | null
+    'api' | 'theming' | 'language' | 'passcode' | 'vault' | 'personas' | 'tokens' | 'about' | 'voice' | 'image' | 'help' | 'matrix' | null
   >(null);
 
   const [passcodeEnabledDraft, setPasscodeEnabledDraft] = useState<boolean>(!!settings.passcodeEnabled);
@@ -134,7 +135,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState<string>(config.id || 'prov_gemini');
   const [fetchingModels, setFetchingModels] = useState(false);
-  const [availableModels, setAvailableModels] = useState<{ id: string; name: string }[]>([]);
+  const [availableModels, setAvailableModels] = useState<{
+    id: string;
+    name: string;
+    contextLength?: number;
+    priceLabel?: string;
+    contextLabel?: string;
+  }[]>([]);
 
   // API Config State (Custom Endpoint First)
   const [customEndpoint, setCustomEndpoint] = useState(
@@ -145,13 +152,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [showKey, setShowKey] = useState(false);
   const [testingPing, setTestingPing] = useState(false);
   const [pingResult, setPingResult] = useState<{ ok: boolean; latencyMs: number; error?: string } | null>(null);
-  const [testingNsfw, setTestingNsfw] = useState(false);
-  const [nsfwTestResult, setNsfwTestResult] = useState<{
-    ok: boolean;
-    supported: boolean;
-    latencyMs: number;
-    reason?: string;
-  } | null>(null);
+  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const [modelSearchQuery, setModelSearchQuery] = useState('');
 
   // Unified AI Engine Tabs (LLM Text Gen, Scene Art, Voice TTS)
   const [aiModalTab, setAiModalTab] = useState<'llm' | 'image' | 'voice'>('llm');
@@ -401,16 +403,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       setPingResult(res);
     }
     setTestingPing(false);
-  };
-
-  // Test whether the active model/endpoint allows consenting adult (18+) NSFW roleplay
-  const handleTestNsfwCapability = async () => {
-    setTestingNsfw(true);
-    setNsfwTestResult(null);
-    const updated = await persistProviderConfigQuietly();
-    const res = await aiProviderService.testNsfwCapability(updated);
-    setNsfwTestResult(res);
-    setTestingNsfw(false);
   };
 
   const handleSaveApi = async () => {
@@ -1130,28 +1122,127 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
                   {availableModels.length > 0 && (
                     <View style={{ marginTop: 8, marginBottom: 12 }}>
-                      <Text style={{ color: 'rgba(255, 255, 255, 0.5)', fontSize: 11, marginBottom: 6 }}>
-                        Select from fetched catalog:
-                      </Text>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row' }}>
-                        {availableModels.slice(0, 15).map(m => (
-                          <TouchableOpacity
-                            key={m.id}
+                      <TouchableOpacity
+                        onPress={() => setModelDropdownOpen(prev => !prev)}
+                        activeOpacity={0.8}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                          borderWidth: 1,
+                          borderColor: 'rgba(255, 255, 255, 0.12)',
+                          borderRadius: 10,
+                          paddingHorizontal: 12,
+                          paddingVertical: 10,
+                        }}
+                      >
+                        <Text style={{ color: '#e2e8f0', fontSize: 12, fontWeight: '600', flex: 1 }} numberOfLines={1}>
+                          Select from fetched models ({availableModels.length})
+                        </Text>
+                        <ChevronRight
+                          size={15}
+                          color="#9ca3af"
+                          style={{ transform: [{ rotate: modelDropdownOpen ? '90deg' : '0deg' }] }}
+                        />
+                      </TouchableOpacity>
+
+                      {modelDropdownOpen && (
+                        <View
+                          style={{
+                            marginTop: 6,
+                            borderRadius: 10,
+                            borderWidth: 1,
+                            borderColor: 'rgba(255, 255, 255, 0.12)',
+                            backgroundColor: 'rgba(12, 16, 26, 0.96)',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <TextInput
+                            value={modelSearchQuery}
+                            onChangeText={setModelSearchQuery}
+                            placeholder={`Search ${availableModels.length} models...`}
+                            placeholderTextColor="#6b7280"
+                            autoCapitalize="none"
                             style={{
-                              backgroundColor: model === m.id ? palette.accent : 'rgba(255, 255, 255, 0.06)',
-                              paddingHorizontal: 10,
-                              paddingVertical: 6,
-                              borderRadius: 8,
-                              marginRight: 6,
+                              paddingHorizontal: 12,
+                              paddingVertical: 8,
+                              color: '#fff',
+                              fontSize: 12,
+                              borderBottomWidth: 1,
+                              borderBottomColor: 'rgba(255, 255, 255, 0.08)',
                             }}
-                            onPress={() => setModel(m.id)}
-                          >
-                            <Text style={{ color: model === m.id ? '#000' : '#fff', fontSize: 11, fontWeight: '600' }}>
-                              {m.name || m.id}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
+                          />
+                          <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled showsVerticalScrollIndicator>
+                            {availableModels
+                              .filter(m => {
+                                const q = modelSearchQuery.trim().toLowerCase();
+                                if (!q) return true;
+                                return (
+                                  m.id.toLowerCase().includes(q) ||
+                                  (m.name || '').toLowerCase().includes(q)
+                                );
+                              })
+                              .map(m => {
+                                const selected = model === m.id;
+                                return (
+                                  <TouchableOpacity
+                                    key={m.id}
+                                    onPress={() => {
+                                      setModel(m.id);
+                                      setModelDropdownOpen(false);
+                                    }}
+                                    style={{
+                                      flexDirection: 'row',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      paddingHorizontal: 12,
+                                      paddingVertical: 9,
+                                      backgroundColor: selected
+                                        ? `rgba(${palette.accentRgb}, 0.16)`
+                                        : 'transparent',
+                                      borderBottomWidth: 1,
+                                      borderBottomColor: 'rgba(255, 255, 255, 0.04)',
+                                    }}
+                                  >
+                                    <View style={{ flex: 1, paddingRight: 8 }}>
+                                      <Text
+                                        style={{
+                                          color: selected ? palette.accent : '#e2e8f0',
+                                          fontSize: 12,
+                                          fontWeight: selected ? '700' : '500',
+                                        }}
+                                        numberOfLines={1}
+                                      >
+                                        {m.name || m.id}
+                                      </Text>
+                                      {m.name && m.name !== m.id ? (
+                                        <Text style={{ color: '#6b7280', fontSize: 10 }} numberOfLines={1}>
+                                          {m.id}
+                                        </Text>
+                                      ) : null}
+                                    </View>
+                                    {(m.priceLabel || m.contextLabel) && (
+                                      <View style={{ alignItems: 'flex-end', marginRight: selected ? 8 : 0 }}>
+                                        {m.priceLabel ? (
+                                          <Text style={{ color: '#34d399', fontSize: 10.5, fontWeight: '600' }}>
+                                            {m.priceLabel}
+                                          </Text>
+                                        ) : null}
+                                        {m.contextLabel ? (
+                                          <Text style={{ color: '#9ca3af', fontSize: 9.5 }}>
+                                            {m.contextLabel}
+                                          </Text>
+                                        ) : null}
+                                      </View>
+                                    )}
+                                    {selected && <Check size={14} color={palette.accent} />}
+                                  </TouchableOpacity>
+                                );
+                              })}
+                          </ScrollView>
+                        </View>
+                      )}
                     </View>
                   )}
 
@@ -1183,7 +1274,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     </View>
                   )}
 
-                  {/* NSFW / 18+ Roleplay Capability Test */}
+                  {/* Single Compatibility Matrix Button (All Categories) */}
                   <TouchableOpacity
                     style={[
                       styles.autoTestBtn,
@@ -1194,39 +1285,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                         borderColor: colors.borderSubtle,
                       },
                     ]}
-                    onPress={handleTestNsfwCapability}
-                    disabled={testingNsfw || testingPing}
+                    onPress={() => setActiveModal('matrix')}
                     activeOpacity={0.8}
                   >
                     <Text style={[styles.autoTestBtnText, { color: colors.textPrimary }]}>
-                      {testingNsfw ? 'Testing NSFW Capability...' : '🔞 Test NSFW Support'}
+                      🛡️ Compatibility Matrix (All Categories)
                     </Text>
                   </TouchableOpacity>
-
-                  {nsfwTestResult && (
-                    <View
-                      style={[
-                        styles.pingResultBox,
-                        nsfwTestResult.ok && nsfwTestResult.supported
-                          ? styles.pingSuccess
-                          : styles.pingFailure,
-                      ]}
-                    >
-                      <Text
-                        style={
-                          nsfwTestResult.ok && nsfwTestResult.supported
-                            ? styles.pingTextSuccess
-                            : styles.pingTextFailure
-                        }
-                      >
-                        {!nsfwTestResult.ok
-                          ? `✕ Test Failed: ${nsfwTestResult.reason || 'Check URL and Key'}`
-                          : nsfwTestResult.supported
-                            ? `✓ NSFW / 18+ Roleplay Supported (${nsfwTestResult.latencyMs}ms)`
-                            : `✕ This model does not support NSFW (${nsfwTestResult.reason || 'Blocked by model'})`}
-                      </Text>
-                    </View>
-                  )}
                 </>
               )}
 
@@ -2515,6 +2580,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       <HelpCenterModal
         visible={activeModal === 'help'}
         onClose={() => setActiveModal(null)}
+      />
+
+      <CapabilityMatrixModal
+        visible={activeModal === 'matrix'}
+        onClose={() => setActiveModal('api')}
+        config={{
+          ...config,
+          baseUrl: customEndpoint,
+          customEndpoint,
+          apiKey,
+          model,
+        }}
       />
     </ScrollView>
   );

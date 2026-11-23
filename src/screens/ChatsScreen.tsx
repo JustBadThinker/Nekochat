@@ -60,6 +60,27 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 const VIEW_MODE_KEY = '@nekochat:chats_view_mode';
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function getDateBucketInfo(timestampMs: number, hasChats: boolean): { key: string; title: string; sortOrder: number } {
+  if (!hasChats || !timestampMs) {
+    return { key: 'new_cards', title: 'New Cards', sortOrder: -1 };
+  }
+  const d = new Date(timestampMs);
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfTarget = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diffDays = Math.round((startOfToday - startOfTarget) / (24 * 60 * 60 * 1000));
+
+  if (diffDays <= 0) {
+    return { key: `day_${startOfTarget}`, title: 'Today', sortOrder: startOfTarget };
+  }
+  if (diffDays === 1) {
+    return { key: `day_${startOfTarget}`, title: 'Yesterday', sortOrder: startOfTarget };
+  }
+  const label = `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+  return { key: `day_${startOfTarget}`, title: label, sortOrder: startOfTarget };
+}
 
 const AccordionAnimatedBody: React.FC<{ isExpanded: boolean; children: React.ReactNode }> = ({
   isExpanded,
@@ -271,17 +292,87 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
     return characters
       .map(char => {
         const charSessions = sessionsByCharId.get(char.id) || [];
-        const latestConv = charSessions[0];
-        const convTime = latestConv ? new Date(latestConv.updatedAt).getTime() : 0;
+        const convTime = charSessions.reduce((maxT, s) => {
+          const t = s.updatedAt ? new Date(s.updatedAt).getTime() : 0;
+          return t > maxT ? t : maxT;
+        }, 0);
         const updatedTime = char.updatedAt ? new Date(char.updatedAt).getTime() : 0;
+        const hasChats = charSessions.length > 0;
         return {
           ...char,
           totalChats: charSessions.length,
-          lastActive: Math.max(convTime, updatedTime, char.lastActive || 0),
+          hasChats,
+          lastActive: hasChats ? Math.max(convTime, char.lastActive || 0) : Math.max(updatedTime, char.lastActive || 0),
         };
       })
-      .sort((a, b) => (b.lastActive || 0) - (a.lastActive || 0));
+      .sort((a, b) => {
+        if (a.hasChats !== b.hasChats) return a.hasChats ? -1 : 1;
+        return (b.lastActive || 0) - (a.lastActive || 0);
+      });
   }, [characters, sessionsByCharId]);
+
+  const [expandedDateKeys, setExpandedDateKeys] = useState<Record<string, boolean>>({});
+
+  const toggleDateSection = (sectionKey: string, currentlyCollapsed: boolean) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedDateKeys(prev => ({ ...prev, [sectionKey]: currentlyCollapsed }));
+  };
+
+  type GroupedCharItem = (typeof groupedCharacters)[number];
+  type ChatListRow =
+    | { type: 'header'; key: string; sectionKey: string; title: string; count: number; isFirst: boolean; isCollapsed: boolean }
+    | { type: 'gridRow'; key: string; items: GroupedCharItem[] }
+    | { type: 'item'; key: string; item: GroupedCharItem };
+
+  const chatListRows = useMemo<ChatListRow[]>(() => {
+    if (groupedCharacters.length === 0) return [];
+    const bucketMap = new Map<string, { key: string; title: string; sortOrder: number; items: GroupedCharItem[] }>();
+    for (const c of groupedCharacters) {
+      const bucket = getDateBucketInfo(c.lastActive || 0, c.hasChats);
+      const existing = bucketMap.get(bucket.key);
+      if (existing) {
+        existing.items.push(c);
+      } else {
+        bucketMap.set(bucket.key, { ...bucket, items: [c] });
+      }
+    }
+
+    const sections = Array.from(bucketMap.values()).sort((a, b) => b.sortOrder - a.sortOrder);
+    const rows: ChatListRow[] = [];
+    sections.forEach((sec, secIdx) => {
+      const isExpanded =
+        expandedDateKeys[sec.key] !== undefined ? Boolean(expandedDateKeys[sec.key]) : secIdx === 0;
+      const isCollapsed = !isExpanded;
+      rows.push({
+        type: 'header',
+        key: `hdr_${sec.key}`,
+        sectionKey: sec.key,
+        title: sec.title,
+        count: sec.items.length,
+        isFirst: secIdx === 0,
+        isCollapsed,
+      });
+      if (isCollapsed) return;
+      if (viewMode === 'grid') {
+        for (let i = 0; i < sec.items.length; i += 3) {
+          rows.push({
+            type: 'gridRow',
+            key: `grid_${sec.key}_${sec.items[i].id}`,
+            items: sec.items.slice(i, i + 3),
+          });
+        }
+      } else {
+        for (const item of sec.items) {
+          rows.push({
+            type: 'item',
+            key: `item_${sec.key}_${item.id}`,
+            item,
+          });
+        }
+      }
+    });
+    return rows;
+  }, [groupedCharacters, expandedDateKeys, viewMode]);
 
   const handleCardPress = (char: Character) => {
     setSelectedGroupChar(char);
@@ -416,10 +507,8 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
       ) : (
       <FlatList
         key={viewMode}
-        data={groupedCharacters}
-        keyExtractor={item => item.id}
-        numColumns={viewMode === 'grid' ? 2 : 1}
-        columnWrapperStyle={viewMode === 'grid' && groupedCharacters.length > 0 ? styles.columnWrapper : undefined}
+        data={chatListRows}
+        keyExtractor={row => row.key}
         contentContainerStyle={styles.listContent}
         scrollEventThrottle={16}
         onScroll={e => {
@@ -507,18 +596,89 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
             </View>
           </View>
         }
-        renderItem={({ item }) => {
-          if (viewMode === 'grid') {
+        renderItem={({ item: row }) => {
+          if (row.type === 'header') {
             return (
-              <BentoChatCard
-                character={item}
-                onPress={() => handleCardPress(item)}
-                onToggleFavorite={() => onToggleFavorite(item)}
-                isExiting={Boolean(exitingCharIds[item.id])}
-              />
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={() => toggleDateSection(row.sectionKey, row.isCollapsed)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingHorizontal: 18,
+                  paddingTop: row.isFirst ? 2 : 14,
+                  paddingBottom: 8,
+                  marginTop: row.isFirst ? 0 : 4,
+                  borderTopWidth: row.isFirst ? 0 : StyleSheet.hairlineWidth,
+                  borderTopColor: 'rgba(255, 255, 255, 0.07)',
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <View
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: row.sectionKey === 'new_cards' ? '#64748b' : palette.accent,
+                    }}
+                  />
+                  <Text
+                    style={{
+                      color: row.sectionKey === 'new_cards' ? '#94a3b8' : '#f1f5f9',
+                      fontSize: 13.5,
+                      fontWeight: '700',
+                      letterSpacing: 0.2,
+                    }}
+                  >
+                    {row.title}
+                  </Text>
+                </View>
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View
+                    style={{
+                      paddingHorizontal: 8,
+                      paddingVertical: 2,
+                      borderRadius: 999,
+                      backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(255, 255, 255, 0.08)',
+                    }}
+                  >
+                    <Text style={{ color: '#94a3b8', fontSize: 11, fontWeight: '700' }}>
+                      {row.count}
+                    </Text>
+                  </View>
+                  <View style={{ transform: [{ rotate: row.isCollapsed ? '-90deg' : '0deg' }] }}>
+                    <ChevronDown size={14} color="#64748b" />
+                  </View>
+                </View>
+              </TouchableOpacity>
             );
           }
 
+          if (row.type === 'gridRow') {
+            const emptySlots = Math.max(0, 3 - row.items.length);
+            return (
+              <View style={styles.columnWrapper}>
+                {row.items.map(cardItem => (
+                  <BentoChatCard
+                    key={cardItem.id}
+                    character={cardItem}
+                    onPress={() => handleCardPress(cardItem)}
+                    onToggleFavorite={() => onToggleFavorite(cardItem)}
+                    isExiting={Boolean(exitingCharIds[cardItem.id])}
+                  />
+                ))}
+                {Array.from({ length: emptySlots }).map((_, spIdx) => (
+                  <View key={`sp_${spIdx}`} style={{ flex: 1 }} />
+                ))}
+              </View>
+            );
+          }
+
+          const item = row.item;
           const isExpanded = expandedCharId === item.id;
           const charSessions = getSortedSessions(sessionsByCharId.get(item.id) || []);
           const isSelectingThis = selectModeCharId === item.id;
@@ -966,9 +1126,10 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     paddingBottom: 90,
   },
   columnWrapper: {
+    flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    gap: 12,
+    paddingHorizontal: 14,
+    gap: 8,
   },
   sectionHeader: {
     flexDirection: 'row',

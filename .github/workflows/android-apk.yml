@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release tag (e.g. v0.2.1)'
+        description: 'Release tag (e.g. v0.2.2)'
         required: false
-        default: 'v0.2.1'
+        default: 'v0.2.2'
 
 permissions:
   contents: write
@@ -71,14 +71,13 @@ jobs:
 
             Open-source, zero-login, local-first AI roleplay & companion client.
 
-            ### ✨ What's New in v0.2.1
-            - **In-App Help Center & Per-Character Lorebooks**: Searchable Help Center (`Settings → Help & Guides`) with illustrated guides, plus per-character **Attached Lorebooks** in Chat Settings and `"What is a Lorebook?"` deep-links.
-            - **Thinking Inspector Drawer**: Collapsible translucent `Thinking` window above AI replies showing the sanitized `Nekochat Backend` prompt and `AI Model thinking` (`<think>` / reasoning) with auto-scroll.
-            - **Global & Smart Wallpapers**: Extracted `ChatBackgroundLayer` with **Smart Auto-Darken** and an **Apply background to all chats** toggle.
-            - **Roleplay Customization**: Message font presets (`Default`, `Serif`, `Mono`, `Light`) and `Standard` (6–9 paragraphs) / `Shorter` (max 5 paragraphs) response length presets.
-            - **Discover & Search Polish**: Animated mode dropdown (`Catalog Grid`, `For You`, `Match Mode`), smart `#tag` + alias search (`#dominance`, `#ntr`, `#noncon`, etc.), Chub.ai & Datacat source links, and inline gallery lightbox.
-            - **Dynamic Cast Upgrade**: Extracts multi-character card members as one-tap `+ Name` chips and supports **RPG / Narrator Mode** for world/scenario cards.
-            - **Smooth Motion**: Added ease-in/ease-out transitions and swipe-to-dismiss sheets across modals, accordions, and dropdowns.
+            ### ✨ What's New in v0.2.2
+            - **4-Tier Token Stripper & Live Visual Preview**: Added `Off / Easy / Medium / Aggressive` pre-send context optimization in Chat Settings with a scrollable color-coded preview (`Kept`, `Stripped`, `Compressed`), RP integrity tips, and one-tap Auto-Memory enablement.
+            - **Streaming Reliability & Provider Diagnostics**: Added SSE stream instrumentation, Gemini trailing-buffer flushing, `finishReason` + token usage reporting in the `Thinking` inspector (`Cut:` badge on abnormal stops), buffered-reply warning, and opt-in `Animate non-streamed replies` with instant `Show all`.
+            - **Capability Matrix & Lorebook Engine**: Added provider/model capability testing (`CapabilityMatrixModal`) and upgraded lorebook matching, budget enforcement, and diagnostic reporting.
+            - **ChatRoom Performance & UX**: Switched message history to virtualized `FlatList` + `React.memo` rows + 45ms stream throttling, added left/right swipe-to-regenerate, smart newline handling on **Continue**, smooth `Animated.timing` composer expand/collapse, and web auto-resize after **Write for me** / **Refine**.
+            - **My Chats & Discover Polish**: Upgraded **My Chats** to a 3-column date-grouped grid (`Today`, `Yesterday`, exact date, `New Cards`) with auto-collapsed older groups; updated TikTok **For You** mode to a 1-card full-bleed bottom overlay; and memoized/cached card styles on `BentoChatCard` & `CommunityCharacterCard`.
+            - **8×10 Pixel Kitten Companion**: Upgraded `DeskNekoWalker` and `NekoPetSprite` to the full `8×10` transparent sprite sheet with native left/right walking, run, hop, groom, wave, stretch, varied sleep poses, and fall-onto-pillow → jump-off → pillow-poof animations.
           generate_release_notes: true
           files: ${{ steps.apk.outputs.file }}
           draft: false

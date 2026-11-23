@@ -13,12 +13,13 @@
  * - Novel Mode & Bubble Mode layout
  */
 
-import React, { useState, useEffect, useRef , useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
+  FlatList,
   ScrollView,
   Image,
   StyleSheet,
@@ -28,10 +29,15 @@ import {
   ActivityIndicator,
   Modal,
   Animated,
+  Easing,
+  PanResponder,
   Share,
+  LayoutAnimation,
+  UIManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SmoothSlider } from '../components/SmoothSlider';
 import { ModelDropdown } from '../components/ModelDropdown';
@@ -90,6 +96,7 @@ import {
   DynamicCastMember,
   SceneContinuityState,
   CastPresenceStatus,
+  TokenOptimizerLevel,
 } from '../types';
 import { colors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
@@ -112,6 +119,7 @@ import {
   isWorldOrRpgCard,
 } from '../services/dynamicCastService';
 import { calculateCost, estimateTokens } from '../services/tokenOptimizerService';
+import { getTokenStripperPreview } from '../services/tokenStripper';
 import { tokenPriceService } from '../services/tokenPriceService';
 import { NekoPulseLoader } from '../components/NekoPulseLoader';
 import { InlineWaitFidget } from '../components/InlineWaitFidget';
@@ -124,6 +132,10 @@ import {
 } from '../components/chat/ChatBackgroundLayer';
 import { ThemePalette } from '../theme/colors';
 
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 interface ChatRoomScreenProps {
   character: Character;
   persona: Persona;
@@ -133,6 +145,51 @@ interface ChatRoomScreenProps {
   onBack: () => void;
   initialConversationId?: string;
 }
+
+interface MemoizedMessageRowProps {
+  msg: ChatMessage;
+  isSelected: boolean;
+  isEditing: boolean;
+  editingText: string;
+  isLastAssistant: boolean;
+  isStreamingLast: boolean;
+  localRevealWords: number;
+  isInspectorExpanded: boolean;
+  isTtsSpeakingThis: boolean;
+  isCopiedThis: boolean;
+  chatStyle: ChatStyleMode;
+  chatFontSize: number;
+  chatFontFamily: string;
+  enableWallpaper: boolean;
+  accentColor: string;
+  isOpeningGreeting: boolean;
+  greetingsCount: number;
+  render: () => React.ReactNode;
+}
+
+const MemoizedMessageRow = React.memo(
+  function MemoizedMessageRowInner({ render }: MemoizedMessageRowProps) {
+    return <>{render()}</>;
+  },
+  (prev, next) =>
+    prev.msg === next.msg &&
+    prev.isSelected === next.isSelected &&
+    prev.isEditing === next.isEditing &&
+    (!next.isEditing || prev.editingText === next.editingText) &&
+    prev.isLastAssistant === next.isLastAssistant &&
+    prev.isStreamingLast === next.isStreamingLast &&
+    prev.localRevealWords === next.localRevealWords &&
+    prev.isInspectorExpanded === next.isInspectorExpanded &&
+    prev.isTtsSpeakingThis === next.isTtsSpeakingThis &&
+    prev.isCopiedThis === next.isCopiedThis &&
+    prev.chatStyle === next.chatStyle &&
+    prev.chatFontSize === next.chatFontSize &&
+    prev.chatFontFamily === next.chatFontFamily &&
+    prev.enableWallpaper === next.enableWallpaper &&
+    prev.accentColor === next.accentColor &&
+    prev.isOpeningGreeting === next.isOpeningGreeting &&
+    prev.greetingsCount === next.greetingsCount
+);
 
 export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   character,
@@ -152,7 +209,6 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
-  const [revealState, setRevealState] = useState<{ msgId: string; shownWords: number } | null>(null);
   const [fidgetOpen, setFidgetOpen] = useState(false);
   const [composerWidth, setComposerWidth] = useState(340);
   const [isContinuingWait, setIsContinuingWait] = useState(false);
@@ -233,6 +289,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [attachedLorebookIds, setAttachedLorebookIds] = useState<string[]>(character.lorebookIds || []);
   const [helpLorebookVisible, setHelpLorebookVisible] = useState(false);
   const [responseLength, setResponseLength] = useState<'standard' | 'shorter'>('standard');
+  const [tokenOptimizerLevel, setTokenOptimizerLevel] = useState<TokenOptimizerLevel>('off');
   const [prefillEnabled, setPrefillEnabled] = useState(false);
   const [prefillText, setPrefillText] = useState('');
   const [forbiddenWords, setForbiddenWords] = useState<string[]>([]);
@@ -243,6 +300,9 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [visibleMessageCount, setVisibleMessageCount] = useState(40);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const [textStreamingEnabled, setTextStreamingEnabled] = useState(true);
+  const [animateNonStreamed, setAnimateNonStreamed] = useState(false);
+  const [lastStreamMode, setLastStreamMode] = useState<string | null>(null);
+  const [localReveal, setLocalReveal] = useState<{ msgId: string; shownWords: number } | null>(null);
   const [chatFontSize, setChatFontSize] = useState(15);
   const [chatFontFamily, setChatFontFamily] = useState<'default' | 'serif' | 'monospace' | 'light'>('default');
   const [expandedInspectorIds, setExpandedInspectorIds] = useState<Record<string, boolean>>({});
@@ -285,9 +345,41 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [isInputExpanded, setIsInputExpanded] = useState(false);
   const [composerInputHeight, setComposerInputHeight] = useState(34);
   const composerInputRef = useRef<any>(null);
+  const composerExpandAnim = useRef(new Animated.Value(0)).current;
+
+  const handleToggleInputExpanded = () => {
+    const nextExpanded = !isInputExpanded;
+    setIsInputExpanded(nextExpanded);
+    Animated.timing(composerExpandAnim, {
+      toValue: nextExpanded ? 1 : 0,
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  };
+
+  useEffect(() => {
+    if (!inputText) {
+      setComposerInputHeight(34);
+      if (Platform.OS === 'web' && composerInputRef.current) {
+        (composerInputRef.current as any).style.height = '100%';
+      }
+      return;
+    }
+    if (Platform.OS === 'web' && composerInputRef.current && !isInputExpanded) {
+      const el = composerInputRef.current as any;
+      requestAnimationFrame(() => {
+        el.style.height = '34px';
+        const nextH = Math.max(34, Math.min(200, el.scrollHeight));
+        el.style.height = '100%';
+        setComposerInputHeight(nextH);
+      });
+    }
+  }, [inputText, isInputExpanded]);
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
 
   const scrollViewRef = useRef<any>(null);
+  const lastStreamFlushRef = useRef<number>(0);
 
   const chatCharName = extractCleanCharacterName(
     character.chatName || character.name,
@@ -315,7 +407,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         try {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed)) setPromptPresets(parsed);
-        } catch {}
+        } catch { }
       }
     });
     AsyncStorage.getItem('@nekochat:active_custom_prompt').then(raw => {
@@ -326,25 +418,26 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             setCustomPrompt(prev => (prev && prev.trim() ? prev : parsed.text));
             setActivePresetId(parsed.presetId ?? null);
           }
-        } catch {}
+        } catch { }
       }
     });
     imageGenService.loadConfig().then(imgCfg => {
       if (imgCfg?.provider) {
         setActiveImageProvider(imgCfg.provider);
       }
-    }).catch(() => {});
+    }).catch(() => { });
     AsyncStorage.getItem('@nekochat:customize_prefs').then(raw => {
       if (raw) {
         try {
           const c = JSON.parse(raw);
           if (typeof c.autoScrollEnabled === 'boolean') setAutoScrollEnabled(c.autoScrollEnabled);
           if (typeof c.textStreamingEnabled === 'boolean') setTextStreamingEnabled(c.textStreamingEnabled);
+          if (typeof c.animateNonStreamed === 'boolean') setAnimateNonStreamed(c.animateNonStreamed);
           if (typeof c.chatFontSize === 'number') setChatFontSize(c.chatFontSize);
           if (c.chatFontFamily === 'default' || c.chatFontFamily === 'serif' || c.chatFontFamily === 'monospace' || c.chatFontFamily === 'light') {
             setChatFontFamily(c.chatFontFamily);
           }
-        } catch {}
+        } catch { }
       }
     });
     AsyncStorage.getItem(`@nekochat:chat_settings_${character.id}`).then(raw => {
@@ -352,6 +445,14 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         try {
           const s = JSON.parse(raw);
           if (s.responseLength === 'standard' || s.responseLength === 'shorter') setResponseLength(s.responseLength);
+          if (
+            s.tokenOptimizer === 'off' ||
+            s.tokenOptimizer === 'easy' ||
+            s.tokenOptimizer === 'medium' ||
+            s.tokenOptimizer === 'aggressive'
+          ) {
+            setTokenOptimizerLevel(s.tokenOptimizer);
+          }
           if (typeof s.temperature === 'number') setChatTemperature(s.temperature);
           if (typeof s.maxTokens === 'number') setChatMaxTokens(s.maxTokens);
           if (typeof s.prefillEnabled === 'boolean') setPrefillEnabled(s.prefillEnabled);
@@ -363,7 +464,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           if (typeof s.autoMemoryInterval === 'number' && s.autoMemoryInterval >= 4) {
             setAutoMemoryInterval(s.autoMemoryInterval);
           }
-        } catch {}
+        } catch { }
       }
     });
     AsyncStorage.getItem('@nekochat:fidget_stats').then(raw => {
@@ -372,7 +473,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           const parsed = JSON.parse(raw);
           if (typeof parsed.score === 'number') setFidgetScore(parsed.score);
           if (typeof parsed.streak === 'number') setFidgetStreak(parsed.streak);
-        } catch {}
+        } catch { }
       }
     });
   }, []);
@@ -392,13 +493,13 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const handleFidgetScoreChange = (nextScore: number, nextStreak: number) => {
     setFidgetScore(nextScore);
     setFidgetStreak(nextStreak);
-    AsyncStorage.setItem('@nekochat:fidget_stats', JSON.stringify({ score: nextScore, streak: nextStreak })).catch(() => {});
+    AsyncStorage.setItem('@nekochat:fidget_stats', JSON.stringify({ score: nextScore, streak: nextStreak })).catch(() => { });
   };
 
   const handleFidgetReset = () => {
     setFidgetScore(0);
     setFidgetStreak(0);
-    AsyncStorage.setItem('@nekochat:fidget_stats', JSON.stringify({ score: 0, streak: 0 })).catch(() => {});
+    AsyncStorage.setItem('@nekochat:fidget_stats', JSON.stringify({ score: 0, streak: 0 })).catch(() => { });
   };
 
   const loadPersonas = async () => {
@@ -407,7 +508,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       if (list && list.length > 0) {
         setAllPersonas(list);
       }
-    } catch {}
+    } catch { }
   };
 
   const getSessionMemoryKey = (convId: string) => `@nekochat:chat_memory_${convId}`;
@@ -490,7 +591,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       if (savedColors) {
         setSyntaxColors(prev => ({ ...prev, ...JSON.parse(savedColors) }));
       }
-    } catch {}
+    } catch { }
   };
 
   useEffect(() => {
@@ -532,7 +633,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           setCastLocationDraft(res.sceneState?.currentLocation || '');
           setCastTimeDraft(res.sceneState?.establishedTime || '');
         })
-        .catch(() => {});
+        .catch(() => { });
     } else {
       setCastMembers([]);
       setSceneState(null);
@@ -677,6 +778,8 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     setTimeout(() => setMemorySavedNotice(false), 2000);
   };
 
+  const [syncedDefaultModel, setSyncedDefaultModel] = useState<string>(config?.model || '');
+
   const handleSelectModel = async (newModel: string) => {
     const clean = newModel === 'custom' ? '' : newModel;
     setChatModel(clean);
@@ -691,11 +794,23 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     setLoadingChatModels(true);
     try {
       const latestCfg = await storageService.getProviderConfig();
-      const mergedCfg = { ...latestCfg, ...config, apiKey: config?.apiKey || latestCfg.apiKey, customEndpoint: config?.customEndpoint || latestCfg.customEndpoint, baseUrl: config?.baseUrl || latestCfg.baseUrl };
+      const mergedCfg = {
+        ...config,
+        ...latestCfg,
+        apiKey: latestCfg.apiKey || config?.apiKey,
+        customEndpoint: latestCfg.customEndpoint || config?.customEndpoint,
+        baseUrl: latestCfg.baseUrl || config?.baseUrl,
+      };
+      if (mergedCfg.model) setSyncedDefaultModel(mergedCfg.model);
       const list = await aiProviderService.fetchModels(mergedCfg);
       setFetchedChatModels(list);
-    } catch {}
+    } catch { }
     setLoadingChatModels(false);
+  };
+
+  const handleSyncDefaultModel = async () => {
+    await handleSelectModel('');
+    await handleFetchChatModels();
   };
 
   const persistChatSettings = async (overrides: Partial<{
@@ -709,6 +824,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     memoryReplacesOld: boolean;
     autoMemoryEnabled: boolean;
     autoMemoryInterval: number;
+    tokenOptimizer: TokenOptimizerLevel;
   }> = {}) => {
     const payload = {
       responseLength: overrides.responseLength ?? responseLength,
@@ -721,35 +837,32 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       memoryReplacesOld: overrides.memoryReplacesOld ?? memoryReplacesOld,
       autoMemoryEnabled: overrides.autoMemoryEnabled ?? autoMemoryEnabled,
       autoMemoryInterval: overrides.autoMemoryInterval ?? autoMemoryInterval,
+      tokenOptimizer: overrides.tokenOptimizer ?? tokenOptimizerLevel,
     };
-    await AsyncStorage.setItem(`@nekochat:chat_settings_${character.id}`, JSON.stringify(payload)).catch(() => {});
+    await AsyncStorage.setItem(`@nekochat:chat_settings_${character.id}`, JSON.stringify(payload)).catch(() => { });
   };
 
   const persistCustomizePrefs = async (overrides: Partial<{
     autoScrollEnabled: boolean;
     textStreamingEnabled: boolean;
+    animateNonStreamed: boolean;
     chatFontSize: number;
     chatFontFamily: 'default' | 'serif' | 'monospace' | 'light';
   }> = {}) => {
     const payload = {
       autoScrollEnabled: overrides.autoScrollEnabled ?? autoScrollEnabled,
       textStreamingEnabled: overrides.textStreamingEnabled ?? textStreamingEnabled,
+      animateNonStreamed: overrides.animateNonStreamed ?? animateNonStreamed,
       chatFontSize: overrides.chatFontSize ?? chatFontSize,
       chatFontFamily: overrides.chatFontFamily ?? chatFontFamily,
     };
-    await AsyncStorage.setItem('@nekochat:customize_prefs', JSON.stringify(payload)).catch(() => {});
+    await AsyncStorage.setItem('@nekochat:customize_prefs', JSON.stringify(payload)).catch(() => { });
   };
 
-  const resolveMessageFontFamily = (): string | undefined => {
-    if (chatFontFamily === 'serif') {
-      return Platform.select({ ios: 'Georgia', android: 'serif', web: 'Georgia, serif' });
-    }
-    if (chatFontFamily === 'monospace') {
-      return Platform.select({ ios: 'Courier', android: 'monospace', web: 'monospace' });
-    }
-    if (chatFontFamily === 'light') {
-      return Platform.select({ ios: 'Avenir-Light', android: 'sans-serif-light', web: 'system-ui, sans-serif' });
-    }
+  const resolveMessageFontFamily = (fontId: 'default' | 'serif' | 'monospace' | 'light' = chatFontFamily): string | undefined => {
+    if (fontId === 'serif') return 'Merriweather_400Regular';
+    if (fontId === 'monospace') return 'JetBrainsMono_400Regular';
+    if (fontId === 'light') return 'Inter_300Light';
     return undefined;
   };
 
@@ -830,9 +943,9 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       await AsyncStorage.setItem(
         '@nekochat:active_custom_prompt',
         JSON.stringify({ presetId, text })
-      ).catch(() => {});
+      ).catch(() => { });
     } else {
-      await AsyncStorage.removeItem('@nekochat:active_custom_prompt').catch(() => {});
+      await AsyncStorage.removeItem('@nekochat:active_custom_prompt').catch(() => { });
     }
     if (activeConversationId) {
       const conv = await storageService.getConversation(activeConversationId);
@@ -868,7 +981,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     if (activePresetId === id) {
       setActivePresetId(null);
       setCustomPrompt('');
-      await AsyncStorage.removeItem('@nekochat:active_custom_prompt').catch(() => {});
+      await AsyncStorage.removeItem('@nekochat:active_custom_prompt').catch(() => { });
     }
   };
 
@@ -1186,6 +1299,17 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   };
 
   // --- Non-Destructive Reply Alternatives (< 1 / N >) ---
+  const swipeSlideAnim = useRef(new Animated.Value(0)).current;
+  const swipeHandlersRef = useRef<{
+    isGreeting: boolean;
+    onSwipeAlt: (dir: -1 | 1) => void;
+    onStepGreeting: (dir: -1 | 1) => void;
+  }>({
+    isGreeting: false,
+    onSwipeAlt: () => { },
+    onStepGreeting: () => { },
+  });
+
   const handleSwipeAlternative = async (dir: -1 | 1) => {
     if (isStreaming || messages.length === 0) return;
     const lastIdx = messages.length - 1;
@@ -1234,6 +1358,58 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     await persistMessagesList(trimmed);
     await triggerAiStream(trimmed, promptText, swipes);
   };
+
+  swipeHandlersRef.current = {
+    isGreeting: messages.length === 1 && allGreetings.length > 1,
+    onSwipeAlt: (dir: -1 | 1) => {
+      handleSwipeAlternative(dir);
+    },
+    onStepGreeting: (dir: -1 | 1) => {
+      handleStepGreeting(dir);
+    },
+  };
+
+  useEffect(() => {
+    swipeSlideAnim.stopAnimation();
+    swipeSlideAnim.setValue(0);
+  }, [isStreaming, swipeSlideAnim]);
+
+  const springSwipeBack = () => {
+    Animated.spring(swipeSlideAnim, {
+      toValue: 0,
+      friction: 7,
+      tension: 90,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const replySwipeResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        Math.abs(gesture.dx) > 22 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.8,
+      onPanResponderMove: (_, gesture) => {
+        swipeSlideAnim.setValue(Math.max(-90, Math.min(90, gesture.dx * 0.35)));
+      },
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dx < -55) {
+          if (swipeHandlersRef.current.isGreeting) {
+            swipeHandlersRef.current.onStepGreeting(1);
+          } else {
+            swipeHandlersRef.current.onSwipeAlt(1);
+          }
+        } else if (gesture.dx > 55) {
+          if (swipeHandlersRef.current.isGreeting) {
+            swipeHandlersRef.current.onStepGreeting(-1);
+          } else {
+            swipeHandlersRef.current.onSwipeAlt(-1);
+          }
+        }
+        springSwipeBack();
+      },
+      onPanResponderTerminate: springSwipeBack,
+    })
+  ).current;
 
   // --- Sending & Streaming ---
   const handleSend = async () => {
@@ -1302,7 +1478,6 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     let capturedBackendPrompt = '';
 
     const assistantPlaceholderId = `bot-${Date.now()}`;
-    setRevealState({ msgId: assistantPlaceholderId, shownWords: 0 });
     const assistantMsg: ChatMessage = {
       id: assistantPlaceholderId,
       conversationId: activeConversationId || undefined,
@@ -1317,10 +1492,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 
     const activeConfig = await resolveActiveConfig();
     const extraContext = buildExtraContext();
+    const freshLorebooks = await storageService.getLorebooks().catch(() => lorebooks);
+    if (freshLorebooks.length !== lorebooks.length) setLorebooks(freshLorebooks);
     const effectiveChar: Character = {
       ...character,
       lorebookIds: Array.from(new Set([...(character.lorebookIds || []), ...attachedLorebookIds])),
-      ...(extraContext ? { scenario: `${character.scenario || ''}\n${extraContext}`.trim() } : {}),
     };
 
     await aiProviderService.streamChat(
@@ -1341,20 +1517,34 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         onChunk: chunk => {
           incomingAssistantText += chunk;
           if (textStreamingEnabled) {
-            setMessages(prev =>
-              prev.map(m =>
-                m.id === assistantPlaceholderId ? { ...m, content: incomingAssistantText } : m
-              )
-            );
-            if (autoScrollEnabled) {
-              scrollViewRef.current?.scrollToEnd({ animated: false });
+            const now = Date.now();
+            if (now - lastStreamFlushRef.current >= 45) {
+              lastStreamFlushRef.current = now;
+              const snapshot = incomingAssistantText;
+              setMessages(prev =>
+                prev.map(m =>
+                  m.id === assistantPlaceholderId ? { ...m, content: snapshot } : m
+                )
+              );
+              if (autoScrollEnabled) {
+                scrollViewRef.current?.scrollToEnd({ animated: false });
+              }
             }
           }
+        },
+        onStreamMetrics: metrics => {
+          setLastStreamMode(metrics.streamMode);
+          const ttfb = metrics.firstByteAt ? metrics.firstByteAt - metrics.requestStartedAt : undefined;
+          const ttft = metrics.firstDeltaAt ? metrics.firstDeltaAt - metrics.requestStartedAt : undefined;
+          const total = metrics.finalCommittedAt ? metrics.finalCommittedAt - metrics.requestStartedAt : undefined;
+          const summary = `[Stream] ${metrics.model || 'model'} · mode=${metrics.streamMode} · deltas=${metrics.deltaCount} · TTFB=${ttfb ?? '-'}ms · TTFT=${ttft ?? '-'}ms · total=${total ?? '-'}ms`;
+          console.info(summary);
+          capturedBackendPrompt = capturedBackendPrompt ? `${capturedBackendPrompt}\n\n${summary}` : summary;
         },
         onError: err => {
           setIsStreaming(false);
           setIsContinuingWait(false);
-          setRevealState(null);
+          setLocalReveal(null);
           setMessages(prev =>
             prev.map(m =>
               m.id === assistantPlaceholderId
@@ -1363,7 +1553,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             )
           );
         },
-        onComplete: async (fullText, tokenCount, thought) => {
+        onComplete: async (fullText, tokenCount, thought, meta) => {
           setIsStreaming(false);
           // Auto-reset 1-turn-only cast members back to away so they don't leak into subsequent turns
           const singleTurnMembers = castMembers.filter(
@@ -1379,7 +1569,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             setCastMembers(nextCast);
             for (const m of nextCast) {
               if (!m.isPrimary && m.singleTurnOnly) {
-                storageService.saveCastMember(m).catch(() => {});
+                storageService.saveCastMember(m).catch(() => { });
               }
             }
           }
@@ -1393,6 +1583,22 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             existingSwipes && existingSwipes.length > 0
               ? [...existingSwipes, finalText]
               : [finalText];
+          const finishSummary = (() => {
+            const parts: string[] = [];
+            if (meta?.finishReason) {
+              parts.push(meta.finishReason);
+            } else if (meta?.usage) {
+              parts.push('NO_FINISH_REASON');
+            }
+            if (meta?.usage) {
+              const uParts: string[] = [];
+              if (typeof meta.usage.promptTokens === 'number') uParts.push(`in: ${meta.usage.promptTokens}`);
+              if (typeof meta.usage.outputTokens === 'number') uParts.push(`out: ${meta.usage.outputTokens}`);
+              if (typeof meta.usage.thoughtsTokens === 'number') uParts.push(`think: ${meta.usage.thoughtsTokens}`);
+              if (uParts.length > 0) parts.push(`(${uParts.join(', ')})`);
+            }
+            return parts.length > 0 ? parts.join(' ') : undefined;
+          })();
           const finalMsg: ChatMessage = {
             id: assistantPlaceholderId,
             conversationId: activeConversationId || undefined,
@@ -1403,36 +1609,54 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             swipeIndex: nextSwipes.length - 1,
             thought,
             backendPrompt: capturedBackendPrompt || undefined,
+            finishReason: finishSummary,
             tokenCount,
             timestamp: Date.now(),
           };
           const finalMessages = historyWithUser.concat([finalMsg]);
           setMessages(finalMessages);
+          if (
+            !meta?.aborted &&
+            animateNonStreamed &&
+            textStreamingEnabled &&
+            (meta?.streamMode === 'non-stream-fallback' || meta?.streamMode === 'sse-single-burst')
+          ) {
+            setLocalReveal({ msgId: assistantPlaceholderId, shownWords: 4 });
+          } else {
+            setLocalReveal(null);
+          }
           await persistMessagesList(finalMessages);
 
           const turnsSinceCheckpoint = finalMessages.length - 1 - lastCheckpointIndex;
           if (
+            !meta?.aborted &&
             autoMemoryEnabled &&
             !isSummarizingMemory &&
             turnsSinceCheckpoint >= Math.max(4, autoMemoryInterval)
           ) {
-            runIncrementalCheckpointForList(finalMessages, true).catch(() => {});
+            runIncrementalCheckpointForList(finalMessages, true).catch(() => { });
           }
         },
       },
       {
         conversationId: activeConversationId || undefined,
         scenario: currentScenario,
-        lorebooks,
+        lorebooks: freshLorebooks,
         memory: chatMemory,
+        extraContext,
+        tokenOptimizer: tokenOptimizerLevel,
       }
     );
   };
 
   // --- Message Actions ---
-  const handleCopyMessage = (msg: ChatMessage) => {
-    if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      navigator.clipboard.writeText(msg.content);
+  const handleCopyMessage = async (msg: ChatMessage) => {
+    try {
+      await Clipboard.setStringAsync(msg.content);
+    } catch {
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        navigator.clipboard.writeText(msg.content).catch(() => { });
+      }
     }
     setCopiedId(msg.id);
     setSelectedMessageId(null);
@@ -1448,7 +1672,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     if (lastCheckpointIndex >= minAffectedIdx && minAffectedIdx >= 0) {
       const nextIdx = Math.max(-1, minAffectedIdx - 1);
       setLastCheckpointIndex(nextIdx);
-      await AsyncStorage.setItem(getSessionCheckpointKey(activeConversationId), String(nextIdx)).catch(() => {});
+      await AsyncStorage.setItem(getSessionCheckpointKey(activeConversationId), String(nextIdx)).catch(() => { });
     }
     try {
       const repo = await getSqliteConversationRepository();
@@ -1467,7 +1691,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       }
       const refreshedCast = await storageService.getDynamicCastState(activeConversationId, character.id);
       setCastMembers(refreshedCast.castMembers);
-    } catch {}
+    } catch { }
   };
 
   const handlePinMessageToMemory = async (msg: ChatMessage) => {
@@ -1488,7 +1712,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             sourceMessageIds: [msg.id],
           });
         }
-      } catch {}
+      } catch { }
     }
 
     const pinLine = `[Pinned] ${clean}`;
@@ -1581,7 +1805,6 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         aiProviderService.abortGeneration();
         setIsStreaming(false);
         setIsContinuingWait(false);
-        setRevealState(null);
       }
       setEditingMessageId(null);
       const updated = [...messages];
@@ -1651,6 +1874,22 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     await triggerAiStream(trimmed, promptText);
   };
 
+  const joinContinuation = (base: string, addition: string): string => {
+    if (!addition) return base;
+    if (!base) return addition;
+    const trimmedBase = base.replace(/[ \t]+$/, '');
+    if (trimmedBase.endsWith('\n') || /^\s*\n/.test(addition)) {
+      return `${trimmedBase}${addition.replace(/^[ \t]+/, '')}`;
+    }
+    const endsComplete =
+      /(?:[.!?]["”’'*\)]?|["”」』*])$/.test(trimmedBase) &&
+      !trimmedBase.endsWith('...');
+    if (endsComplete) {
+      return `${trimmedBase}\n\n${addition.replace(/^\s+/, '')}`;
+    }
+    return `${base}${addition}`;
+  };
+
   const handleContinue = async () => {
     if (isStreaming || messages.length === 0) return;
     setSelectedMessageId(null);
@@ -1661,14 +1900,16 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 
     setIsStreaming(true);
     setIsContinuingWait(true);
+    let rawAddition = '';
     let continuedText = lastMsg.content;
 
     const activeConfig = await resolveActiveConfig();
     const extraContext = buildExtraContext();
+    const freshLorebooks = await storageService.getLorebooks().catch(() => lorebooks);
+    if (freshLorebooks.length !== lorebooks.length) setLorebooks(freshLorebooks);
     const effectiveChar: Character = {
       ...character,
       lorebookIds: Array.from(new Set([...(character.lorebookIds || []), ...attachedLorebookIds])),
-      ...(extraContext ? { scenario: `${character.scenario || ''}\n${extraContext}`.trim() } : {}),
     };
 
     await aiProviderService.streamChat(
@@ -1687,34 +1928,50 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         },
         onChunk: chunk => {
           setIsContinuingWait(false);
-          continuedText += chunk;
+          rawAddition += chunk;
+          continuedText = joinContinuation(lastMsg.content, rawAddition);
           if (textStreamingEnabled) {
-            setMessages(prev =>
-              prev.map((m, idx) => (idx === lastIdx ? { ...m, content: continuedText } : m))
-            );
-            if (autoScrollEnabled) {
-              scrollViewRef.current?.scrollToEnd({ animated: false });
+            const now = Date.now();
+            if (now - lastStreamFlushRef.current >= 45) {
+              lastStreamFlushRef.current = now;
+              const snapshot = continuedText;
+              setMessages(prev =>
+                prev.map((m, idx) => (idx === lastIdx ? { ...m, content: snapshot } : m))
+              );
+              if (autoScrollEnabled) {
+                scrollViewRef.current?.scrollToEnd({ animated: false });
+              }
             }
           }
         },
         onError: err => {
           setIsContinuingWait(false);
           setIsStreaming(false);
-          setRevealState(null);
           setMessages(prev =>
             prev.map((m, idx) =>
               idx === lastIdx ? { ...m, content: `${m.content}\n\n⚠️ Error continuing: ${err.message}` } : m
             )
           );
         },
-        onComplete: async (fullText, tokenCount, thought) => {
+        onComplete: async (fullText, tokenCount, thought, meta) => {
           setIsContinuingWait(false);
           setIsStreaming(false);
+          const effectiveAddition = rawAddition || fullText || '';
+          if (meta?.aborted && !effectiveAddition) return;
+          const finalContent = effectiveAddition
+            ? joinContinuation(lastMsg.content, effectiveAddition)
+            : continuedText;
+          const finishSummary = meta?.finishReason
+            ? meta.usage && typeof meta.usage.outputTokens === 'number'
+              ? `${meta.finishReason} (out: ${meta.usage.outputTokens}${typeof meta.usage.thoughtsTokens === 'number' ? `, think: ${meta.usage.thoughtsTokens}` : ''})`
+              : meta.finishReason
+            : lastMsg.finishReason;
           const finalMsg: ChatMessage = {
             ...lastMsg,
-            content: continuedText,
+            content: finalContent,
             tokenCount: (lastMsg.tokenCount || 0) + tokenCount,
             thought: thought || lastMsg.thought,
+            finishReason: finishSummary,
           };
           const updated = messages.map((m, idx) => (idx === lastIdx ? finalMsg : m));
           setMessages(updated);
@@ -1724,9 +1981,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       {
         conversationId: activeConversationId || undefined,
         scenario: currentScenario,
-        lorebooks,
+        lorebooks: freshLorebooks,
         isContinue: true,
         memory: chatMemory,
+        extraContext,
+        tokenOptimizer: tokenOptimizerLevel,
       }
     );
   };
@@ -1844,29 +2103,28 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       .trim();
 
   useEffect(() => {
-    if (!revealState) return;
-    const targetMsg = messages.find(m => m.id === revealState.msgId);
+    if (!localReveal) return;
+    const targetMsg = messages.find(m => m.id === localReveal.msgId);
     const cleanTarget = stripThinkTags(targetMsg?.content || '');
-    if (!cleanTarget || cleanTarget === '...') return;
-
-    const words = cleanTarget.match(/\S+\s*/g) || [];
-    if (revealState.shownWords >= words.length) {
-      if (!isStreaming) {
-        setRevealState(null);
-      }
+    if (!cleanTarget || cleanTarget === '...') {
+      setLocalReveal(null);
       return;
     }
-
+    const words = cleanTarget.match(/\S+\s*/g) || [];
+    if (localReveal.shownWords >= words.length) {
+      setLocalReveal(null);
+      return;
+    }
     const timer = setInterval(() => {
-      setRevealState(prev => {
-        if (!prev || prev.msgId !== revealState.msgId) return prev;
-        const nextCount = Math.min(words.length, prev.shownWords + 2);
+      setLocalReveal(prev => {
+        if (!prev || prev.msgId !== localReveal.msgId) return prev;
+        const nextCount = prev.shownWords + 4;
+        if (nextCount >= words.length) return null;
         return { ...prev, shownWords: nextCount };
       });
-    }, 28);
-
+    }, 24);
     return () => clearInterval(timer);
-  }, [revealState, messages, isStreaming]);
+  }, [localReveal, messages]);
 
   const renderBoldInline = (str: string, baseStyle: any, keyPrefix: string, highlightDialogueColor?: string) => {
     const inlineRegex = highlightDialogueColor
@@ -1938,8 +2196,8 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         ? styles.novelUserText
         : styles.bubbleUserText
       : isNovel
-      ? styles.novelBotText
-      : styles.bubbleBotText;
+        ? styles.novelBotText
+        : styles.bubbleBotText;
 
     const msgFontFamily = resolveMessageFontFamily();
     return (
@@ -1953,10 +2211,10 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             ...(msgFontFamily ? { fontFamily: msgFontFamily } : {}),
             ...(appearance.enableWallpaper && isNovel
               ? {
-                  textShadowColor: 'rgba(0, 0, 0, 0.72)',
-                  textShadowOffset: { width: 0, height: 1 },
-                  textShadowRadius: 3,
-                }
+                textShadowColor: 'rgba(0, 0, 0, 0.72)',
+                textShadowOffset: { width: 0, height: 1 },
+                textShadowRadius: 3,
+              }
               : {}),
           },
         ]}
@@ -2170,14 +2428,19 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     const cleanedPrompt = msg.backendPrompt ? formatInspectorPrompt(msg.backendPrompt) : '';
     const hasPrompt = Boolean(cleanedPrompt);
     const hasThought = Boolean(liveThought && liveThought.trim());
-    if (!hasPrompt && !hasThought) return null;
+    const finishReasonLabel = msg.finishReason?.trim() || '';
+    const rawFinishCode = finishReasonLabel.split(/\s+/)[0] || '';
+    const isAbnormalFinish =
+      Boolean(rawFinishCode) && !/^(stop|end_turn)$/i.test(rawFinishCode);
+    if (!hasPrompt && !hasThought && !finishReasonLabel) return null;
     const isExpanded = Boolean(expandedInspectorIds[msg.id]);
     return (
       <View style={{ marginBottom: 8 }}>
         <TouchableOpacity
-          onPress={() =>
-            setExpandedInspectorIds(prev => ({ ...prev, [msg.id]: !prev[msg.id] }))
-          }
+          onPress={() => {
+            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+            setExpandedInspectorIds(prev => ({ ...prev, [msg.id]: !prev[msg.id] }));
+          }}
           activeOpacity={0.75}
           style={{
             alignSelf: 'flex-start',
@@ -2188,13 +2451,14 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             paddingVertical: 5,
             borderRadius: 10,
             borderWidth: 1,
-            borderColor: `rgba(${palette.accentRgb}, 0.24)`,
+            borderColor: isAbnormalFinish ? 'rgba(251, 191, 36, 0.45)' : `rgba(${palette.accentRgb}, 0.24)`,
             backgroundColor: 'rgba(0, 0, 0, 0.5)',
           }}
         >
-          <Brain size={12} color={`rgba(${palette.accentRgb}, 0.85)`} />
-          <Text style={{ color: `rgba(${palette.accentRgb}, 0.88)`, fontSize: 11.5, fontWeight: '700' }}>
+          <Brain size={12} color={isAbnormalFinish ? '#fbbf24' : `rgba(${palette.accentRgb}, 0.85)`} />
+          <Text style={{ color: isAbnormalFinish ? '#fde68a' : `rgba(${palette.accentRgb}, 0.88)`, fontSize: 11.5, fontWeight: '700' }}>
             Thinking {isExpanded ? '▲' : '▼'}
+            {isAbnormalFinish ? ` · Cut: ${rawFinishCode}` : ''}
           </Text>
         </TouchableOpacity>
         {isExpanded && (
@@ -2217,9 +2481,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               nestedScrollEnabled
               showsVerticalScrollIndicator
               onContentSizeChange={() => {
-                inspectorScrollRefs.current[msg.id]?.scrollToEnd({ animated: true });
+                if (isStreaming) {
+                  inspectorScrollRefs.current[msg.id]?.scrollToEnd({ animated: false });
+                }
               }}
-              style={{ maxHeight: 220 }}
+              style={{ maxHeight: 220, flexGrow: 0 }}
               contentContainerStyle={{ padding: 10, gap: 10 }}
             >
               {hasPrompt && (
@@ -2235,8 +2501,26 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                   >
                     {'=====\nNekochat Backend\n====='}
                   </Text>
-                  <Text selectable style={{ color: 'rgba(226, 232, 240, 0.72)', fontSize: 11.5, lineHeight: 16 }}>
+                  <Text selectable={Platform.OS !== 'android'} style={{ color: 'rgba(226, 232, 240, 0.72)', fontSize: 11.5, lineHeight: 16 }}>
                     {cleanedPrompt}
+                  </Text>
+                </View>
+              )}
+              {Boolean(finishReasonLabel) && (
+                <View>
+                  <Text
+                    style={{
+                      color: isAbnormalFinish ? '#fbbf24' : 'rgba(148, 163, 184, 0.9)',
+                      fontSize: 11,
+                      fontWeight: '800',
+                      fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+                      marginBottom: 2,
+                    }}
+                  >
+                    {'=====\nProvider Finish\n====='}
+                  </Text>
+                  <Text style={{ color: isAbnormalFinish ? '#fde68a' : 'rgba(226, 232, 240, 0.78)', fontSize: 11.5, lineHeight: 16 }}>
+                    Finish Reason: {finishReasonLabel}
                   </Text>
                 </View>
               )}
@@ -2254,7 +2538,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                   {'=====\nAI Model thinking\n====='}
                 </Text>
                 <Text
-                  selectable
+                  selectable={Platform.OS !== 'android'}
                   style={{
                     color: 'rgba(203, 213, 225, 0.68)',
                     fontSize: 11.5,
@@ -2281,820 +2565,911 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         behavior="padding"
         keyboardVerticalOffset={0}
       >
-      {/* ── Background Wallpaper, Blur & Readability Scrim ── */}
-      <ChatBackgroundLayer
-        appearance={appearance}
-        fallbackUri={character.coverUrl || character.avatar}
-      />
+        {/* ── Background Wallpaper, Blur & Readability Scrim ── */}
+        <ChatBackgroundLayer
+          appearance={appearance}
+          fallbackUri={character.coverUrl || character.avatar}
+          isNovel={chatStyle === 'novel'}
+        />
 
-      {/* Top Header Bar — Adapts to active UI Theme Pack */}
-      <View
-        style={[
-          styles.header,
-          skin.id === 'ios' && {
-            backgroundColor: 'rgba(22, 22, 24, 0.84)',
-            borderBottomWidth: 0.5,
-            borderBottomColor: 'rgba(255, 255, 255, 0.14)',
-          },
-          skin.id === 'material' && {
-            backgroundColor: palette.bgSurfaceSubtle,
-            borderBottomWidth: 0,
-          },
-          skin.id === 'janitor' && {
-            borderBottomColor: `rgba(${palette.accentRgb}, 0.25)`,
-          },
-        ]}
-      >
-        <TouchableOpacity style={styles.iconBtn} onPress={onBack} accessibilityLabel="Back">
-          <ArrowLeft size={20} color={colors.textPrimary} />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.headerProfileTouchable}
-          onPress={() => setShowCharacterCardModal(true)}
-          activeOpacity={0.8}
-          accessibilityLabel="Open Character Profile Card"
+        {/* Top Header Bar — Adapts to active UI Theme Pack */}
+        <View
+          style={[
+            styles.header,
+            skin.id === 'ios' && {
+              backgroundColor: 'rgba(22, 22, 24, 0.84)',
+              borderBottomWidth: 0.5,
+              borderBottomColor: 'rgba(255, 255, 255, 0.14)',
+            },
+            skin.id === 'material' && {
+              backgroundColor: palette.bgSurfaceSubtle,
+              borderBottomWidth: 0,
+            },
+            skin.id === 'janitor' && {
+              borderBottomColor: `rgba(${palette.accentRgb}, 0.25)`,
+            },
+          ]}
         >
-          <Image source={{ uri: character.avatar }} style={styles.headerAvatar} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.charHeaderName} numberOfLines={1}>
-              {chatCharName}
-            </Text>
-            <Text style={styles.costBadge}>
-              {tokenPriceService.formatTokenCount(totalTokens)} tokens • {calculateCost(totalTokens, 'IDR')}
-            </Text>
-          </View>
-        </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn} onPress={onBack} accessibilityLabel="Back">
+            <ArrowLeft size={20} color={colors.textPrimary} />
+          </TouchableOpacity>
 
-        {/* 3-Dot Chat Control & Menu Button */}
-        <TouchableOpacity
-          style={styles.headerMoreBtn}
-          onPress={() => setShowHeaderMenu(prev => !prev)}
-          activeOpacity={0.8}
-          accessibilityLabel="Open Chat Menu"
-        >
-          <Animated.View
-            style={{
-              transform: [
-                {
-                  rotate: headerMenuAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ['0deg', '90deg'],
-                  }),
-                },
-                {
-                  scale: headerMenuAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [1, 0.92],
-                  }),
-                },
-              ],
-            }}
+          <TouchableOpacity
+            style={styles.headerProfileTouchable}
+            onPress={() => setShowCharacterCardModal(true)}
+            activeOpacity={0.8}
+            accessibilityLabel="Open Character Profile Card"
           >
-            <MoreHorizontal size={20} color={palette.accent} />
-          </Animated.View>
-        </TouchableOpacity>
-      </View>
+            <Image source={{ uri: character.avatar }} style={styles.headerAvatar} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.charHeaderName} numberOfLines={1}>
+                {chatCharName}
+              </Text>
+              <Text style={styles.costBadge}>
+                {tokenPriceService.formatTokenCount(totalTokens)} tokens • {calculateCost(totalTokens, 'IDR')}
+              </Text>
+            </View>
+          </TouchableOpacity>
 
-      {/* Bento-OLED Header Dropdown Menu */}
-      {showHeaderMenu && (
-        <TouchableOpacity
-          style={styles.headerMenuBackdrop}
-          activeOpacity={1}
-          onPress={() => setShowHeaderMenu(false)}
-        >
-          <Animated.View
-            style={[
-              styles.headerMenuCard,
-              getCardSurfaceStyle(palette, skin),
-              {
-                opacity: headerMenuAnim,
+          {/* 3-Dot Chat Control & Menu Button */}
+          <TouchableOpacity
+            style={styles.headerMoreBtn}
+            onPress={() => setShowHeaderMenu(prev => !prev)}
+            activeOpacity={0.8}
+            accessibilityLabel="Open Chat Menu"
+          >
+            <Animated.View
+              style={{
                 transform: [
                   {
-                    translateY: headerMenuAnim.interpolate({
+                    rotate: headerMenuAnim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [-10, 0],
+                      outputRange: ['0deg', '90deg'],
                     }),
                   },
                   {
                     scale: headerMenuAnim.interpolate({
                       inputRange: [0, 1],
-                      outputRange: [0.92, 1],
+                      outputRange: [1, 0.92],
                     }),
                   },
                 ],
-              },
-            ]}
-          >
-            {[
-              {
-                label: 'Settings',
-                Icon: Cpu,
-                onPress: () => {
-                  setShowHeaderMenu(false);
-                  setChatControlTab('model');
-                  setShowChatControlModal(true);
-                },
-              },
-              {
-                label: 'Chat Memory & Rules',
-                Icon: Brain,
-                onPress: () => {
-                  setShowHeaderMenu(false);
-                  setChatControlTab('memory');
-                  setShowChatControlModal(true);
-                },
-              },
-              {
-                label: 'Dynamic Cast',
-                Icon: Users,
-                onPress: () => handleOpenCastSheet(),
-              },
-              {
-                label: 'Customize',
-                Icon: Palette,
-                onPress: () => {
-                  setShowHeaderMenu(false);
-                  setChatControlTab('syntax');
-                  setSettingsSubView('main');
-                  setShowChatControlModal(true);
-                },
-              },
-              {
-                label: 'Saved Sessions',
-                Icon: Layers,
-                onPress: () => {
-                  setShowHeaderMenu(false);
-                  setShowSessionModal(true);
-                },
-              },
-              {
-                label: 'New Chat',
-                Icon: Plus,
-                onPress: () => {
-                  setShowHeaderMenu(false);
-                  handleStartNewSession();
-                },
-              },
-              {
-                label: 'All Chats',
-                Icon: ArrowLeft,
-                onPress: () => {
-                  setShowHeaderMenu(false);
-                  onBack();
-                },
-              },
-            ].map((item, idx) => (
-              <TouchableOpacity
-                key={item.label}
-                style={[styles.headerMenuItem, idx > 0 && styles.headerMenuItemBorder]}
-                onPress={item.onPress}
-                activeOpacity={0.75}
-              >
-                <item.Icon size={16} color={palette.accent} style={{ marginRight: 12 }} />
-                <Text style={styles.headerMenuItemText}>{item.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </Animated.View>
-        </TouchableOpacity>
-      )}
-
-      {/* Scenario & Alternate Greeting Sub-Header */}
-      {character.scenarios && character.scenarios.length > 0 && (
-        <View style={styles.subHeaderBar}>
-          <TouchableOpacity
-            style={styles.scenarioPill}
-            onPress={() => setShowScenarioModal(true)}
-          >
-            <Play size={12} color={palette.accent} style={{ marginRight: 5 }} />
-            <Text style={styles.scenarioPillText} numberOfLines={1}>
-              {currentScenario ? currentScenario.title : 'Select Scenario'}
-            </Text>
-            <ChevronDown size={14} color={palette.accent} style={{ marginLeft: 4 }} />
+              }}
+            >
+              <MoreHorizontal size={20} color={palette.accent} />
+            </Animated.View>
           </TouchableOpacity>
         </View>
-      )}
 
-      {/* Alternate Greetings Banner (When on opening turn only) */}
-      {messages.length === 1 && allGreetings.length > 1 && (
-        <View style={styles.greetingCyclerBar}>
-          <Text style={styles.greetingCyclerText}>
-            Greeting {greetingIndex + 1} of {allGreetings.length}
-          </Text>
-          <TouchableOpacity style={styles.greetingCycleBtn} onPress={handleCycleGreeting}>
-            <RotateCw size={12} color={palette.accent} style={{ marginRight: 4 }} />
-            <Text style={styles.greetingCycleBtnText}>Cycle Next</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Messages Scroll Area */}
-      <ScrollView
-        ref={scrollViewRef}
-        contentContainerStyle={styles.scrollContent}
-        scrollEventThrottle={32}
-        onScroll={e => {
-          const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-          const distFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
-          setShowScrollBottom(distFromBottom > 140);
-        }}
-        onContentSizeChange={() => {
-          if (!showScrollBottom) {
-            scrollViewRef.current?.scrollToEnd({ animated: true });
-          }
-        }}
-      >
-        {messages.length > visibleMessageCount && (
+        {/* Bento-OLED Header Dropdown Menu */}
+        {showHeaderMenu && (
           <TouchableOpacity
-            onPress={() => setVisibleMessageCount(c => c + 40)}
-            activeOpacity={0.8}
-            style={{
-              alignSelf: 'center',
-              marginVertical: 10,
-              paddingHorizontal: 14,
-              paddingVertical: 8,
-              borderRadius: 999,
-              borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.14)',
-              backgroundColor: 'rgba(15, 23, 42, 0.72)',
-            }}
+            style={styles.headerMenuBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowHeaderMenu(false)}
           >
-            <Text style={{ color: palette.accent, fontSize: 12, fontWeight: '700' }}>
-              Load earlier messages ({messages.length - visibleMessageCount} hidden)
-            </Text>
+            <Animated.View
+              style={[
+                styles.headerMenuCard,
+                getCardSurfaceStyle(palette, skin),
+                {
+                  opacity: headerMenuAnim,
+                  transform: [
+                    {
+                      translateY: headerMenuAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [-10, 0],
+                      }),
+                    },
+                    {
+                      scale: headerMenuAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.92, 1],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              {[
+                {
+                  label: 'Settings',
+                  Icon: Cpu,
+                  onPress: () => {
+                    setShowHeaderMenu(false);
+                    setChatControlTab('model');
+                    setShowChatControlModal(true);
+                  },
+                },
+                {
+                  label: 'Chat Memory & Rules',
+                  Icon: Brain,
+                  onPress: () => {
+                    setShowHeaderMenu(false);
+                    setChatControlTab('memory');
+                    setShowChatControlModal(true);
+                  },
+                },
+                {
+                  label: 'Dynamic Cast',
+                  Icon: Users,
+                  onPress: () => handleOpenCastSheet(),
+                },
+                {
+                  label: 'Customize',
+                  Icon: Palette,
+                  onPress: () => {
+                    setShowHeaderMenu(false);
+                    setChatControlTab('syntax');
+                    setSettingsSubView('main');
+                    setShowChatControlModal(true);
+                  },
+                },
+                {
+                  label: 'Saved Sessions',
+                  Icon: Layers,
+                  onPress: () => {
+                    setShowHeaderMenu(false);
+                    setShowSessionModal(true);
+                  },
+                },
+                {
+                  label: 'New Chat',
+                  Icon: Plus,
+                  onPress: () => {
+                    setShowHeaderMenu(false);
+                    handleStartNewSession();
+                  },
+                },
+                {
+                  label: 'All Chats',
+                  Icon: ArrowLeft,
+                  onPress: () => {
+                    setShowHeaderMenu(false);
+                    onBack();
+                  },
+                },
+              ].map((item, idx) => (
+                <TouchableOpacity
+                  key={item.label}
+                  style={[styles.headerMenuItem, idx > 0 && styles.headerMenuItemBorder]}
+                  onPress={item.onPress}
+                  activeOpacity={0.75}
+                >
+                  <item.Icon size={16} color={palette.accent} style={{ marginRight: 12 }} />
+                  <Text style={styles.headerMenuItemText}>{item.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </Animated.View>
           </TouchableOpacity>
         )}
+
+        {/* Scenario & Alternate Greeting Sub-Header */}
+        {character.scenarios && character.scenarios.length > 0 && (
+          <View style={styles.subHeaderBar}>
+            <TouchableOpacity
+              style={styles.scenarioPill}
+              onPress={() => setShowScenarioModal(true)}
+            >
+              <Play size={12} color={palette.accent} style={{ marginRight: 5 }} />
+              <Text style={styles.scenarioPillText} numberOfLines={1}>
+                {currentScenario ? currentScenario.title : 'Select Scenario'}
+              </Text>
+              <ChevronDown size={14} color={palette.accent} style={{ marginLeft: 4 }} />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Alternate Greetings Banner (When on opening turn only) */}
+        {messages.length === 1 && allGreetings.length > 1 && (
+          <View style={styles.greetingCyclerBar}>
+            <Text style={styles.greetingCyclerText}>
+              Greeting {greetingIndex + 1} of {allGreetings.length}
+            </Text>
+            <TouchableOpacity style={styles.greetingCycleBtn} onPress={handleCycleGreeting}>
+              <RotateCw size={12} color={palette.accent} style={{ marginRight: 4 }} />
+              <Text style={styles.greetingCycleBtnText}>Cycle Next</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Messages List (Virtualized FlatList + Memoized Rows) */}
         {(() => {
           const hiddenCount = Math.max(0, messages.length - visibleMessageCount);
           const visibleMessages = hiddenCount > 0 ? messages.slice(hiddenCount) : messages;
-          return visibleMessages.map((msg, localIdx) => {
+          const renderMessageRowItem = ({ item: msg, index: localIdx }: { item: ChatMessage; index: number }) => {
             const idx = hiddenCount + localIdx;
-          const isUser = msg.role === 'user';
-          const isSelected = selectedMessageId === msg.id;
-          const isEditing = editingMessageId === msg.id;
-          const isLastAssistant = !isUser && idx === messages.length - 1;
+            const isUser = msg.role === 'user';
+            const isSelected = selectedMessageId === msg.id;
+            const isEditing = editingMessageId === msg.id;
+            const isLastAssistant = !isUser && idx === messages.length - 1;
+            const isStreamingLast = isStreaming && isLastAssistant;
+            const localRevealWords = !isUser && localReveal && localReveal.msgId === msg.id ? localReveal.shownWords : 0;
+            const isInspectorExpanded = Boolean(expandedInspectorIds[msg.id]);
+            const isTtsSpeakingThis = ttsState.isSpeaking && ttsState.currentMessageId === msg.id;
+            const isCopiedThis = copiedId === msg.id;
+            const isOpeningGreeting = idx === 0 && messages.length === 1;
 
-          let isWaitingPlaceholder = false;
-          let liveThought = msg.thought || '';
-          const rawTrimmed = (msg.content || '').trim();
-          const visibleAfterThink = stripThinkTags(rawTrimmed);
+            const renderInner = () => {
 
-          if (isStreaming && isLastAssistant) {
-            const unclosedThink = rawTrimmed.match(/<think>([\s\S]*)$/i);
-            const closedThink = rawTrimmed.match(/<think>([\s\S]*?)<\/think>/i);
-            if (closedThink && closedThink[1]) {
-              liveThought = closedThink[1].trim();
-            } else if (unclosedThink && unclosedThink[1]) {
-              liveThought = unclosedThink[1].trim();
-            }
-            if (visibleAfterThink === '...' || visibleAfterThink === '') {
-              isWaitingPlaceholder = true;
-            }
-          }
+              let isWaitingPlaceholder = false;
+              let liveThought = msg.thought || '';
+              const rawTrimmed = (msg.content || '').trim();
+              const visibleAfterThink = stripThinkTags(rawTrimmed);
 
-          let displayContent = msg.content;
-          if (!isUser && revealState && revealState.msgId === msg.id && !isWaitingPlaceholder) {
-            const cleanFull = stripThinkTags(msg.content || '');
-            const words = cleanFull.match(/\S+\s*/g) || [];
-            if (words.length > 0 && revealState.shownWords < words.length) {
-              displayContent = words.slice(0, Math.max(1, revealState.shownWords)).join('');
-            }
-          }
+              if (isStreaming && isLastAssistant) {
+                const unclosedThink = rawTrimmed.match(/<think>([\s\S]*)$/i);
+                const closedThink = rawTrimmed.match(/<think>([\s\S]*?)<\/think>/i);
+                if (closedThink && closedThink[1]) {
+                  liveThought = closedThink[1].trim();
+                } else if (unclosedThink && unclosedThink[1]) {
+                  liveThought = unclosedThink[1].trim();
+                }
+                if (visibleAfterThink === '...' || visibleAfterThink === '') {
+                  isWaitingPlaceholder = true;
+                }
+              }
 
-          if (isEditing) {
-            return (
-              <View key={msg.id} style={styles.inlineEditCard}>
-                <Text style={styles.inlineEditTitle}>Edit Message</Text>
-                <TextInput
-                  style={styles.inlineEditTextInput}
-                  value={editText}
-                  onChangeText={setEditText}
-                  multiline
-                />
-                <View style={styles.inlineEditBtnRow}>
-                  <TouchableOpacity
-                    style={styles.inlineEditCancelBtn}
-                    onPress={() => setEditingMessageId(null)}
+              let displayContent = msg.content;
+              const isLocalAnimating = Boolean(!isUser && localReveal && localReveal.msgId === msg.id && !isWaitingPlaceholder);
+              if (isLocalAnimating && localReveal) {
+                const words = stripThinkTags(msg.content || '').match(/\S+\s*/g) || [];
+                if (words.length > 0 && localReveal.shownWords < words.length) {
+                  displayContent = words.slice(0, Math.max(1, localReveal.shownWords)).join('');
+                }
+              }
+
+              if (isEditing) {
+                return (
+                  <View key={msg.id} style={styles.inlineEditCard}>
+                    <Text style={styles.inlineEditTitle}>Edit Message</Text>
+                    <TextInput
+                      style={styles.inlineEditTextInput}
+                      value={editText}
+                      onChangeText={setEditText}
+                      multiline
+                    />
+                    <View style={styles.inlineEditBtnRow}>
+                      <TouchableOpacity
+                        style={styles.inlineEditCancelBtn}
+                        onPress={() => setEditingMessageId(null)}
+                      >
+                        <Text style={styles.inlineEditCancelText}>Cancel</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.inlineEditSaveBtn}
+                        onPress={() => handleSaveEdit(false)}
+                      >
+                        <Text style={styles.inlineEditSaveText}>Save</Text>
+                      </TouchableOpacity>
+                      {isUser && (
+                        <TouchableOpacity
+                          style={[styles.inlineEditSaveBtn, { backgroundColor: colors.lime }]}
+                          onPress={() => handleSaveEdit(true)}
+                        >
+                          <RotateCcw size={13} color="#000" style={{ marginRight: 4 }} />
+                          <Text style={[styles.inlineEditSaveText, { color: '#000' }]}>
+                            Save & Regenerate
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                );
+              }
+
+              const canHorizontalSwipe =
+                !isUser &&
+                !isStreaming &&
+                ((isLastAssistant && idx > 0) || (idx === 0 && messages.length === 1 && allGreetings.length > 1));
+
+              if (chatStyle === 'novel') {
+                const isSpeakingThis = ttsState.isSpeaking && ttsState.currentMessageId === msg.id;
+                return (
+                  <Animated.View
+                    key={msg.id}
+                    {...(canHorizontalSwipe ? replySwipeResponder.panHandlers : {})}
+                    style={canHorizontalSwipe ? { transform: [{ translateX: swipeSlideAnim }] } : undefined}
                   >
-                    <Text style={styles.inlineEditCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.inlineEditSaveBtn}
-                    onPress={() => handleSaveEdit(false)}
-                  >
-                    <Text style={styles.inlineEditSaveText}>Save</Text>
-                  </TouchableOpacity>
-                  {isUser && (
                     <TouchableOpacity
-                      style={[styles.inlineEditSaveBtn, { backgroundColor: colors.lime }]}
-                      onPress={() => handleSaveEdit(true)}
+                      style={[styles.novelRow, isSelected && styles.novelRowSelected]}
+                      onPress={() => setSelectedMessageId(isSelected ? null : msg.id)}
+                      activeOpacity={0.9}
                     >
-                      <RotateCcw size={13} color="#000" style={{ marginRight: 4 }} />
-                      <Text style={[styles.inlineEditSaveText, { color: '#000' }]}>
-                        Save & Regenerate
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-            );
-          }
-
-          if (chatStyle === 'novel') {
-            const isSpeakingThis = ttsState.isSpeaking && ttsState.currentMessageId === msg.id;
-            return (
-              <TouchableOpacity
-                key={msg.id}
-                style={[styles.novelRow, isSelected && styles.novelRowSelected]}
-                onPress={() => setSelectedMessageId(isSelected ? null : msg.id)}
-                activeOpacity={0.9}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    {(() => {
-                      const speakerAvatar = isUser
-                        ? (persona?.avatar || persona?.avatarUrl)
-                        : character.avatar;
-                      if (speakerAvatar) {
-                        return (
-                          <TouchableOpacity
-                            onPress={() => setLightboxImageUrl(speakerAvatar)}
-                            activeOpacity={0.85}
-                            accessibilityLabel="View profile photo"
-                          >
-                            <Image source={{ uri: speakerAvatar }} style={styles.novelAvatar} />
-                          </TouchableOpacity>
-                        );
-                      }
-                      return (
-                        <View style={styles.novelAvatarFallback}>
-                          <Text style={styles.novelAvatarFallbackText}>
-                            {(isUser ? persona.name : chatCharName).charAt(0).toUpperCase()}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          {(() => {
+                            const speakerAvatar = isUser
+                              ? (persona?.avatar || persona?.avatarUrl)
+                              : character.avatar;
+                            if (speakerAvatar) {
+                              return (
+                                <TouchableOpacity
+                                  onPress={() => setLightboxImageUrl(speakerAvatar)}
+                                  activeOpacity={0.85}
+                                  accessibilityLabel="View profile photo"
+                                >
+                                  <Image source={{ uri: speakerAvatar }} style={styles.novelAvatar} />
+                                </TouchableOpacity>
+                              );
+                            }
+                            return (
+                              <View style={styles.novelAvatarFallback}>
+                                <Text style={styles.novelAvatarFallbackText}>
+                                  {(isUser ? persona.name : chatCharName).charAt(0).toUpperCase()}
+                                </Text>
+                              </View>
+                            );
+                          })()}
+                          <Text style={[styles.novelSpeaker, { marginBottom: 0 }]}>
+                            {isUser ? persona.name : chatCharName}
                           </Text>
                         </View>
-                      );
-                    })()}
-                    <Text style={[styles.novelSpeaker, { marginBottom: 0 }]}>
-                      {isUser ? persona.name : chatCharName}
-                    </Text>
-                  </View>
-                  {!isUser && (
-                    <TouchableOpacity
-                      style={styles.miniVoiceBtn}
-                      onPress={() => ttsService.speak(msg.content, msg.id)}
-                    >
-                      {isSpeakingThis ? (
-                        <Square size={13} color={palette.accent} />
+                        {!isUser && (
+                          <TouchableOpacity
+                            style={styles.miniVoiceBtn}
+                            onPress={() => ttsService.speak(msg.content, msg.id)}
+                          >
+                            {isSpeakingThis ? (
+                              <Square size={13} color={palette.accent} />
+                            ) : (
+                              <Volume2 size={13} color="rgba(255, 255, 255, 0.4)" />
+                            )}
+                          </TouchableOpacity>
+                        )}
+                      </View>
+
+                      {!isUser && renderInspectorDrawer(msg, liveThought)}
+                      {isWaitingPlaceholder ? (
+                        <Text style={[styles.novelBotText, { color: 'rgba(226, 232, 240, 0.55)', fontStyle: 'italic' }]}>
+                          Writing...
+                        </Text>
                       ) : (
-                        <Volume2 size={13} color="rgba(255, 255, 255, 0.4)" />
+                        renderMessageContent(displayContent, isUser, true)
+                      )}
+
+                      {isLocalAnimating && (
+                        <TouchableOpacity
+                          style={[styles.bubbleActionBtn, { alignSelf: 'flex-start', marginTop: 6, backgroundColor: 'rgba(255,255,255,0.08)' }]}
+                          onPress={() => setLocalReveal(null)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[styles.bubbleActionText, { color: palette.accent }]}>
+                            Show all (Provider finished)
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+
+                      {isSpeakingThis && (
+                        <View style={styles.ttsPillActive}>
+                          <Volume2 size={11} color="#000" style={{ marginRight: 4 }} />
+                          <Text style={styles.ttsPillText}>
+                            Voice Playing {ttsState.totalChunks > 1 ? `(${ttsState.currentChunk}/${ttsState.totalChunks})` : ''}
+                          </Text>
+                        </View>
+                      )}
+
+                      {/* Inline Alternate Greeting Switcher (< 1 / N >) on opening turn */}
+                      {idx === 0 && messages.length === 1 && allGreetings.length > 1 && !isStreaming && (
+                        <View style={{ width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+                          <TouchableOpacity
+                            style={styles.bubbleActionBtn}
+                            onPress={() => handleStepGreeting(-1)}
+                            activeOpacity={0.8}
+                          >
+                            <ChevronLeft size={14} color={palette.accent} />
+                          </TouchableOpacity>
+                          <Text style={{ color: '#94a3b8', fontSize: 12, fontWeight: '600' }}>
+                            {greetingIndex + 1} / {allGreetings.length}
+                          </Text>
+                          <TouchableOpacity
+                            style={styles.bubbleActionBtn}
+                            onPress={() => handleStepGreeting(1)}
+                            activeOpacity={0.8}
+                          >
+                            <ChevronRight size={14} color={palette.accent} />
+                          </TouchableOpacity>
+                        </View>
+                      )}
+
+                      {/* Always-visible quick < 1 / N > Alternatives & Continue bar on the latest assistant reply */}
+                      {isLastAssistant && !isStreaming && !isSelected && idx > 0 && (
+                        <View style={{ width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+                          {(() => {
+                            const swipes = msg.swipes && msg.swipes.length > 0 ? msg.swipes : [msg.content];
+                            const curIdx = typeof msg.swipeIndex === 'number' ? msg.swipeIndex : swipes.length - 1;
+                            return (
+                              <>
+                                <TouchableOpacity
+                                  style={[styles.bubbleActionBtn, curIdx <= 0 && { opacity: 0.4 }]}
+                                  onPress={() => handleSwipeAlternative(-1)}
+                                  disabled={curIdx <= 0}
+                                  activeOpacity={0.8}
+                                >
+                                  <ChevronLeft size={14} color={palette.accent} />
+                                </TouchableOpacity>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                  <Text style={{ color: '#94a3b8', fontSize: 12, fontWeight: '600' }}>
+                                    {curIdx + 1} / {swipes.length}
+                                  </Text>
+                                  <TouchableOpacity
+                                    style={styles.bubbleActionBtn}
+                                    onPress={handleContinue}
+                                    activeOpacity={0.8}
+                                  >
+                                    <Play size={12} color={palette.accent} style={{ marginRight: 4 }} />
+                                    <Text style={styles.bubbleActionText}>Continue</Text>
+                                  </TouchableOpacity>
+                                </View>
+                                <TouchableOpacity
+                                  style={styles.bubbleActionBtn}
+                                  onPress={() => handleSwipeAlternative(1)}
+                                  activeOpacity={0.8}
+                                >
+                                  <ChevronRight size={14} color={palette.accent} />
+                                </TouchableOpacity>
+                              </>
+                            );
+                          })()}
+                        </View>
+                      )}
+
+                      {/* Action Bar on Tap */}
+                      {isSelected && (
+                        <View style={styles.bubbleActionRow}>
+                          <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleCopyMessage(msg)}>
+                            <Copy size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                            <Text style={styles.bubbleActionText}>
+                              {copiedId === msg.id ? 'Copied!' : 'Copy'}
+                            </Text>
+                          </TouchableOpacity>
+                          {Platform.OS !== 'web' && Boolean(activeConversationId) && (
+                            <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleBranchFromMessage(msg)}>
+                              <GitBranch size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                              <Text style={styles.bubbleActionText}>Branch</Text>
+                            </TouchableOpacity>
+                          )}
+                          {isUser ? (
+                            <>
+                              <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleStartEdit(msg)}>
+                                <Edit2 size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+                                <Text style={styles.bubbleActionText}>Edit</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleRegenerate(idx)}>
+                                <RotateCcw size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                                <Text style={styles.bubbleActionText}>Regenerate</Text>
+                              </TouchableOpacity>
+                            </>
+                          ) : (
+                            <>
+                              <TouchableOpacity
+                                style={styles.bubbleActionBtn}
+                                onPress={() => ttsService.speak(msg.content, msg.id)}
+                              >
+                                {isSpeakingThis ? (
+                                  <>
+                                    <Square size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                                    <Text style={[styles.bubbleActionText, { color: palette.accent }]}>Stop Voice</Text>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Volume2 size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                                    <Text style={styles.bubbleActionText}>Voice</Text>
+                                  </>
+                                )}
+                              </TouchableOpacity>
+                              <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleRegenerate(idx)}>
+                                <RotateCcw size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+                                <Text style={styles.bubbleActionText}>Regenerate</Text>
+                              </TouchableOpacity>
+                              {isLastAssistant && (
+                                <TouchableOpacity style={styles.bubbleActionBtn} onPress={handleContinue}>
+                                  <Play size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                                  <Text style={styles.bubbleActionText}>Continue</Text>
+                                </TouchableOpacity>
+                              )}
+                            </>
+                          )}
+                          <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handlePinMessageToMemory(msg)}>
+                            <Bookmark size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                            <Text style={[styles.bubbleActionText, { color: palette.accent }]}>Pin</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleDeleteMessage(msg.id)}>
+                            <Trash2 size={13} color="#FF6B6B" style={{ marginRight: 4 }} />
+                            <Text style={[styles.bubbleActionText, { color: '#FF6B6B' }]}>Delete</Text>
+                          </TouchableOpacity>
+                        </View>
                       )}
                     </TouchableOpacity>
+                  </Animated.View>
+                );
+              }
+
+              const isSpeakingThis = ttsState.isSpeaking && ttsState.currentMessageId === msg.id;
+
+              return (
+                <Animated.View
+                  key={msg.id}
+                  {...(canHorizontalSwipe ? replySwipeResponder.panHandlers : {})}
+                  style={[
+                    styles.bubbleRow,
+                    isUser ? styles.bubbleRowUser : styles.bubbleRowBot,
+                    canHorizontalSwipe ? { transform: [{ translateX: swipeSlideAnim }] } : undefined,
+                  ]}
+                >
+                  {!isUser && (
+                    <TouchableOpacity
+                      onPress={() => character.avatar && setLightboxImageUrl(character.avatar)}
+                      activeOpacity={0.85}
+                      accessibilityLabel="View character photo"
+                    >
+                      <Image source={{ uri: character.avatar }} style={styles.bubbleAvatar} />
+                    </TouchableOpacity>
                   )}
-                </View>
-
-                {!isUser && renderInspectorDrawer(msg, liveThought)}
-                {isWaitingPlaceholder ? (
-                  <Text style={[styles.novelBotText, { color: 'rgba(226, 232, 240, 0.55)', fontStyle: 'italic' }]}>
-                    Writing...
-                  </Text>
-                ) : (
-                  renderMessageContent(displayContent, isUser, true)
-                )}
-
-                {isSpeakingThis && (
-                  <View style={styles.ttsPillActive}>
-                    <Volume2 size={11} color="#000" style={{ marginRight: 4 }} />
-                    <Text style={styles.ttsPillText}>
-                      Voice Playing {ttsState.totalChunks > 1 ? `(${ttsState.currentChunk}/${ttsState.totalChunks})` : ''}
-                    </Text>
-                  </View>
-                )}
-
-                {/* Inline Alternate Greeting Switcher (< 1 / N >) on opening turn */}
-                {idx === 0 && messages.length === 1 && allGreetings.length > 1 && !isStreaming && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
+                  <View style={{ maxWidth: '82%' }}>
                     <TouchableOpacity
-                      style={styles.bubbleActionBtn}
-                      onPress={() => handleStepGreeting(-1)}
-                      activeOpacity={0.8}
+                      style={[
+                        styles.bubbleContainer,
+                        isUser ? styles.bubbleUser : styles.bubbleBot,
+                        getBubbleSurfaceStyle(palette, skin, isUser),
+                        isSelected && styles.bubbleSelected,
+                      ]}
+                      onPress={() => setSelectedMessageId(isSelected ? null : msg.id)}
+                      activeOpacity={0.9}
                     >
-                      <ChevronLeft size={13} color={palette.accent} />
-                    </TouchableOpacity>
-                    <Text style={{ color: '#94a3b8', fontSize: 11.5, fontWeight: '600' }}>
-                      {greetingIndex + 1} / {allGreetings.length}
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.bubbleActionBtn}
-                      onPress={() => handleStepGreeting(1)}
-                      activeOpacity={0.8}
-                    >
-                      <ChevronRight size={13} color={palette.accent} />
-                    </TouchableOpacity>
-                  </View>
-                )}
+                      {!isUser && renderInspectorDrawer(msg, liveThought)}
+                      {isWaitingPlaceholder ? (
+                        <Text style={[styles.bubbleBotText, { color: 'rgba(226, 232, 240, 0.55)', fontStyle: 'italic' }]}>
+                          Writing...
+                        </Text>
+                      ) : (
+                        renderMessageContent(displayContent, isUser, false)
+                      )}
 
-                {/* Always-visible quick < 1 / N > Alternatives & Continue bar on the latest assistant reply */}
-                {isLastAssistant && !isStreaming && !isSelected && idx > 0 && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
-                    {(() => {
-                      const swipes = msg.swipes && msg.swipes.length > 0 ? msg.swipes : [msg.content];
-                      const curIdx = typeof msg.swipeIndex === 'number' ? msg.swipeIndex : swipes.length - 1;
-                      return (
-                        <>
-                          <TouchableOpacity
-                            style={[styles.bubbleActionBtn, curIdx <= 0 && { opacity: 0.4 }]}
-                            onPress={() => handleSwipeAlternative(-1)}
-                            disabled={curIdx <= 0}
-                            activeOpacity={0.8}
-                          >
-                            <ChevronLeft size={13} color={palette.accent} />
-                          </TouchableOpacity>
-                          <Text style={{ color: '#94a3b8', fontSize: 11.5, fontWeight: '600' }}>
-                            {curIdx + 1} / {swipes.length}
+                      {isLocalAnimating && (
+                        <TouchableOpacity
+                          style={[styles.bubbleActionBtn, { alignSelf: 'flex-start', marginTop: 6, backgroundColor: 'rgba(255,255,255,0.08)' }]}
+                          onPress={() => setLocalReveal(null)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[styles.bubbleActionText, { color: palette.accent }]}>
+                            Show all (Provider finished)
                           </Text>
-                          <TouchableOpacity
-                            style={styles.bubbleActionBtn}
-                            onPress={() => handleSwipeAlternative(1)}
-                            activeOpacity={0.8}
-                          >
-                            <ChevronRight size={13} color={palette.accent} />
-                          </TouchableOpacity>
-                        </>
-                      );
-                    })()}
-                    <TouchableOpacity
-                      style={styles.bubbleActionBtn}
-                      onPress={handleContinue}
-                      activeOpacity={0.8}
-                    >
-                      <Play size={12} color={palette.accent} style={{ marginRight: 4 }} />
-                      <Text style={styles.bubbleActionText}>Continue</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
+                        </TouchableOpacity>
+                      )}
 
-                {/* Action Bar on Tap */}
-                {isSelected && (
-                  <View style={styles.bubbleActionRow}>
-                    <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleCopyMessage(msg)}>
-                      <Copy size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                      <Text style={styles.bubbleActionText}>
-                        {copiedId === msg.id ? 'Copied!' : 'Copy'}
-                      </Text>
+                      {!isUser && (
+                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 4 }}>
+                          <TouchableOpacity
+                            style={styles.miniVoiceBtn}
+                            onPress={() => ttsService.speak(msg.content, msg.id)}
+                          >
+                            {isSpeakingThis ? (
+                              <Square size={12} color={palette.accent} />
+                            ) : (
+                              <Volume2 size={12} color="rgba(255, 255, 255, 0.35)" />
+                            )}
+                          </TouchableOpacity>
+                        </View>
+                      )}
                     </TouchableOpacity>
-                    {Platform.OS !== 'web' && Boolean(activeConversationId) && (
-                      <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleBranchFromMessage(msg)}>
-                        <GitBranch size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                        <Text style={styles.bubbleActionText}>Branch</Text>
-                      </TouchableOpacity>
+
+                    {isSpeakingThis && (
+                      <View style={styles.ttsPillActive}>
+                        <Volume2 size={11} color="#000" style={{ marginRight: 4 }} />
+                        <Text style={styles.ttsPillText}>
+                          Voice Playing {ttsState.totalChunks > 1 ? `(${ttsState.currentChunk}/${ttsState.totalChunks})` : ''}
+                        </Text>
+                      </View>
                     )}
-                    {isUser ? (
-                      <>
-                        <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleStartEdit(msg)}>
-                          <Edit2 size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
-                          <Text style={styles.bubbleActionText}>Edit</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleRegenerate(idx)}>
-                          <RotateCcw size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                          <Text style={styles.bubbleActionText}>Regenerate</Text>
-                        </TouchableOpacity>
-                      </>
-                    ) : (
-                      <>
+
+                    {/* Inline Alternate Greeting Switcher (< 1 / N >) on opening bubble */}
+                    {idx === 0 && messages.length === 1 && allGreetings.length > 1 && !isStreaming && (
+                      <View style={{ width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
                         <TouchableOpacity
                           style={styles.bubbleActionBtn}
-                          onPress={() => ttsService.speak(msg.content, msg.id)}
+                          onPress={() => handleStepGreeting(-1)}
+                          activeOpacity={0.8}
                         >
-                          {isSpeakingThis ? (
-                            <>
-                              <Square size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                              <Text style={[styles.bubbleActionText, { color: palette.accent }]}>Stop Voice</Text>
-                            </>
-                          ) : (
-                            <>
-                              <Volume2 size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                              <Text style={styles.bubbleActionText}>Voice</Text>
-                            </>
-                          )}
+                          <ChevronLeft size={14} color={palette.accent} />
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleRegenerate(idx)}>
-                          <RotateCcw size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
-                          <Text style={styles.bubbleActionText}>Regenerate</Text>
+                        <Text style={{ color: '#94a3b8', fontSize: 12, fontWeight: '600' }}>
+                          {greetingIndex + 1} / {allGreetings.length}
+                        </Text>
+                        <TouchableOpacity
+                          style={styles.bubbleActionBtn}
+                          onPress={() => handleStepGreeting(1)}
+                          activeOpacity={0.8}
+                        >
+                          <ChevronRight size={14} color={palette.accent} />
                         </TouchableOpacity>
-                        {isLastAssistant && (
-                          <TouchableOpacity style={styles.bubbleActionBtn} onPress={handleContinue}>
-                            <Play size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                            <Text style={styles.bubbleActionText}>Continue</Text>
+                      </View>
+                    )}
+
+                    {/* Always-visible quick < 1 / N > Alternatives & Continue bar on the latest assistant bubble */}
+                    {isLastAssistant && !isStreaming && !isSelected && idx > 0 && (
+                      <View style={{ width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
+                        {(() => {
+                          const swipes = msg.swipes && msg.swipes.length > 0 ? msg.swipes : [msg.content];
+                          const curIdx = typeof msg.swipeIndex === 'number' ? msg.swipeIndex : swipes.length - 1;
+                          return (
+                            <>
+                              <TouchableOpacity
+                                style={[styles.bubbleActionBtn, curIdx <= 0 && { opacity: 0.4 }]}
+                                onPress={() => handleSwipeAlternative(-1)}
+                                disabled={curIdx <= 0}
+                                activeOpacity={0.8}
+                              >
+                                <ChevronLeft size={14} color={palette.accent} />
+                              </TouchableOpacity>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                <Text style={{ color: '#94a3b8', fontSize: 12, fontWeight: '600' }}>
+                                  {curIdx + 1} / {swipes.length}
+                                </Text>
+                                <TouchableOpacity
+                                  style={styles.bubbleActionBtn}
+                                  onPress={handleContinue}
+                                  activeOpacity={0.8}
+                                >
+                                  <Play size={12} color={palette.accent} style={{ marginRight: 4 }} />
+                                  <Text style={styles.bubbleActionText}>Continue</Text>
+                                </TouchableOpacity>
+                              </View>
+                              <TouchableOpacity
+                                style={styles.bubbleActionBtn}
+                                onPress={() => handleSwipeAlternative(1)}
+                                activeOpacity={0.8}
+                              >
+                                <ChevronRight size={14} color={palette.accent} />
+                              </TouchableOpacity>
+                            </>
+                          );
+                        })()}
+                      </View>
+                    )}
+
+                    {/* Action Bar on Tap */}
+                    {isSelected && (
+                      <View style={[styles.bubbleActionRow, isUser ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
+                        <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleCopyMessage(msg)}>
+                          <Copy size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                          <Text style={styles.bubbleActionText}>
+                            {copiedId === msg.id ? 'Copied!' : 'Copy'}
+                          </Text>
+                        </TouchableOpacity>
+                        {Platform.OS !== 'web' && Boolean(activeConversationId) && (
+                          <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleBranchFromMessage(msg)}>
+                            <GitBranch size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                            <Text style={styles.bubbleActionText}>Branch</Text>
                           </TouchableOpacity>
                         )}
-                      </>
+                        {isUser ? (
+                          <>
+                            <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleStartEdit(msg)}>
+                              <Edit2 size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+                              <Text style={styles.bubbleActionText}>Edit</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleRegenerate(idx)}>
+                              <RotateCcw size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                              <Text style={styles.bubbleActionText}>Regenerate</Text>
+                            </TouchableOpacity>
+                          </>
+                        ) : (
+                          <>
+                            <TouchableOpacity
+                              style={styles.bubbleActionBtn}
+                              onPress={() => ttsService.speak(msg.content, msg.id)}
+                            >
+                              {isSpeakingThis ? (
+                                <>
+                                  <Square size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                                  <Text style={[styles.bubbleActionText, { color: palette.accent }]}>Stop Voice</Text>
+                                </>
+                              ) : (
+                                <>
+                                  <Volume2 size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                                  <Text style={styles.bubbleActionText}>Voice</Text>
+                                </>
+                              )}
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleRegenerate(idx)}>
+                              <RotateCcw size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+                              <Text style={styles.bubbleActionText}>Regenerate</Text>
+                            </TouchableOpacity>
+                            {isLastAssistant && (
+                              <TouchableOpacity style={styles.bubbleActionBtn} onPress={handleContinue}>
+                                <Play size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                                <Text style={styles.bubbleActionText}>Continue</Text>
+                              </TouchableOpacity>
+                            )}
+                          </>
+                        )}
+                        <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handlePinMessageToMemory(msg)}>
+                          <Bookmark size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                          <Text style={[styles.bubbleActionText, { color: palette.accent }]}>Pin</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleDeleteMessage(msg.id)}>
+                          <Trash2 size={13} color="#FF6B6B" style={{ marginRight: 4 }} />
+                          <Text style={[styles.bubbleActionText, { color: '#FF6B6B' }]}>Delete</Text>
+                        </TouchableOpacity>
+                      </View>
                     )}
-                    <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handlePinMessageToMemory(msg)}>
-                      <Bookmark size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                      <Text style={[styles.bubbleActionText, { color: palette.accent }]}>Pin</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleDeleteMessage(msg.id)}>
-                      <Trash2 size={13} color="#FF6B6B" style={{ marginRight: 4 }} />
-                      <Text style={[styles.bubbleActionText, { color: '#FF6B6B' }]}>Delete</Text>
-                    </TouchableOpacity>
                   </View>
-                )}
-              </TouchableOpacity>
-            );
-          }
+                </Animated.View>
+              );
+            };
 
-          const isSpeakingThis = ttsState.isSpeaking && ttsState.currentMessageId === msg.id;
+            return (
+              <MemoizedMessageRow
+                msg={msg}
+                isSelected={isSelected}
+                isEditing={isEditing}
+                editingText={isEditing ? editText : ''}
+                isLastAssistant={isLastAssistant}
+                isStreamingLast={isStreamingLast}
+                localRevealWords={localRevealWords}
+                isInspectorExpanded={isInspectorExpanded}
+                isTtsSpeakingThis={isTtsSpeakingThis}
+                isCopiedThis={isCopiedThis}
+                chatStyle={chatStyle}
+                chatFontSize={chatFontSize}
+                chatFontFamily={chatFontFamily}
+                enableWallpaper={appearance.enableWallpaper}
+                accentColor={palette.accent}
+                isOpeningGreeting={isOpeningGreeting}
+                greetingsCount={isOpeningGreeting ? allGreetings.length : 0}
+                render={renderInner}
+              />
+            );
+          };
 
           return (
-            <View
-              key={msg.id}
-              style={[styles.bubbleRow, isUser ? styles.bubbleRowUser : styles.bubbleRowBot]}
-            >
-              {!isUser && (
-                <TouchableOpacity
-                  onPress={() => character.avatar && setLightboxImageUrl(character.avatar)}
-                  activeOpacity={0.85}
-                  accessibilityLabel="View character photo"
-                >
-                  <Image source={{ uri: character.avatar }} style={styles.bubbleAvatar} />
-                </TouchableOpacity>
-              )}
-              <View style={{ maxWidth: '82%' }}>
-                <TouchableOpacity
-                  style={[
-                    styles.bubbleContainer,
-                    isUser ? styles.bubbleUser : styles.bubbleBot,
-                    getBubbleSurfaceStyle(palette, skin, isUser),
-                    isSelected && styles.bubbleSelected,
-                  ]}
-                  onPress={() => setSelectedMessageId(isSelected ? null : msg.id)}
-                  activeOpacity={0.9}
-                >
-                  {!isUser && renderInspectorDrawer(msg, liveThought)}
-                {isWaitingPlaceholder ? (
-                    <Text style={[styles.bubbleBotText, { color: 'rgba(226, 232, 240, 0.55)', fontStyle: 'italic' }]}>
-                      Writing...
+            <FlatList
+              ref={scrollViewRef}
+              data={visibleMessages}
+              keyExtractor={item => item.id}
+              renderItem={renderMessageRowItem}
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.scrollContent}
+              initialNumToRender={16}
+              maxToRenderPerBatch={10}
+              windowSize={7}
+              removeClippedSubviews={Platform.OS === 'android'}
+              scrollEventThrottle={32}
+              onScroll={e => {
+                const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+                const distFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+                const nextShow = distFromBottom > 140;
+                setShowScrollBottom(prev => (prev === nextShow ? prev : nextShow));
+              }}
+              onContentSizeChange={() => {
+                if (!showScrollBottom) {
+                  scrollViewRef.current?.scrollToEnd({ animated: true });
+                }
+              }}
+              ListHeaderComponent={
+                messages.length > visibleMessageCount ? (
+                  <TouchableOpacity
+                    onPress={() => setVisibleMessageCount(c => c + 40)}
+                    activeOpacity={0.8}
+                    style={{
+                      alignSelf: 'center',
+                      marginVertical: 10,
+                      paddingHorizontal: 14,
+                      paddingVertical: 8,
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: 'rgba(255,255,255,0.14)',
+                      backgroundColor: 'rgba(15, 23, 42, 0.72)',
+                    }}
+                  >
+                    <Text style={{ color: palette.accent, fontSize: 12, fontWeight: '700' }}>
+                      Load earlier messages ({messages.length - visibleMessageCount} hidden)
                     </Text>
-                  ) : (
-                    renderMessageContent(displayContent, isUser, false)
-                  )}
-
-                  {!isUser && (
-                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 4 }}>
-                      <TouchableOpacity
-                        style={styles.miniVoiceBtn}
-                        onPress={() => ttsService.speak(msg.content, msg.id)}
-                      >
-                        {isSpeakingThis ? (
-                          <Square size={12} color={palette.accent} />
-                        ) : (
-                          <Volume2 size={12} color="rgba(255, 255, 255, 0.35)" />
-                        )}
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </TouchableOpacity>
-
-                {isSpeakingThis && (
-                  <View style={styles.ttsPillActive}>
-                    <Volume2 size={11} color="#000" style={{ marginRight: 4 }} />
-                    <Text style={styles.ttsPillText}>
-                      Voice Playing {ttsState.totalChunks > 1 ? `(${ttsState.currentChunk}/${ttsState.totalChunks})` : ''}
-                    </Text>
+                  </TouchableOpacity>
+                ) : undefined
+              }
+              ListFooterComponent={
+                isStreaming && !fidgetOpen ? (
+                  <View style={{ padding: 14, alignItems: 'center' }}>
+                    <NekoPulseLoader size={30} />
                   </View>
-                )}
-
-                {/* Inline Alternate Greeting Switcher (< 1 / N >) on opening bubble */}
-                {idx === 0 && messages.length === 1 && allGreetings.length > 1 && !isStreaming && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, alignSelf: 'flex-start' }}>
-                    <TouchableOpacity
-                      style={styles.bubbleActionBtn}
-                      onPress={() => handleStepGreeting(-1)}
-                      activeOpacity={0.8}
-                    >
-                      <ChevronLeft size={13} color={palette.accent} />
-                    </TouchableOpacity>
-                    <Text style={{ color: '#94a3b8', fontSize: 11.5, fontWeight: '600' }}>
-                      {greetingIndex + 1} / {allGreetings.length}
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.bubbleActionBtn}
-                      onPress={() => handleStepGreeting(1)}
-                      activeOpacity={0.8}
-                    >
-                      <ChevronRight size={13} color={palette.accent} />
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                {/* Always-visible quick < 1 / N > Alternatives & Continue bar on the latest assistant bubble */}
-                {isLastAssistant && !isStreaming && !isSelected && idx > 0 && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, alignSelf: 'flex-start' }}>
-                    {(() => {
-                      const swipes = msg.swipes && msg.swipes.length > 0 ? msg.swipes : [msg.content];
-                      const curIdx = typeof msg.swipeIndex === 'number' ? msg.swipeIndex : swipes.length - 1;
-                      return (
-                        <>
-                          <TouchableOpacity
-                            style={[styles.bubbleActionBtn, curIdx <= 0 && { opacity: 0.4 }]}
-                            onPress={() => handleSwipeAlternative(-1)}
-                            disabled={curIdx <= 0}
-                            activeOpacity={0.8}
-                          >
-                            <ChevronLeft size={13} color={palette.accent} />
-                          </TouchableOpacity>
-                          <Text style={{ color: '#94a3b8', fontSize: 11.5, fontWeight: '600' }}>
-                            {curIdx + 1} / {swipes.length}
-                          </Text>
-                          <TouchableOpacity
-                            style={styles.bubbleActionBtn}
-                            onPress={() => handleSwipeAlternative(1)}
-                            activeOpacity={0.8}
-                          >
-                            <ChevronRight size={13} color={palette.accent} />
-                          </TouchableOpacity>
-                        </>
-                      );
-                    })()}
-                    <TouchableOpacity
-                      style={styles.bubbleActionBtn}
-                      onPress={handleContinue}
-                      activeOpacity={0.8}
-                    >
-                      <Play size={12} color={palette.accent} style={{ marginRight: 4 }} />
-                      <Text style={styles.bubbleActionText}>Continue</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-
-                {/* Action Bar on Tap */}
-                {isSelected && (
-                  <View style={[styles.bubbleActionRow, isUser ? { alignSelf: 'flex-end' } : { alignSelf: 'flex-start' }]}>
-                    <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleCopyMessage(msg)}>
-                      <Copy size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                      <Text style={styles.bubbleActionText}>
-                        {copiedId === msg.id ? 'Copied!' : 'Copy'}
-                      </Text>
-                    </TouchableOpacity>
-                    {Platform.OS !== 'web' && Boolean(activeConversationId) && (
-                      <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleBranchFromMessage(msg)}>
-                        <GitBranch size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                        <Text style={styles.bubbleActionText}>Branch</Text>
-                      </TouchableOpacity>
-                    )}
-                    {isUser ? (
-                      <>
-                        <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleStartEdit(msg)}>
-                          <Edit2 size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
-                          <Text style={styles.bubbleActionText}>Edit</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleRegenerate(idx)}>
-                          <RotateCcw size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                          <Text style={styles.bubbleActionText}>Regenerate</Text>
-                        </TouchableOpacity>
-                      </>
-                    ) : (
-                      <>
-                        <TouchableOpacity
-                          style={styles.bubbleActionBtn}
-                          onPress={() => ttsService.speak(msg.content, msg.id)}
-                        >
-                          {isSpeakingThis ? (
-                            <>
-                              <Square size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                              <Text style={[styles.bubbleActionText, { color: palette.accent }]}>Stop Voice</Text>
-                            </>
-                          ) : (
-                            <>
-                              <Volume2 size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                              <Text style={styles.bubbleActionText}>Voice</Text>
-                            </>
-                          )}
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleRegenerate(idx)}>
-                          <RotateCcw size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
-                          <Text style={styles.bubbleActionText}>Regenerate</Text>
-                        </TouchableOpacity>
-                        {isLastAssistant && (
-                          <TouchableOpacity style={styles.bubbleActionBtn} onPress={handleContinue}>
-                            <Play size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                            <Text style={styles.bubbleActionText}>Continue</Text>
-                          </TouchableOpacity>
-                        )}
-                      </>
-                    )}
-                    <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handlePinMessageToMemory(msg)}>
-                      <Bookmark size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                      <Text style={[styles.bubbleActionText, { color: palette.accent }]}>Pin</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.bubbleActionBtn} onPress={() => handleDeleteMessage(msg.id)}>
-                      <Trash2 size={13} color="#FF6B6B" style={{ marginRight: 4 }} />
-                      <Text style={[styles.bubbleActionText, { color: '#FF6B6B' }]}>Delete</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-            </View>
+                ) : undefined
+              }
+            />
           );
-          });
         })()}
 
-        {isStreaming && !fidgetOpen && (
-          <View style={{ padding: 14, alignItems: 'center' }}>
-            <NekoPulseLoader size={30} />
+        {/* Animated Quick Scroll-to-Bottom Button */}
+        <Animated.View
+          pointerEvents={showScrollBottom ? 'auto' : 'none'}
+          style={[
+            styles.scrollBottomFabWrap,
+            {
+              opacity: scrollBottomAnim,
+              transform: [
+                {
+                  scale: scrollBottomAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.8, 1],
+                  }),
+                },
+                {
+                  translateY: scrollBottomAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [12, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <TouchableOpacity
+            style={[
+              styles.scrollBottomFab,
+              {
+                backgroundColor: palette.bgSurface,
+                borderColor: `rgba(${palette.accentRgb}, 0.45)`,
+              },
+            ]}
+            onPress={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+            activeOpacity={0.85}
+            accessibilityLabel="Scroll to latest message"
+          >
+            <ChevronDown size={18} color={palette.accent} />
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* Animated Refining / Write-for-Me Indicator */}
+        {isRefining && (
+          <View
+            style={[
+              styles.refiningBanner,
+              {
+                backgroundColor: palette.bgSurface,
+                borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+              },
+            ]}
+          >
+            <NekoPulseLoader
+              size={24}
+              label={refineMode === 'write' ? 'Writing roleplay draft for you...' : 'Polishing your draft...'}
+            />
           </View>
         )}
-      </ScrollView>
 
-      {/* Animated Quick Scroll-to-Bottom Button */}
-      <Animated.View
-        pointerEvents={showScrollBottom ? 'auto' : 'none'}
-        style={[
-          styles.scrollBottomFabWrap,
-          {
-            opacity: scrollBottomAnim,
-            transform: [
-              {
-                scale: scrollBottomAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0.8, 1],
-                }),
-              },
-              {
-                translateY: scrollBottomAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [12, 0],
-                }),
-              },
-            ],
-          },
-        ]}
-      >
-        <TouchableOpacity
-          style={[
-            styles.scrollBottomFab,
-            {
-              backgroundColor: palette.bgSurface,
-              borderColor: `rgba(${palette.accentRgb}, 0.45)`,
-            },
-          ]}
-          onPress={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
-          activeOpacity={0.85}
-          accessibilityLabel="Scroll to latest message"
-        >
-          <ChevronDown size={18} color={palette.accent} />
-        </TouchableOpacity>
-      </Animated.View>
+        {/* Refine / AI Writing Coach Preview Card */}
+        {refinePreview && (
+          <View style={[styles.refineCard, { borderColor: `rgba(${palette.accentRgb}, 0.4)` }]}>
+            <View style={styles.refineHeader}>
+              <Sparkles size={14} color={palette.accent} style={{ marginRight: 6 }} />
+              <Text style={[styles.refineTitle, { color: palette.accent }]}>
+                {refineMode === 'write' ? 'Written by AI Coach' : 'Polished by AI Coach'}
+              </Text>
+            </View>
+            <Text style={styles.refineBody}>{`"${refinePreview}"`}</Text>
+            <View style={styles.refineActionRow}>
+              <TouchableOpacity
+                style={[styles.refineActionUse, { backgroundColor: palette.accent }]}
+                onPress={() => {
+                  setInputText(refinePreview);
+                  setRefinePreview(null);
+                }}
+              >
+                <Check size={14} color="#000" style={{ marginRight: 4 }} />
+                <Text style={styles.refineActionUseText}>Use this</Text>
+              </TouchableOpacity>
 
-      {/* Animated Refining / Write-for-Me Indicator */}
-      {isRefining && (
-        <View
-          style={[
-            styles.refiningBanner,
-            {
-              backgroundColor: palette.bgSurface,
-              borderColor: `rgba(${palette.accentRgb}, 0.35)`,
-            },
-          ]}
-        >
-          <NekoPulseLoader
-            size={24}
-            label={refineMode === 'write' ? 'Writing roleplay draft for you...' : 'Polishing your draft...'}
-          />
-        </View>
-      )}
-
-      {/* Refine / AI Writing Coach Preview Card */}
-      {refinePreview && (
-        <View style={[styles.refineCard, { borderColor: `rgba(${palette.accentRgb}, 0.4)` }]}>
-          <View style={styles.refineHeader}>
-            <Sparkles size={14} color={palette.accent} style={{ marginRight: 6 }} />
-            <Text style={[styles.refineTitle, { color: palette.accent }]}>
-              {refineMode === 'write' ? 'Written by AI Coach' : 'Polished by AI Coach'}
-            </Text>
+              <TouchableOpacity style={styles.refineActionDiscard} onPress={() => setRefinePreview(null)}>
+                <X size={14} color={colors.textSecondary} style={{ marginRight: 4 }} />
+                <Text style={styles.refineActionDiscardText}>Discard</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-          <Text style={styles.refineBody}>{`"${refinePreview}"`}</Text>
-          <View style={styles.refineActionRow}>
-            <TouchableOpacity
-              style={[styles.refineActionUse, { backgroundColor: palette.accent }]}
-              onPress={() => {
-                setInputText(refinePreview);
-                setRefinePreview(null);
-              }}
-            >
-              <Check size={14} color="#000" style={{ marginRight: 4 }} />
-              <Text style={styles.refineActionUseText}>Use this</Text>
-            </TouchableOpacity>
+        )}
 
-            <TouchableOpacity style={styles.refineActionDiscard} onPress={() => setRefinePreview(null)}>
-              <X size={14} color={colors.textSecondary} style={{ marginRight: 4 }} />
-              <Text style={styles.refineActionDiscardText}>Discard</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* Bottom Composer Area */}
+        {/* Bottom Composer Area */}
         {fidgetOpen && (() => {
           const lastMsg = messages[messages.length - 1];
           const rawLast = (lastMsg?.content || '').trim();
@@ -3104,7 +3479,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             lastMsg?.role === 'assistant' &&
             (lastTrimmed === '...' || lastTrimmed === '');
           const isWaitingNow = isPlaceholderActive || isContinuingWait;
-          const isTypingNow = !isWaitingNow && (isStreaming || Boolean(revealState));
+          const isTypingNow = !isWaitingNow && isStreaming;
 
           let liveThought = lastMsg?.thought || '';
           const unclosedThink = rawLast.match(/<(?:think|thought|reasoning)>([\s\S]*)$/i);
@@ -3290,9 +3665,9 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         ? 'Suggested from chat • Tap to add'
                         : castMembers.some(m => !m.isPrimary)
                           ? castMembers
-                              .filter(m => !m.isPrimary)
-                              .map(m => `${m.name} · ${m.presence.charAt(0).toUpperCase() + m.presence.slice(1)}`)
-                              .join(', ')
+                            .filter(m => !m.isPrimary)
+                            .map(m => `${m.name} · ${m.presence.charAt(0).toUpperCase() + m.presence.slice(1)}`)
+                            .join(', ')
                           : 'Manage cast presence & traits'}
                     </Text>
                   </View>
@@ -3302,7 +3677,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           )}
 
           {/* Unified Expandable Composer Container */}
-          <View
+          <Animated.View
             style={[
               styles.unifiedComposerCard,
               {
@@ -3321,52 +3696,43 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                 shadowColor: skin.cardGlowOpacity > 0 ? palette.accent : '#000',
                 shadowOpacity: skin.cardGlowOpacity > 0 ? 0.2 : 0.15,
               },
-              isInputExpanded && [styles.unifiedComposerCardExpanded, { borderColor: palette.accent }],
+              isInputExpanded && { borderColor: palette.accent },
             ]}
           >
-            <TextInput
-              ref={composerInputRef}
-              style={[
-                styles.unifiedTextInput,
-                !isInputExpanded && { height: inputText ? composerInputHeight : 34 },
-                isInputExpanded && styles.unifiedTextInputExpanded,
-              ]}
-              placeholder='Type your roleplay action or dialogue (*actions in asterisks*, "dialogue")...'
-              placeholderTextColor="rgba(255, 255, 255, 0.4)"
-              value={inputText}
-              numberOfLines={Platform.OS === 'web' ? 1 : undefined}
-              onChangeText={txt => {
-                setInputText(txt);
-                if (!txt) {
-                  setComposerInputHeight(34);
-                  if (Platform.OS === 'web' && composerInputRef.current) {
-                    (composerInputRef.current as any).style.height = '34px';
+            <Animated.View
+              style={{
+                height: composerExpandAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [inputText ? composerInputHeight : 34, 196],
+                }),
+                overflow: 'hidden',
+              }}
+            >
+              <TextInput
+                ref={composerInputRef}
+                style={[
+                  styles.unifiedTextInput,
+                  { height: '100%', maxHeight: undefined },
+                ]}
+                placeholder='Type your roleplay action or dialogue (*actions in asterisks*, "dialogue")...'
+                placeholderTextColor="rgba(255, 255, 255, 0.4)"
+                value={inputText}
+                numberOfLines={Platform.OS === 'web' ? 1 : undefined}
+                onChangeText={setInputText}
+                onContentSizeChange={e => {
+                  if (Platform.OS === 'web') return;
+                  if (!inputText) {
+                    setComposerInputHeight(34);
+                    return;
                   }
-                  return;
-                }
-                if (Platform.OS === 'web' && composerInputRef.current && !isInputExpanded) {
-                  const el = composerInputRef.current as any;
-                  requestAnimationFrame(() => {
-                    el.style.height = '34px';
-                    const nextH = Math.max(34, Math.min(200, el.scrollHeight));
-                    el.style.height = `${nextH}px`;
-                    setComposerInputHeight(nextH);
-                  });
-                }
-              }}
-              onContentSizeChange={e => {
-                if (Platform.OS === 'web') return;
-                if (!inputText) {
-                  setComposerInputHeight(34);
-                  return;
-                }
-                const h = e.nativeEvent.contentSize?.height || 34;
-                setComposerInputHeight(Math.max(34, Math.min(200, Math.ceil(h))));
-              }}
-              scrollEnabled={isInputExpanded || composerInputHeight >= 200}
-              multiline
-              textAlignVertical="top"
-            />
+                  const h = e.nativeEvent.contentSize?.height || 34;
+                  setComposerInputHeight(Math.max(34, Math.min(200, Math.ceil(h))));
+                }}
+                scrollEnabled={isInputExpanded || composerInputHeight >= 200}
+                multiline
+                textAlignVertical="top"
+              />
+            </Animated.View>
 
             {/* Bottom Inner Control Dock (Clean Image-2 style: + | [Avatar Name v] ... [Expand] [Send]) */}
             <View style={styles.composerControlRow}>
@@ -3376,7 +3742,10 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                     styles.composerActionBtn,
                     showActionDeck && [styles.composerActionBtnActive, { backgroundColor: palette.accent }],
                   ]}
-                  onPress={() => setShowActionDeck(prev => !prev)}
+                  onPress={() => {
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setShowActionDeck(prev => !prev);
+                  }}
                   activeOpacity={0.8}
                   accessibilityLabel="More chat tools"
                 >
@@ -3467,7 +3836,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               <View style={styles.composerRightControls}>
                 <TouchableOpacity
                   style={styles.expandToggleBtn}
-                  onPress={() => setIsInputExpanded(prev => !prev)}
+                  onPress={handleToggleInputExpanded}
                   activeOpacity={0.8}
                   accessibilityLabel={isInputExpanded ? 'Minimize input' : 'Expand input'}
                 >
@@ -3485,7 +3854,6 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                       aiProviderService.abortGeneration();
                       setIsStreaming(false);
                       setIsContinuingWait(false);
-                      setRevealState(null);
                     }}
                     activeOpacity={0.8}
                     accessibilityLabel="Stop response"
@@ -3509,7 +3877,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                 )}
               </View>
             </View>
-          </View>
+          </Animated.View>
         </View>
       </KeyboardAvoidingView>
 
@@ -3781,70 +4149,70 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         visible={showSessionModal}
         onClose={() => setShowSessionModal(false)}
       >
-            <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Layers size={18} color={colors.lime} />
-                <Text style={styles.modalTitle}>Chat Sessions ({conversations.length})</Text>
-              </View>
-              <TouchableOpacity onPress={() => setShowSessionModal(false)}>
-                <X size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
+        <View style={styles.modalHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Layers size={18} color={colors.lime} />
+            <Text style={styles.modalTitle}>Chat Sessions ({conversations.length})</Text>
+          </View>
+          <TouchableOpacity onPress={() => setShowSessionModal(false)}>
+            <X size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
 
-            <ScrollView style={{ maxHeight: 340, marginVertical: 12 }}>
-              {conversations.map((conv, idx) => {
-                const isActive = conv.id === activeConversationId;
-                return (
-                  <View
-                    key={conv.id}
-                    style={[styles.sessionItem, isActive && styles.sessionItemActive]}
+        <ScrollView style={{ maxHeight: 340, marginVertical: 12 }}>
+          {conversations.map((conv, idx) => {
+            const isActive = conv.id === activeConversationId;
+            return (
+              <View
+                key={conv.id}
+                style={[styles.sessionItem, isActive && styles.sessionItemActive]}
+              >
+                <TouchableOpacity
+                  style={{ flex: 1 }}
+                  onPress={() => handleSwitchSession(conv)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.sessionTitle, isActive && { color: colors.lime }]}>
+                    {conv.parentConversationId ? `↳ ${conv.title || conv.scenarioTitle || 'Branch'}` : (conv.scenarioTitle || `Session #${conversations.length - idx}`)}
+                  </Text>
+                  <Text style={styles.sessionMeta}>
+                    {conv.parentConversationId ? 'Branched timeline • ' : ''}{conv.messages?.length || 0} messages • {new Date(conv.updatedAt).toLocaleDateString()}
+                  </Text>
+                </TouchableOpacity>
+
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  {isActive && <Check size={16} color={colors.lime} />}
+                  <TouchableOpacity
+                    style={styles.sessionTrashBtn}
+                    onPress={async () => {
+                      await storageService.deleteConversation(conv.id);
+                      const updated = await storageService.getConversationsForCharacter(character.id);
+                      setConversations(updated);
+                      if (conv.id === activeConversationId) {
+                        if (updated.length > 0) {
+                          handleSwitchSession(updated[0]);
+                        } else {
+                          handleStartNewSession();
+                        }
+                      }
+                    }}
+                    activeOpacity={0.7}
                   >
-                    <TouchableOpacity
-                      style={{ flex: 1 }}
-                      onPress={() => handleSwitchSession(conv)}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={[styles.sessionTitle, isActive && { color: colors.lime }]}>
-                        {conv.parentConversationId ? `↳ ${conv.title || conv.scenarioTitle || 'Branch'}` : (conv.scenarioTitle || `Session #${conversations.length - idx}`)}
-                      </Text>
-                      <Text style={styles.sessionMeta}>
-                        {conv.parentConversationId ? 'Branched timeline • ' : ''}{conv.messages?.length || 0} messages • {new Date(conv.updatedAt).toLocaleDateString()}
-                      </Text>
-                    </TouchableOpacity>
+                    <Trash2 size={15} color="#ef4444" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+          })}
+        </ScrollView>
 
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      {isActive && <Check size={16} color={colors.lime} />}
-                      <TouchableOpacity
-                        style={styles.sessionTrashBtn}
-                        onPress={async () => {
-                          await storageService.deleteConversation(conv.id);
-                          const updated = await storageService.getConversationsForCharacter(character.id);
-                          setConversations(updated);
-                          if (conv.id === activeConversationId) {
-                            if (updated.length > 0) {
-                              handleSwitchSession(updated[0]);
-                            } else {
-                              handleStartNewSession();
-                            }
-                          }
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Trash2 size={15} color="#ef4444" />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                );
-              })}
-            </ScrollView>
-
-            <TouchableOpacity
-              style={styles.newSessionBtn}
-              onPress={() => handleStartNewSession(currentScenario)}
-            >
-              <Plus size={16} color="#000" style={{ marginRight: 6 }} />
-              <Text style={styles.newSessionBtnText}>Start New Session</Text>
-            </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.newSessionBtn}
+          onPress={() => handleStartNewSession(currentScenario)}
+        >
+          <Plus size={16} color="#000" style={{ marginRight: 6 }} />
+          <Text style={styles.newSessionBtnText}>Start New Session</Text>
+        </TouchableOpacity>
       </BottomSheetModal>
 
       {/* ================= MODAL: SCENARIOS ================= */}
@@ -3852,38 +4220,38 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         visible={showScenarioModal}
         onClose={() => setShowScenarioModal(false)}
       >
-            <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Play size={18} color={colors.lime} />
-                <Text style={styles.modalTitle}>Choose Scenario</Text>
-              </View>
-              <TouchableOpacity onPress={() => setShowScenarioModal(false)}>
-                <X size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
+        <View style={styles.modalHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Play size={18} color={colors.lime} />
+            <Text style={styles.modalTitle}>Choose Scenario</Text>
+          </View>
+          <TouchableOpacity onPress={() => setShowScenarioModal(false)}>
+            <X size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
 
-            <ScrollView style={{ maxHeight: 360, marginVertical: 12 }}>
-              {(character.scenarios || []).map(scen => {
-                const isCurrent = scen.id === activeScenarioId;
-                return (
-                  <TouchableOpacity
-                    key={scen.id}
-                    style={[styles.scenarioCard, isCurrent && styles.scenarioCardActive]}
-                    onPress={() => handleStartNewSession(scen)}
-                  >
-                    <Text style={[styles.scenarioCardTitle, isCurrent && { color: colors.lime }]}>
-                      {scen.title}
-                    </Text>
-                    <Text style={styles.scenarioCardDesc} numberOfLines={3}>
-                      {scen.description}
-                    </Text>
-                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 }}>
-                      <Text style={styles.scenarioCardAction}>Start This Scenario ➔</Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+        <ScrollView style={{ maxHeight: 360, marginVertical: 12 }}>
+          {(character.scenarios || []).map(scen => {
+            const isCurrent = scen.id === activeScenarioId;
+            return (
+              <TouchableOpacity
+                key={scen.id}
+                style={[styles.scenarioCard, isCurrent && styles.scenarioCardActive]}
+                onPress={() => handleStartNewSession(scen)}
+              >
+                <Text style={[styles.scenarioCardTitle, isCurrent && { color: colors.lime }]}>
+                  {scen.title}
+                </Text>
+                <Text style={styles.scenarioCardDesc} numberOfLines={3}>
+                  {scen.description}
+                </Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 }}>
+                  <Text style={styles.scenarioCardAction}>Start This Scenario ➔</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </BottomSheetModal>
 
       {/* ================= MODAL: SCENE DEPICTION ART ================= */}
@@ -3891,102 +4259,102 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         visible={showImageModal}
         onClose={() => setShowImageModal(false)}
       >
-            <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <ImageIcon size={18} color={colors.lime} />
-                <Text style={styles.modalTitle}>Depict Scene Art</Text>
-              </View>
-              <TouchableOpacity onPress={() => setShowImageModal(false)}>
-                <X size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
+        <View style={styles.modalHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <ImageIcon size={18} color={colors.lime} />
+            <Text style={styles.modalTitle}>Depict Scene Art</Text>
+          </View>
+          <TouchableOpacity onPress={() => setShowImageModal(false)}>
+            <X size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
 
-            <ScrollView style={{ maxHeight: 440, marginVertical: 10 }}>
-              <Text style={styles.imageModalLabel}>Style Preset</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-                {IMAGE_STYLE_OPTIONS.map(opt => {
-                  const isSel = imageStyle === opt.id;
-                  return (
-                    <TouchableOpacity
-                      key={opt.id}
-                      style={[styles.styleChip, isSel && styles.styleChipActive]}
-                      onPress={() => {
-                        setImageStyle(opt.id);
-                        const prompt = imageGenService.buildScenePrompt(
-                          character,
-                          messages[messages.length - 1]?.content || character.firstMessage,
-                          persona,
-                          opt.id
-                        );
-                        setImagePrompt(prompt);
-                      }}
-                    >
-                      <Text style={[styles.styleChipText, isSel && styles.styleChipTextActive]}>
-                        {opt.label.split(' ')[0]}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
-              <Text style={styles.imageModalLabel}>Visual Scene Prompt</Text>
-              <TextInput
-                style={[styles.textInput, { minHeight: 70, textAlignVertical: 'top', marginBottom: 12 }]}
-                value={imagePrompt}
-                onChangeText={setImagePrompt}
-                multiline
-                placeholder="Describe scene visual details..."
-                placeholderTextColor={colors.textMuted}
-              />
-
-              {imageError && (
-                <View style={styles.imageErrorBox}>
-                  <Text style={styles.imageErrorText}>{imageError}</Text>
-                </View>
-              )}
-
-              {generatedImage && (
-                <View style={styles.generatedImageContainer}>
-                  <Image
-                    source={{ uri: generatedImage.imageUrl }}
-                    style={styles.generatedImagePreview}
-                    resizeMode="cover"
-                  />
-                  <Text style={styles.generatedPromptCaption} numberOfLines={2}>
-                    {generatedImage.prompt}
-                  </Text>
-                </View>
-              )}
-
-              <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+        <ScrollView style={{ maxHeight: 440, marginVertical: 10 }}>
+          <Text style={styles.imageModalLabel}>Style Preset</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+            {IMAGE_STYLE_OPTIONS.map(opt => {
+              const isSel = imageStyle === opt.id;
+              return (
                 <TouchableOpacity
-                  style={[styles.generateArtBtn, isGeneratingImage && { opacity: 0.6 }]}
-                  onPress={handleGenerateSceneArt}
-                  disabled={isGeneratingImage || !imagePrompt.trim()}
+                  key={opt.id}
+                  style={[styles.styleChip, isSel && styles.styleChipActive]}
+                  onPress={() => {
+                    setImageStyle(opt.id);
+                    const prompt = imageGenService.buildScenePrompt(
+                      character,
+                      messages[messages.length - 1]?.content || character.firstMessage,
+                      persona,
+                      opt.id
+                    );
+                    setImagePrompt(prompt);
+                  }}
                 >
-                  {isGeneratingImage ? (
-                    <ActivityIndicator size="small" color="#000" />
-                  ) : (
-                    <>
-                      <Sparkles size={16} color="#000" style={{ marginRight: 6 }} />
-                      <Text style={styles.generateArtBtnText}>
-                        {generatedImage ? 'Regenerate Art' : 'Generate Scene Art'}
-                      </Text>
-                    </>
-                  )}
+                  <Text style={[styles.styleChipText, isSel && styles.styleChipTextActive]}>
+                    {opt.label.split(' ')[0]}
+                  </Text>
                 </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
 
-                {generatedImage && (
-                  <TouchableOpacity
-                    style={styles.insertArtBtn}
-                    onPress={handleInsertSceneImageToChat}
-                  >
-                    <Check size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.insertArtBtnText}>Insert</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </ScrollView>
+          <Text style={styles.imageModalLabel}>Visual Scene Prompt</Text>
+          <TextInput
+            style={[styles.textInput, { minHeight: 70, textAlignVertical: 'top', marginBottom: 12 }]}
+            value={imagePrompt}
+            onChangeText={setImagePrompt}
+            multiline
+            placeholder="Describe scene visual details..."
+            placeholderTextColor={colors.textMuted}
+          />
+
+          {imageError && (
+            <View style={styles.imageErrorBox}>
+              <Text style={styles.imageErrorText}>{imageError}</Text>
+            </View>
+          )}
+
+          {generatedImage && (
+            <View style={styles.generatedImageContainer}>
+              <Image
+                source={{ uri: generatedImage.imageUrl }}
+                style={styles.generatedImagePreview}
+                resizeMode="cover"
+              />
+              <Text style={styles.generatedPromptCaption} numberOfLines={2}>
+                {generatedImage.prompt}
+              </Text>
+            </View>
+          )}
+
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+            <TouchableOpacity
+              style={[styles.generateArtBtn, isGeneratingImage && { opacity: 0.6 }]}
+              onPress={handleGenerateSceneArt}
+              disabled={isGeneratingImage || !imagePrompt.trim()}
+            >
+              {isGeneratingImage ? (
+                <ActivityIndicator size="small" color="#000" />
+              ) : (
+                <>
+                  <Sparkles size={16} color="#000" style={{ marginRight: 6 }} />
+                  <Text style={styles.generateArtBtnText}>
+                    {generatedImage ? 'Regenerate Art' : 'Generate Scene Art'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            {generatedImage && (
+              <TouchableOpacity
+                style={styles.insertArtBtn}
+                onPress={handleInsertSceneImageToChat}
+              >
+                <Check size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.insertArtBtnText}>Insert</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </ScrollView>
       </BottomSheetModal>
 
       {/* ================= MODAL: QUICK PERSONA SWITCHER & PERSONALITY EDITOR ================= */}
@@ -3994,81 +4362,81 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         visible={showPersonaModal}
         onClose={() => setShowPersonaModal(false)}
       >
-            <View style={styles.appearanceHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Smile size={18} color={palette.accent} />
-                <Text style={styles.modalTitle}>User Persona & Personality</Text>
-              </View>
-              <TouchableOpacity onPress={() => setShowPersonaModal(false)}>
-                <X size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
+        <View style={styles.appearanceHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Smile size={18} color={palette.accent} />
+            <Text style={styles.modalTitle}>User Persona & Personality</Text>
+          </View>
+          <TouchableOpacity onPress={() => setShowPersonaModal(false)}>
+            <X size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
 
-            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
-              {/* Persona Name Field */}
-              <Text style={styles.personaEditorLabel}>PERSONA DISPLAY NAME</Text>
-              <TextInput
-                style={styles.personaNameInput}
-                value={editingPersonaName}
-                onChangeText={setEditingPersonaName}
-                placeholder="Your roleplay persona name (e.g. Ren)"
-                placeholderTextColor="rgba(255, 255, 255, 0.4)"
-              />
+        <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+          {/* Persona Name Field */}
+          <Text style={styles.personaEditorLabel}>PERSONA DISPLAY NAME</Text>
+          <TextInput
+            style={styles.personaNameInput}
+            value={editingPersonaName}
+            onChangeText={setEditingPersonaName}
+            placeholder="Your roleplay persona name (e.g. Ren)"
+            placeholderTextColor="rgba(255, 255, 255, 0.4)"
+          />
 
-              {/* Persona Personality & Mannerisms Field */}
-              <Text style={styles.personaEditorLabel}>PERSONALITY & BEHAVIORAL TRAITS</Text>
-              <TextInput
-                style={styles.personaPersonalityInput}
-                value={editingPersonaPersonality}
-                onChangeText={setEditingPersonaPersonality}
-                placeholder="Describe how your character acts, speaks, their traits, temperament, and roleplay persona..."
-                placeholderTextColor="rgba(255, 255, 255, 0.4)"
-                multiline
-                numberOfLines={3}
-                textAlignVertical="top"
-              />
+          {/* Persona Personality & Mannerisms Field */}
+          <Text style={styles.personaEditorLabel}>PERSONALITY & BEHAVIORAL TRAITS</Text>
+          <TextInput
+            style={styles.personaPersonalityInput}
+            value={editingPersonaPersonality}
+            onChangeText={setEditingPersonaPersonality}
+            placeholder="Describe how your character acts, speaks, their traits, temperament, and roleplay persona..."
+            placeholderTextColor="rgba(255, 255, 255, 0.4)"
+            multiline
+            numberOfLines={3}
+            textAlignVertical="top"
+          />
 
-              {/* Switch Between Available Personas */}
-              <Text style={[styles.personaEditorLabel, { marginTop: 16 }]}>SWITCH ACTIVE PERSONA</Text>
-              <View style={styles.personaSwitchGrid}>
-                {allPersonas.map(p => {
-                  const isCur = p.id === persona.id;
-                  return (
-                    <TouchableOpacity
-                      key={p.id}
-                      style={[styles.personaSwitchCard, isCur && styles.personaSwitchCardActive]}
-                      onPress={() => {
-                        onSelectPersona(p);
-                        setEditingPersonaName(p.name);
-                        setEditingPersonaPersonality(p.personality || p.description || '');
-                      }}
-                      activeOpacity={0.8}
-                    >
-                      {p.avatar ? (
-                        <Image source={{ uri: p.avatar }} style={styles.personaSwitchAvatar} />
-                      ) : (
-                        <View style={styles.personaSwitchAvatarPlaceholder}>
-                          <Text style={styles.personaSwitchInitial}>{p.name.charAt(0).toUpperCase()}</Text>
-                        </View>
-                      )}
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.personaSwitchName, isCur && styles.personaSwitchNameActive]}>
-                          {p.name}
-                        </Text>
-                        <Text style={styles.personaSwitchBio} numberOfLines={1}>
-                          {p.personality || p.description || 'Roleplay companion'}
-                        </Text>
-                      </View>
-                      {isCur && <UserCheck size={16} color={palette.accent} />}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </ScrollView>
+          {/* Switch Between Available Personas */}
+          <Text style={[styles.personaEditorLabel, { marginTop: 16 }]}>SWITCH ACTIVE PERSONA</Text>
+          <View style={styles.personaSwitchGrid}>
+            {allPersonas.map(p => {
+              const isCur = p.id === persona.id;
+              return (
+                <TouchableOpacity
+                  key={p.id}
+                  style={[styles.personaSwitchCard, isCur && styles.personaSwitchCardActive]}
+                  onPress={() => {
+                    onSelectPersona(p);
+                    setEditingPersonaName(p.name);
+                    setEditingPersonaPersonality(p.personality || p.description || '');
+                  }}
+                  activeOpacity={0.8}
+                >
+                  {p.avatar ? (
+                    <Image source={{ uri: p.avatar }} style={styles.personaSwitchAvatar} />
+                  ) : (
+                    <View style={styles.personaSwitchAvatarPlaceholder}>
+                      <Text style={styles.personaSwitchInitial}>{p.name.charAt(0).toUpperCase()}</Text>
+                    </View>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.personaSwitchName, isCur && styles.personaSwitchNameActive]}>
+                      {p.name}
+                    </Text>
+                    <Text style={styles.personaSwitchBio} numberOfLines={1}>
+                      {p.personality || p.description || 'Roleplay companion'}
+                    </Text>
+                  </View>
+                  {isCur && <UserCheck size={16} color={palette.accent} />}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </ScrollView>
 
-            <TouchableOpacity style={styles.appearanceDoneBtn} onPress={handleSaveActivePersonaPersonality}>
-              <Text style={styles.appearanceDoneText}>Save Personality & Update</Text>
-            </TouchableOpacity>
+        <TouchableOpacity style={styles.appearanceDoneBtn} onPress={handleSaveActivePersonaPersonality}>
+          <Text style={styles.appearanceDoneText}>Save Personality & Update</Text>
+        </TouchableOpacity>
       </BottomSheetModal>
 
       {/* ================= MODAL: FULL CHARACTER PROFILE CARD (Header Name Tap) ================= */}
@@ -4078,85 +4446,85 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         showDragHandle={false}
         sheetStyle={{ paddingHorizontal: 0, paddingTop: 0, paddingBottom: 16 }}
       >
-            {/* Header Banner */}
-            <View style={styles.charProfileBannerBox}>
-              <Image source={{ uri: character.avatar }} style={styles.charProfileBannerImg} resizeMode="cover" />
-              <LinearGradient
-                colors={['transparent', 'rgba(18, 22, 34, 0.65)', '#121622']}
-                locations={[0, 0.5, 1]}
-                style={StyleSheet.absoluteFill}
-              />
-              <TouchableOpacity
-                style={styles.charProfileCloseBtn}
-                onPress={() => setShowCharacterCardModal(false)}
-                activeOpacity={0.8}
-              >
-                <X size={18} color="#FFFFFF" />
-              </TouchableOpacity>
-              <View style={styles.charProfileBadgeRow}>
-                <View style={character.contentRating === 'NSFW' ? styles.nsfwBadge : styles.sfwBadge}>
-                  <Text style={styles.badgeText}>{character.contentRating === 'NSFW' ? '18+ NSFW' : 'SFW'}</Text>
-                </View>
-                {Boolean(character.totalTokens && character.totalTokens > 0) && (
-                  <View style={styles.tokenBadge}>
-                    <Coins size={11} color={palette.accent} style={{ marginRight: 3 }} />
-                    <Text style={styles.tokenText}>{character.totalTokens} tokens</Text>
-                  </View>
-                )}
-              </View>
+        {/* Header Banner */}
+        <View style={styles.charProfileBannerBox}>
+          <Image source={{ uri: character.avatar }} style={styles.charProfileBannerImg} resizeMode="cover" />
+          <LinearGradient
+            colors={['transparent', 'rgba(18, 22, 34, 0.65)', '#121622']}
+            locations={[0, 0.5, 1]}
+            style={StyleSheet.absoluteFill}
+          />
+          <TouchableOpacity
+            style={styles.charProfileCloseBtn}
+            onPress={() => setShowCharacterCardModal(false)}
+            activeOpacity={0.8}
+          >
+            <X size={18} color="#FFFFFF" />
+          </TouchableOpacity>
+          <View style={styles.charProfileBadgeRow}>
+            <View style={character.contentRating === 'NSFW' ? styles.nsfwBadge : styles.sfwBadge}>
+              <Text style={styles.badgeText}>{character.contentRating === 'NSFW' ? '18+ NSFW' : 'SFW'}</Text>
             </View>
-
-            <ScrollView style={styles.charProfileBodyScroll} showsVerticalScrollIndicator={false}>
-              <Text style={styles.charProfileName}>{character.name}</Text>
-              <Text style={styles.charProfileTagline}>{character.subtitle || character.tagline || 'Roleplay Companion'}</Text>
-              <Text style={styles.charProfileCreator}>Created by @{character.creator || 'community'}</Text>
-
-              {/* Tag Chips */}
-              <View style={styles.charProfileTagWrap}>
-                {(character.tags || []).map((t, idx) => (
-                  <View key={idx} style={styles.charProfileTagChip}>
-                    <Text style={styles.charProfileTagText}>#{typeof t === 'string' ? t : (t as any).name}</Text>
-                  </View>
-                ))}
+            {Boolean(character.totalTokens && character.totalTokens > 0) && (
+              <View style={styles.tokenBadge}>
+                <Coins size={11} color={palette.accent} style={{ marginRight: 3 }} />
+                <Text style={styles.tokenText}>{character.totalTokens} tokens</Text>
               </View>
+            )}
+          </View>
+        </View>
 
-              {/* Personality / Lore */}
-              <Text style={styles.charProfileSectionTitle}>PERSONALITY & LORE</Text>
+        <ScrollView style={styles.charProfileBodyScroll} showsVerticalScrollIndicator={false}>
+          <Text style={styles.charProfileName}>{character.name}</Text>
+          <Text style={styles.charProfileTagline}>{character.subtitle || character.tagline || 'Roleplay Companion'}</Text>
+          <Text style={styles.charProfileCreator}>Created by @{character.creator || 'community'}</Text>
+
+          {/* Tag Chips */}
+          <View style={styles.charProfileTagWrap}>
+            {(character.tags || []).map((t, idx) => (
+              <View key={idx} style={styles.charProfileTagChip}>
+                <Text style={styles.charProfileTagText}>#{typeof t === 'string' ? t : (t as any).name}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Personality / Lore */}
+          <Text style={styles.charProfileSectionTitle}>PERSONALITY & LORE</Text>
+          <RichHtmlRenderer
+            content={applyChatMacros(character.description || character.personality || 'Ready for roleplay.')}
+            baseColor="rgba(255, 255, 255, 0.85)"
+            fontSize={13.5}
+            lineHeight={21}
+          />
+
+          {/* Scenario Context */}
+          {character.scenario ? (
+            <>
+              <Text style={[styles.charProfileSectionTitle, { marginTop: 14 }]}>SCENARIO</Text>
               <RichHtmlRenderer
-                content={applyChatMacros(character.description || character.personality || 'Ready for roleplay.')}
+                content={applyChatMacros(character.scenario)}
                 baseColor="rgba(255, 255, 255, 0.85)"
                 fontSize={13.5}
                 lineHeight={21}
               />
+            </>
+          ) : null}
 
-              {/* Scenario Context */}
-              {character.scenario ? (
-                <>
-                  <Text style={[styles.charProfileSectionTitle, { marginTop: 14 }]}>SCENARIO</Text>
-                  <RichHtmlRenderer
-                    content={applyChatMacros(character.scenario)}
-                    baseColor="rgba(255, 255, 255, 0.85)"
-                    fontSize={13.5}
-                    lineHeight={21}
-                  />
-                </>
-              ) : null}
-
-              {/* First Message Greeting */}
-              {character.firstMessage ? (
-                <>
-                  <Text style={[styles.charProfileSectionTitle, { marginTop: 14 }]}>OPENING GREETING</Text>
-                  <View style={styles.charProfileGreetingBox}>
-                    <RichHtmlRenderer
-                      content={applyChatMacros(character.firstMessage)}
-                      baseColor="rgba(255, 255, 255, 0.88)"
-                      fontSize={13}
-                      lineHeight={20}
-                    />
-                  </View>
-                </>
-              ) : null}
-            </ScrollView>
+          {/* First Message Greeting */}
+          {character.firstMessage ? (
+            <>
+              <Text style={[styles.charProfileSectionTitle, { marginTop: 14 }]}>OPENING GREETING</Text>
+              <View style={styles.charProfileGreetingBox}>
+                <RichHtmlRenderer
+                  content={applyChatMacros(character.firstMessage)}
+                  baseColor="rgba(255, 255, 255, 0.88)"
+                  fontSize={13}
+                  lineHeight={20}
+                />
+              </View>
+            </>
+          ) : null}
+        </ScrollView>
       </BottomSheetModal>
 
       {/* ================= MODAL: AVATAR / PROFILE PHOTO LIGHTBOX ================= */}
@@ -4195,301 +4563,311 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         onClose={() => setShowChatControlModal(false)}
         fullScreen
       >
-            <View style={styles.appearanceHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <MoreHorizontal size={18} color={palette.accent} />
-                <Text style={styles.modalTitle}>{t('chat.controlTitle')}</Text>
-              </View>
-              <TouchableOpacity onPress={() => setShowChatControlModal(false)}>
-                <X size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
+        <View style={styles.appearanceHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <MoreHorizontal size={18} color={palette.accent} />
+            <Text style={styles.modalTitle}>{t('chat.controlTitle')}</Text>
+          </View>
+          <TouchableOpacity onPress={() => setShowChatControlModal(false)}>
+            <X size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
 
-            {/* Sub-Tabs: [ ⚙️ Settings ] | [ 🧠 Memory ] | [ 🎨 Customize ] */}
-            <View style={{ flexDirection: 'row', gap: 6, marginHorizontal: 20, marginBottom: 14, marginTop: 4 }}>
-              {[
-                { id: 'model', label: `⚙️ ${t('chat.settings')}` },
-                { id: 'memory', label: `🧠 ${t('chat.memory')}` },
-                { id: 'syntax', label: `🎨 ${t('chat.customize')}` },
-              ].map(tb => (
-                <TouchableOpacity
-                  key={tb.id}
-                  style={[
-                    styles.sliderPill,
-                    chatControlTab === tb.id && [styles.sliderPillActive, { borderColor: palette.accent, backgroundColor: `rgba(${palette.accentRgb}, 0.16)` }],
-                    { flex: 1, paddingVertical: 8, alignItems: 'center', justifyContent: 'center' },
-                  ]}
-                  onPress={() => {
-                    setChatControlTab(tb.id as any);
-                    setSettingsSubView('main');
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    style={[
-                      styles.sliderPillText,
-                      chatControlTab === tb.id && [styles.sliderPillTextActive, { color: palette.accent }],
-                      { fontSize: 11.5, fontWeight: '700' },
-                    ]}
-                  >
-                    {tb.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <ScrollView
-              style={{ flex: 1 }}
-              contentContainerStyle={{ paddingBottom: 16 }}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
+        {/* Sub-Tabs: [ ⚙️ Settings ] | [ 🧠 Memory ] | [ 🎨 Customize ] */}
+        <View style={{ flexDirection: 'row', gap: 6, marginHorizontal: 20, marginBottom: 14, marginTop: 4 }}>
+          {[
+            { id: 'model', label: `⚙️ ${t('chat.settings')}` },
+            { id: 'memory', label: `🧠 ${t('chat.memory')}` },
+            { id: 'syntax', label: `🎨 ${t('chat.customize')}` },
+          ].map(tb => (
+            <TouchableOpacity
+              key={tb.id}
+              style={[
+                styles.sliderPill,
+                chatControlTab === tb.id && [styles.sliderPillActive, { borderColor: palette.accent, backgroundColor: `rgba(${palette.accentRgb}, 0.16)` }],
+                { flex: 1, paddingVertical: 8, alignItems: 'center', justifyContent: 'center' },
+              ]}
+              onPress={() => {
+                setChatControlTab(tb.id as any);
+                setSettingsSubView('main');
+              }}
+              activeOpacity={0.8}
             >
-              <Animated.View style={{ opacity: chatControlTabAnim }}>
-              {/* TAB 2: Memory (Summary of this chat) */}
-              {chatControlTab === 'memory' && (
-                <View style={{ paddingHorizontal: 20 }}>
-                  <View style={styles.settingsBentoCard}>
-                    <Text style={{ color: '#f8fafc', fontSize: 15, fontWeight: '700', marginBottom: 10 }}>
-                      Summary of this chat
-                    </Text>
+              <Text
+                style={[
+                  styles.sliderPillText,
+                  chatControlTab === tb.id && [styles.sliderPillTextActive, { color: palette.accent }],
+                  { fontSize: 11.5, fontWeight: '700' },
+                ]}
+              >
+                {tb.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: 16 }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Animated.View style={{ opacity: chatControlTabAnim }}>
+            {/* TAB 2: Memory (Summary of this chat) */}
+            {chatControlTab === 'memory' && (
+              <View style={{ paddingHorizontal: 20 }}>
+                <View style={styles.settingsBentoCard}>
+                  <Text style={{ color: '#f8fafc', fontSize: 15, fontWeight: '700', marginBottom: 10 }}>
+                    Summary of this chat
+                  </Text>
+
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.settingsCardTitle}>Memory replaces old messages</Text>
+                      <Text style={styles.settingsHelperText}>
+                        When on, messages already covered by your saved Memory are left out of the prompt to free up context. Off keeps the classic behavior: Memory is added on top and nothing is removed.
+                      </Text>
+                    </View>
+                    <NekoSwitch
+                      value={memoryReplacesOld}
+                      onValueChange={val => {
+                        setMemoryReplacesOld(val);
+                        persistChatSettings({ memoryReplacesOld: val });
+                      }}
+                    />
+                  </View>
+
+                  <View style={[styles.settingsHairline, { marginVertical: 12 }]} />
+
+                  <Text style={[styles.settingsHelperText, { marginTop: 0, marginBottom: 6 }]}>
+                    Enter a summary for your chat. This will be included into the prompt as long-term memory.
+                  </Text>
+
+                  {(() => {
+                    const msgsSince =
+                      lastCheckpointIndex >= 0
+                        ? Math.max(0, messages.length - 1 - lastCheckpointIndex)
+                        : messages.length;
+                    const tokensSince = messages
+                      .slice(lastCheckpointIndex >= 0 ? lastCheckpointIndex + 1 : 0)
+                      .reduce((acc, m) => acc + Math.ceil((m.content?.length || 0) / 4), 0);
+                    return (
+                      <Text style={{ color: '#94a3b8', fontSize: 11.5, marginBottom: 10 }}>
+                        {hasValidMemory(chatMemory)
+                          ? `You have updated the chat summary around ~${msgsSince} messages (~${tokensSince} tokens) ago.`
+                          : `No summary saved yet · ${messages.length} messages (~${tokensSince} tokens) in chat.`}
+                      </Text>
+                    );
+                  })()}
+
+                  <TextInput
+                    style={[
+                      styles.personaPersonalityInput,
+                      {
+                        minHeight: 165,
+                        fontSize: 12.5,
+                        lineHeight: 18,
+                        marginBottom: 6,
+                      },
+                    ]}
+                    value={chatMemory}
+                    onChangeText={text => {
+                      setChatMemory(text);
+                      persistSessionMemory(activeConversationId, text);
+                    }}
+                    placeholder="Write or auto-generate key plot points, character states, and relationship notes..."
+                    placeholderTextColor="rgba(255, 255, 255, 0.35)"
+                    multiline
+                    numberOfLines={8}
+                    textAlignVertical="top"
+                  />
+
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <Text style={{ color: '#64748b', fontSize: 11.5 }}>
+                      ~{Math.ceil(chatMemory.length / 4)} tokens
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => {
+                        if (!chatMemory.trim()) return;
+                        if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                          navigator.clipboard.writeText(chatMemory);
+                          setMemoryNoticeText('Copied summary to clipboard.');
+                        } else {
+                          Share.share({ message: chatMemory }).catch(() => { });
+                        }
+                      }}
+                      hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
+                    >
+                      <Text style={{ color: '#cbd5e1', fontSize: 12, fontWeight: '600' }}>Copy</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={{ gap: 8 }}>
+                    <TouchableOpacity
+                      style={{
+                        paddingVertical: 10,
+                        paddingHorizontal: 14,
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderColor: 'rgba(255,255,255,0.14)',
+                        backgroundColor: 'rgba(255,255,255,0.04)',
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                      }}
+                      onPress={handleIncrementalCheckpoint}
+                      disabled={isSummarizingMemory}
+                      activeOpacity={0.8}
+                    >
+                      {isSummarizingMemory && <ActivityIndicator size="small" color={palette.accent} />}
+                      <Text style={{ color: '#f8fafc', fontSize: 12.5, fontWeight: '600' }}>
+                        Auto summary (since last updated)
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={{
+                        paddingVertical: 10,
+                        paddingHorizontal: 14,
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderColor: 'rgba(255,255,255,0.14)',
+                        backgroundColor: 'rgba(255,255,255,0.04)',
+                        alignItems: 'center',
+                      }}
+                      onPress={handleFullRescanMemory}
+                      disabled={isSummarizingMemory}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={{ color: '#f8fafc', fontSize: 12.5, fontWeight: '600' }}>
+                        Auto summary (as far as possible)
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Per-chat Auto-Memory Switch & Customizable Interval */}
+                  <View
+                    style={{
+                      marginTop: 14,
+                      paddingTop: 12,
+                      borderTopWidth: 1,
+                      borderTopColor: 'rgba(255,255,255,0.08)',
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.settingsCardTitle}>Memory replaces old messages</Text>
-                        <Text style={styles.settingsHelperText}>
-                          When on, messages already covered by your saved Memory are left out of the prompt to free up context. Off keeps the classic behavior: Memory is added on top and nothing is removed.
+                        <Text style={{ color: '#f8fafc', fontSize: 13, fontWeight: '700' }}>
+                          Auto-Update Memory
+                        </Text>
+                        <Text style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 2 }}>
+                          {autoMemoryEnabled
+                            ? `Runs every ${autoMemoryInterval} messages in this chat (recommended: 20)`
+                            : 'Off for this chat — summarize manually above'}
                         </Text>
                       </View>
                       <NekoSwitch
-                        value={memoryReplacesOld}
+                        value={autoMemoryEnabled}
                         onValueChange={val => {
-                          setMemoryReplacesOld(val);
-                          persistChatSettings({ memoryReplacesOld: val });
+                          setAutoMemoryEnabled(val);
+                          persistChatSettings({ autoMemoryEnabled: val, autoMemoryInterval });
                         }}
                       />
                     </View>
 
-                    <View style={[styles.settingsHairline, { marginVertical: 12 }]} />
-
-                    <Text style={[styles.settingsHelperText, { marginTop: 0, marginBottom: 6 }]}>
-                      Enter a summary for your chat. This will be included into the prompt as long-term memory.
-                    </Text>
-
-                    {(() => {
-                      const msgsSince =
-                        lastCheckpointIndex >= 0
-                          ? Math.max(0, messages.length - 1 - lastCheckpointIndex)
-                          : messages.length;
-                      const tokensSince = messages
-                        .slice(lastCheckpointIndex >= 0 ? lastCheckpointIndex + 1 : 0)
-                        .reduce((acc, m) => acc + Math.ceil((m.content?.length || 0) / 4), 0);
-                      return (
-                        <Text style={{ color: '#94a3b8', fontSize: 11.5, marginBottom: 10 }}>
-                          {hasValidMemory(chatMemory)
-                            ? `You have updated the chat summary around ~${msgsSince} messages (~${tokensSince} tokens) ago.`
-                            : `No summary saved yet · ${messages.length} messages (~${tokensSince} tokens) in chat.`}
-                        </Text>
-                      );
-                    })()}
-
-                    <TextInput
-                      style={[
-                        styles.personaPersonalityInput,
-                        {
-                          minHeight: 165,
-                          fontSize: 12.5,
-                          lineHeight: 18,
-                          marginBottom: 6,
-                        },
-                      ]}
-                      value={chatMemory}
-                      onChangeText={text => {
-                        setChatMemory(text);
-                        persistSessionMemory(activeConversationId, text);
-                      }}
-                      placeholder="Write or auto-generate key plot points, character states, and relationship notes..."
-                      placeholderTextColor="rgba(255, 255, 255, 0.35)"
-                      multiline
-                      numberOfLines={8}
-                      textAlignVertical="top"
-                    />
-
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                      <Text style={{ color: '#64748b', fontSize: 11.5 }}>
-                        ~{Math.ceil(chatMemory.length / 4)} tokens
-                      </Text>
-                      <TouchableOpacity
-                        onPress={() => {
-                          if (!chatMemory.trim()) return;
-                          if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                            navigator.clipboard.writeText(chatMemory);
-                            setMemoryNoticeText('Copied summary to clipboard.');
-                          } else {
-                            Share.share({ message: chatMemory }).catch(() => {});
-                          }
-                        }}
-                        hitSlop={{ top: 6, bottom: 6, left: 8, right: 8 }}
-                      >
-                        <Text style={{ color: '#cbd5e1', fontSize: 12, fontWeight: '600' }}>Copy</Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    <View style={{ gap: 8 }}>
-                      <TouchableOpacity
-                        style={{
-                          paddingVertical: 10,
-                          paddingHorizontal: 14,
-                          borderRadius: 12,
-                          borderWidth: 1,
-                          borderColor: 'rgba(255,255,255,0.14)',
-                          backgroundColor: 'rgba(255,255,255,0.04)',
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 8,
-                        }}
-                        onPress={handleIncrementalCheckpoint}
-                        disabled={isSummarizingMemory}
-                        activeOpacity={0.8}
-                      >
-                        {isSummarizingMemory && <ActivityIndicator size="small" color={palette.accent} />}
-                        <Text style={{ color: '#f8fafc', fontSize: 12.5, fontWeight: '600' }}>
-                          Auto summary (since last updated)
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={{
-                          paddingVertical: 10,
-                          paddingHorizontal: 14,
-                          borderRadius: 12,
-                          borderWidth: 1,
-                          borderColor: 'rgba(255,255,255,0.14)',
-                          backgroundColor: 'rgba(255,255,255,0.04)',
-                          alignItems: 'center',
-                        }}
-                        onPress={handleFullRescanMemory}
-                        disabled={isSummarizingMemory}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={{ color: '#f8fafc', fontSize: 12.5, fontWeight: '600' }}>
-                          Auto summary (as far as possible)
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    {/* Per-chat Auto-Memory Switch & Customizable Interval */}
-                    <View
-                      style={{
-                        marginTop: 14,
-                        paddingTop: 12,
-                        borderTopWidth: 1,
-                        borderTopColor: 'rgba(255,255,255,0.08)',
-                      }}
-                    >
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ color: '#f8fafc', fontSize: 13, fontWeight: '700' }}>
-                            Auto-Update Memory
-                          </Text>
-                          <Text style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 2 }}>
-                            {autoMemoryEnabled
-                              ? `Runs every ${autoMemoryInterval} messages in this chat (recommended: 20)`
-                              : 'Off for this chat — summarize manually above'}
-                          </Text>
-                        </View>
-                        <NekoSwitch
-                          value={autoMemoryEnabled}
-                          onValueChange={val => {
-                            setAutoMemoryEnabled(val);
-                            persistChatSettings({ autoMemoryEnabled: val, autoMemoryInterval });
+                    {autoMemoryEnabled && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                        {[10, 20, 30, 50].map(step => {
+                          const active = autoMemoryInterval === step;
+                          return (
+                            <TouchableOpacity
+                              key={step}
+                              onPress={() => {
+                                setAutoMemoryInterval(step);
+                                persistChatSettings({ autoMemoryInterval: step });
+                              }}
+                              style={{
+                                paddingHorizontal: 10,
+                                paddingVertical: 5,
+                                borderRadius: 999,
+                                borderWidth: 1,
+                                borderColor: active ? palette.accent : 'rgba(255,255,255,0.14)',
+                                backgroundColor: active ? `rgba(${palette.accentRgb}, 0.16)` : 'rgba(255,255,255,0.04)',
+                              }}
+                            >
+                              <Text style={{ color: active ? palette.accent : '#cbd5e1', fontSize: 11.5, fontWeight: '700' }}>
+                                {step}{step === 20 ? ' (Rec)' : ''}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                        <TextInput
+                          value={String(autoMemoryInterval)}
+                          onChangeText={txt => {
+                            const num = parseInt(txt.replace(/[^0-9]/g, ''), 10);
+                            if (!isNaN(num) && num >= 4 && num <= 500) {
+                              setAutoMemoryInterval(num);
+                              persistChatSettings({ autoMemoryInterval: num });
+                            } else if (txt === '') {
+                              setAutoMemoryInterval(20);
+                            }
+                          }}
+                          keyboardType="number-pad"
+                          placeholder="20"
+                          placeholderTextColor="#64748b"
+                          style={{
+                            width: 52,
+                            paddingHorizontal: 8,
+                            paddingVertical: 4,
+                            borderRadius: 8,
+                            borderWidth: 1,
+                            borderColor: 'rgba(255,255,255,0.16)',
+                            backgroundColor: 'rgba(255,255,255,0.05)',
+                            color: '#f8fafc',
+                            fontSize: 12,
+                            textAlign: 'center',
                           }}
                         />
                       </View>
-
-                      {autoMemoryEnabled && (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-                          {[10, 20, 30, 50].map(step => {
-                            const active = autoMemoryInterval === step;
-                            return (
-                              <TouchableOpacity
-                                key={step}
-                                onPress={() => {
-                                  setAutoMemoryInterval(step);
-                                  persistChatSettings({ autoMemoryInterval: step });
-                                }}
-                                style={{
-                                  paddingHorizontal: 10,
-                                  paddingVertical: 5,
-                                  borderRadius: 999,
-                                  borderWidth: 1,
-                                  borderColor: active ? palette.accent : 'rgba(255,255,255,0.14)',
-                                  backgroundColor: active ? `rgba(${palette.accentRgb}, 0.16)` : 'rgba(255,255,255,0.04)',
-                                }}
-                              >
-                                <Text style={{ color: active ? palette.accent : '#cbd5e1', fontSize: 11.5, fontWeight: '700' }}>
-                                  {step}{step === 20 ? ' (Rec)' : ''}
-                                </Text>
-                              </TouchableOpacity>
-                            );
-                          })}
-                          <TextInput
-                            value={String(autoMemoryInterval)}
-                            onChangeText={txt => {
-                              const num = parseInt(txt.replace(/[^0-9]/g, ''), 10);
-                              if (!isNaN(num) && num >= 4 && num <= 500) {
-                                setAutoMemoryInterval(num);
-                                persistChatSettings({ autoMemoryInterval: num });
-                              } else if (txt === '') {
-                                setAutoMemoryInterval(20);
-                              }
-                            }}
-                            keyboardType="number-pad"
-                            placeholder="20"
-                            placeholderTextColor="#64748b"
-                            style={{
-                              width: 52,
-                              paddingHorizontal: 8,
-                              paddingVertical: 4,
-                              borderRadius: 8,
-                              borderWidth: 1,
-                              borderColor: 'rgba(255,255,255,0.16)',
-                              backgroundColor: 'rgba(255,255,255,0.05)',
-                              color: '#f8fafc',
-                              fontSize: 12,
-                              textAlign: 'center',
-                            }}
-                          />
-                        </View>
-                      )}
-                    </View>
-
-                    {memoryNoticeText ? (
-                      <Text
-                        style={{
-                          color: memoryNoticeText.startsWith('⚠️') ? '#f87171' : palette.accent,
-                          fontSize: 11.5,
-                          fontWeight: '600',
-                          marginTop: 10,
-                        }}
-                      >
-                        {memoryNoticeText}
-                      </Text>
-                    ) : null}
+                    )}
                   </View>
-                </View>
-              )}
 
-              {/* TAB 1 (Settings): Calm Bento Cards + Drill-Down Sub-Views */}
-              {chatControlTab === 'model' && (
-                <View style={{ paddingHorizontal: 20 }}>
-                  {/* ── MAIN SETTINGS VIEW (Image 1) ── */}
-                  {settingsSubView === 'main' && (
-                    <View style={{ gap: 10 }}>
-                      {/* Provider / Model Card */}
-                      <View style={styles.settingsBentoCard}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                          <Text style={styles.settingsCardTitle}>Model</Text>
+                  {memoryNoticeText ? (
+                    <Text
+                      style={{
+                        color: memoryNoticeText.startsWith('⚠️') ? '#f87171' : palette.accent,
+                        fontSize: 11.5,
+                        fontWeight: '600',
+                        marginTop: 10,
+                      }}
+                    >
+                      {memoryNoticeText}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            )}
+
+            {/* TAB 1 (Settings): Calm Bento Cards + Drill-Down Sub-Views */}
+            {chatControlTab === 'model' && (
+              <View style={{ paddingHorizontal: 20 }}>
+                {/* ── MAIN SETTINGS VIEW (Image 1) ── */}
+                {settingsSubView === 'main' && (
+                  <View style={{ gap: 10 }}>
+                    {/* Provider / Model Card */}
+                    <View style={styles.settingsBentoCard}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <Text style={styles.settingsCardTitle}>Model</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                          <TouchableOpacity
+                            style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                            onPress={handleSyncDefaultModel}
+                            disabled={loadingChatModels}
+                          >
+                            <Text style={{ color: '#9ca3af', fontSize: 11.5, fontWeight: '600' }}>
+                              Sync Default
+                            </Text>
+                          </TouchableOpacity>
                           <TouchableOpacity
                             style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
                             onPress={handleFetchChatModels}
@@ -4501,1181 +4879,1418 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                             </Text>
                           </TouchableOpacity>
                         </View>
-                        <ModelDropdown
-                          selectedModel={chatModel}
-                          defaultModelLabel={config?.model || 'Configured in Settings'}
-                          options={(fetchedChatModels.length > 0
-                            ? fetchedChatModels.map(m => ({ id: m.id, label: m.name || m.id }))
-                            : ['gpt-4o', 'gpt-4o-mini', 'claude-3-5-sonnet', 'gemini-2.5-flash', 'deepseek-chat'].map(id => ({
-                                id,
-                                label: id,
-                              }))
-                          )}
-                          onSelect={handleSelectModel}
-                        />
                       </View>
-
-                      {/* Response Length Segmented Toggle */}
-                      <View style={styles.settingsBentoCard}>
-                        <Text style={[styles.settingsCardTitle, { marginBottom: 8 }]}>Response length</Text>
-                        <View
-                          style={{
-                            flexDirection: 'row',
-                            backgroundColor: 'rgba(255,255,255,0.04)',
-                            borderRadius: 12,
-                            padding: 3,
-                            borderWidth: 1,
-                            borderColor: 'rgba(255,255,255,0.07)',
-                          }}
-                        >
-                          {(['standard', 'shorter'] as const).map(len => {
-                            const active = responseLength === len;
-                            return (
-                              <TouchableOpacity
-                                key={len}
-                                style={{
-                                  flex: 1,
-                                  paddingVertical: 8,
-                                  borderRadius: 9,
-                                  alignItems: 'center',
-                                  backgroundColor: active ? `rgba(${palette.accentRgb}, 0.16)` : 'transparent',
-                                  borderWidth: active ? 1 : 0,
-                                  borderColor: active ? `rgba(${palette.accentRgb}, 0.45)` : 'transparent',
-                                }}
-                                onPress={() => {
-                                  setResponseLength(len);
-                                  persistChatSettings({ responseLength: len });
-                                }}
-                                activeOpacity={0.8}
-                              >
-                                <Text
-                                  style={{
-                                    color: active ? palette.accent : '#94a3b8',
-                                    fontSize: 12.5,
-                                    fontWeight: active ? '700' : '600',
-                                  }}
-                                >
-                                  {len === 'standard' ? 'Standard' : 'Shorter'}
-                                </Text>
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </View>
-                        <Text style={{ color: '#64748b', fontSize: 11, marginTop: 6 }}>
-                          Standard: 6–9 paragraphs · Shorter: concise (max 5 paragraphs)
-                        </Text>
-                      </View>
-
-                      {/* Generation Controls Drill-Down Row */}
-                      <TouchableOpacity
-                        style={[styles.settingsBentoCard, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
-                        onPress={() => setSettingsSubView('generation')}
-                        activeOpacity={0.75}
-                      >
-                        <View>
-                          <Text style={styles.settingsCardTitle}>{t('chat.generationControls')}</Text>
-                          <Text style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>
-                            Temperature {chatTemperature.toFixed(1)} · Max tokens {chatMaxTokens === 0 ? 'Unlimited' : chatMaxTokens}
-                          </Text>
-                        </View>
-                        <ChevronRight size={17} color="#64748b" />
-                      </TouchableOpacity>
-
-                      {/* Instructions Bento Group */}
-                      <View style={[styles.settingsBentoCard, { paddingVertical: 6 }]}>
-                        <Text style={[styles.settingsCardTitle, { paddingTop: 6, paddingBottom: 6 }]}>Instructions</Text>
-
-                        <TouchableOpacity
-                          style={styles.settingsDrillRow}
-                          onPress={() => setSettingsSubView('custom_prompt')}
-                          activeOpacity={0.75}
-                        >
-                          <Text style={styles.settingsRowLabel}>Custom prompt</Text>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '55%' }}>
-                            <Text style={styles.settingsRowValue} numberOfLines={1}>
-                              {promptPresets.find(p => p.id === activePresetId || (customPrompt.trim() && p.prompt.trim() === customPrompt.trim()))?.name ||
-                                (customPrompt.trim() ? 'Custom' : 'None')}
-                            </Text>
-                            <ChevronRight size={15} color="#64748b" />
-                          </View>
-                        </TouchableOpacity>
-
-                        <View style={styles.settingsHairline} />
-
-                        <TouchableOpacity
-                          style={styles.settingsDrillRow}
-                          onPress={() => setSettingsSubView('prefill')}
-                          activeOpacity={0.75}
-                        >
-                          <Text style={styles.settingsRowLabel}>Prefill</Text>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Text style={styles.settingsRowValue}>
-                              {prefillEnabled && prefillText.trim() ? 'On' : 'Off'}
-                            </Text>
-                            <ChevronRight size={15} color="#64748b" />
-                          </View>
-                        </TouchableOpacity>
-
-                        <View style={styles.settingsHairline} />
-
-                        <TouchableOpacity
-                          style={styles.settingsDrillRow}
-                          onPress={() => setSettingsSubView('forbidden_words')}
-                          activeOpacity={0.75}
-                        >
-                          <Text style={styles.settingsRowLabel}>Forbidden words</Text>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Text style={styles.settingsRowValue}>{forbiddenWords.length}/10</Text>
-                            <ChevronRight size={15} color="#64748b" />
-                          </View>
-                        </TouchableOpacity>
-
-                        <View style={styles.settingsHairline} />
-
-                        <TouchableOpacity
-                          style={styles.settingsDrillRow}
-                          onPress={() => setSettingsSubView('lorebooks')}
-                          activeOpacity={0.75}
-                        >
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                            <BookOpen size={15} color={palette.accent} />
-                            <Text style={styles.settingsRowLabel}>Attached Lorebooks</Text>
-                          </View>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                            <Text style={styles.settingsRowValue}>
-                              {attachedLorebookIds.length > 0 ? `${attachedLorebookIds.length} active` : 'Global only'}
-                            </Text>
-                            <ChevronRight size={15} color="#64748b" />
-                          </View>
-                        </TouchableOpacity>
-                      </View>
+                      <ModelDropdown
+                        selectedModel={chatModel}
+                        defaultModelLabel={syncedDefaultModel || config?.model || 'Configured in Settings'}
+                        options={(fetchedChatModels.length > 0
+                          ? fetchedChatModels.map(m => ({ id: m.id, label: m.name || m.id }))
+                          : ['gpt-4o', 'gpt-4o-mini', 'claude-3-5-sonnet', 'gemini-2.5-flash', 'deepseek-chat'].map(id => ({
+                            id,
+                            label: id,
+                          }))
+                        )}
+                        onSelect={handleSelectModel}
+                      />
                     </View>
-                  )}
 
-                  {/* ── SUB-VIEW: GENERATION CONTROLS (Image 2) ── */}
-                  {settingsSubView === 'generation' && (
-                    <View>
-                      <TouchableOpacity
-                        style={styles.settingsSubHeader}
-                        onPress={() => setSettingsSubView('main')}
-                        activeOpacity={0.75}
+                    {/* Response Length Segmented Toggle */}
+                    <View style={styles.settingsBentoCard}>
+                      <Text style={[styles.settingsCardTitle, { marginBottom: 8 }]}>Response length</Text>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          backgroundColor: 'rgba(255,255,255,0.04)',
+                          borderRadius: 12,
+                          padding: 3,
+                          borderWidth: 1,
+                          borderColor: 'rgba(255,255,255,0.07)',
+                        }}
                       >
-                        <ChevronLeft size={18} color="#f8fafc" />
-                        <Text style={styles.settingsSubHeaderTitle}>{t('chat.generationControls')}</Text>
-                      </TouchableOpacity>
-
-                      <View style={styles.settingsBentoCard}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                          <Text style={styles.settingsCardTitle}>Temperature</Text>
-                          <View style={styles.settingsValueBadge}>
-                            <Text style={styles.settingsValueBadgeText}>{chatTemperature.toFixed(1)}</Text>
-                          </View>
-                        </View>
-                        <SmoothSlider
-                          value={Math.round(chatTemperature * 10)}
-                          min={0}
-                          max={20}
-                          step={1}
-                          onValueChange={val => handleSelectTemperature(Number((val / 10).toFixed(1)))}
-                          minLabel="0.0 Focused"
-                          maxLabel="2.0 Creative"
-                        />
-                        <Text style={styles.settingsHelperText}>
-                          Controls how varied replies are. Lower is more focused; higher is more creative.
-                        </Text>
-
-                        <View style={[styles.settingsHairline, { marginVertical: 14 }]} />
-
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                          <Text style={styles.settingsCardTitle}>Max tokens</Text>
-                          <View style={styles.settingsValueBadge}>
-                            <Text style={styles.settingsValueBadgeText}>{chatMaxTokens === 0 ? 'Unlimited' : chatMaxTokens}</Text>
-                          </View>
-                        </View>
-                        <SmoothSlider
-                          value={Math.min(chatMaxTokens, 32768)}
-                          min={0}
-                          max={32768}
-                          step={256}
-                          onValueChange={val => {
-                            setChatMaxTokens(val);
-                            persistChatSettings({ maxTokens: val });
-                          }}
-                          minLabel="0 Unlimited"
-                          maxLabel="32K+"
-                        />
-                        <View style={{ flexDirection: 'row', gap: 6, marginTop: 8, marginBottom: 8 }}>
-                          {[
-                            { val: 0, label: 'Unlimited' },
-                            { val: 1024, label: '1K' },
-                            { val: 4096, label: '4K' },
-                            { val: 8192, label: '8K' },
-                            { val: 15000, label: '15K' },
-                          ].map(preset => (
+                        {(['standard', 'shorter'] as const).map(len => {
+                          const active = responseLength === len;
+                          return (
                             <TouchableOpacity
-                              key={preset.val}
-                              onPress={() => {
-                                setChatMaxTokens(preset.val);
-                                persistChatSettings({ maxTokens: preset.val });
-                              }}
+                              key={len}
                               style={{
                                 flex: 1,
-                                paddingVertical: 6,
-                                borderRadius: 8,
+                                paddingVertical: 8,
+                                borderRadius: 9,
                                 alignItems: 'center',
-                                borderWidth: 1,
-                                borderColor: chatMaxTokens === preset.val ? palette.accent : 'rgba(255,255,255,0.1)',
+                                backgroundColor: active ? `rgba(${palette.accentRgb}, 0.16)` : 'transparent',
+                                borderWidth: active ? 1 : 0,
+                                borderColor: active ? `rgba(${palette.accentRgb}, 0.45)` : 'transparent',
+                              }}
+                              onPress={() => {
+                                setResponseLength(len);
+                                persistChatSettings({ responseLength: len });
+                              }}
+                              activeOpacity={0.8}
+                            >
+                              <Text
+                                style={{
+                                  color: active ? palette.accent : '#94a3b8',
+                                  fontSize: 12.5,
+                                  fontWeight: active ? '700' : '600',
+                                }}
+                              >
+                                {len === 'standard' ? 'Standard' : 'Shorter'}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                      <Text style={{ color: '#64748b', fontSize: 11, marginTop: 6 }}>
+                        Standard: 6–9 paragraphs · Shorter: concise (max 5 paragraphs)
+                      </Text>
+                    </View>
+
+                    {/* Token Stripper (Pre-Send Context Optimizer with Live Preview) */}
+                    {(() => {
+                      const preview = getTokenStripperPreview(tokenOptimizerLevel);
+                      const levels: { id: TokenOptimizerLevel; label: string; tag?: string }[] = [
+                        { id: 'off', label: 'Off' },
+                        { id: 'easy', label: 'Easy', tag: 'RP Safe' },
+                        { id: 'medium', label: 'Medium' },
+                        { id: 'aggressive', label: 'Aggr.' },
+                      ];
+                      return (
+                        <View style={styles.settingsBentoCard}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                            <Text style={styles.settingsCardTitle}>Token stripper</Text>
+                            <View
+                              style={{
+                                paddingHorizontal: 8,
+                                paddingVertical: 2,
+                                borderRadius: 8,
                                 backgroundColor:
-                                  chatMaxTokens === preset.val
-                                    ? `rgba(${palette.accentRgb}, 0.14)`
-                                    : 'rgba(255,255,255,0.03)',
+                                  tokenOptimizerLevel === 'off'
+                                    ? 'rgba(148, 163, 184, 0.14)'
+                                    : `rgba(${palette.accentRgb}, 0.16)`,
+                                borderWidth: 1,
+                                borderColor:
+                                  tokenOptimizerLevel === 'off'
+                                    ? 'rgba(148, 163, 184, 0.25)'
+                                    : `rgba(${palette.accentRgb}, 0.4)`,
                               }}
                             >
                               <Text
                                 style={{
-                                  color: chatMaxTokens === preset.val ? palette.accent : '#cbd5e1',
-                                  fontSize: 11,
+                                  color: tokenOptimizerLevel === 'off' ? '#94a3b8' : palette.accent,
+                                  fontSize: 10.5,
                                   fontWeight: '700',
                                 }}
                               >
-                                {preset.label}
+                                {preview.savingsBadge}
                               </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                        <TextInput
-                          style={{
-                            backgroundColor: 'rgba(15, 23, 42, 0.7)',
-                            borderWidth: 1,
-                            borderColor: 'rgba(255,255,255,0.12)',
-                            borderRadius: 10,
-                            paddingHorizontal: 12,
-                            paddingVertical: 8,
-                            color: '#f8fafc',
-                            fontSize: 13,
-                            marginBottom: 6,
-                          }}
-                          value={String(chatMaxTokens)}
-                          onChangeText={v => {
-                            const digits = v.replace(/\D/g, '');
-                            const parsed = digits === '' ? 0 : parseInt(digits, 10);
-                            setChatMaxTokens(parsed);
-                            persistChatSettings({ maxTokens: parsed });
-                          }}
-                          keyboardType="number-pad"
-                          placeholder="Custom max tokens (0 = Unlimited)"
-                          placeholderTextColor="#64748b"
-                        />
-                        <Text style={styles.settingsHelperText}>
-                          Enter any custom limit (no 15K cap) or 0 = Unlimited (omits client-side cap; provider limits remain authoritative).
-                        </Text>
+                            </View>
+                          </View>
 
-                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 }}>
-                          <TouchableOpacity
-                            style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4, paddingHorizontal: 8 }}
-                            onPress={() => {
-                              setChatTemperature(0.7);
-                              setChatMaxTokens(4096);
-                              persistChatSettings({ temperature: 0.7, maxTokens: 4096 });
+                          {/* Scrollable Color-Coded Sample Preview */}
+                          <View
+                            style={{
+                              backgroundColor: 'rgba(2, 6, 23, 0.65)',
+                              borderRadius: 10,
+                              borderWidth: 1,
+                              borderColor: 'rgba(255, 255, 255, 0.08)',
+                              padding: 10,
+                              marginBottom: 10,
                             }}
                           >
-                            <RotateCcw size={13} color="#94a3b8" />
-                            <Text style={{ color: '#94a3b8', fontSize: 12, fontWeight: '600' }}>Reset</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </View>
-                  )}
+                            <ScrollView
+                              nestedScrollEnabled
+                              showsVerticalScrollIndicator
+                              style={{ maxHeight: 122 }}
+                            >
+                              <Text style={{ fontSize: 11.5, lineHeight: 17 }}>
+                                {preview.segments.map((seg, segIdx) => (
+                                  <Text
+                                    key={segIdx}
+                                    style={
+                                      seg.state === 'stripped'
+                                        ? {
+                                          color: 'rgba(248, 113, 113, 0.5)',
+                                          textDecorationLine: 'line-through',
+                                        }
+                                        : seg.state === 'compressed'
+                                          ? {
+                                            color: 'rgba(251, 191, 36, 0.85)',
+                                            fontStyle: 'italic',
+                                          }
+                                          : {
+                                            color: '#e2e8f0',
+                                          }
+                                    }
+                                  >
+                                    {seg.text}
+                                  </Text>
+                                ))}
+                              </Text>
+                            </ScrollView>
+                            <View style={{ flexDirection: 'row', gap: 12, marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' }}>
+                              <Text style={{ color: '#cbd5e1', fontSize: 10 }}>● Kept</Text>
+                              <Text style={{ color: 'rgba(248, 113, 113, 0.78)', fontSize: 10, textDecorationLine: 'line-through' }}>● Stripped</Text>
+                              <Text style={{ color: 'rgba(251, 191, 36, 0.85)', fontSize: 10 }}>● Compressed</Text>
+                            </View>
+                          </View>
 
-                  {/* ── SUB-VIEW: CUSTOM PROMPT LIST (Image 3) ── */}
-                  {settingsSubView === 'custom_prompt' && (
-                    <View>
+                          {/* 4-Step Slider Track */}
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              backgroundColor: 'rgba(255,255,255,0.04)',
+                              borderRadius: 12,
+                              padding: 3,
+                              borderWidth: 1,
+                              borderColor: 'rgba(255,255,255,0.07)',
+                            }}
+                          >
+                            {levels.map(lvl => {
+                              const active = tokenOptimizerLevel === lvl.id;
+                              return (
+                                <TouchableOpacity
+                                  key={lvl.id}
+                                  style={{
+                                    flex: 1,
+                                    paddingVertical: 7,
+                                    borderRadius: 9,
+                                    alignItems: 'center',
+                                    backgroundColor: active ? `rgba(${palette.accentRgb}, 0.16)` : 'transparent',
+                                    borderWidth: active ? 1 : 0,
+                                    borderColor: active ? `rgba(${palette.accentRgb}, 0.45)` : 'transparent',
+                                  }}
+                                  onPress={() => {
+                                    setTokenOptimizerLevel(lvl.id);
+                                    persistChatSettings({ tokenOptimizer: lvl.id });
+                                  }}
+                                  activeOpacity={0.8}
+                                >
+                                  <Text
+                                    style={{
+                                      color: active ? palette.accent : '#94a3b8',
+                                      fontSize: 11.5,
+                                      fontWeight: active ? '700' : '600',
+                                    }}
+                                  >
+                                    {lvl.label}
+                                  </Text>
+                                  {lvl.tag && (
+                                    <Text style={{ color: active ? palette.accent : '#64748b', fontSize: 8.5, fontWeight: '700', marginTop: 1 }}>
+                                      {lvl.tag}
+                                    </Text>
+                                  )}
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+
+                          {/* Recommendation & Memory Tip */}
+                          <Text style={{ color: '#cbd5e1', fontSize: 11.5, lineHeight: 16, marginTop: 8 }}>
+                            {preview.recommendation}
+                          </Text>
+                          <View
+                            style={{
+                              marginTop: 8,
+                              padding: 8,
+                              borderRadius: 8,
+                              backgroundColor: 'rgba(251, 191, 36, 0.08)',
+                              borderWidth: 1,
+                              borderColor: 'rgba(251, 191, 36, 0.22)',
+                            }}
+                          >
+                            <Text style={{ color: '#fde68a', fontSize: 11, lineHeight: 15 }}>
+                              {preview.memoryTip}
+                            </Text>
+                            {!autoMemoryEnabled && (
+                              <TouchableOpacity
+                                onPress={() => {
+                                  setAutoMemoryEnabled(true);
+                                  setAutoMemoryInterval(20);
+                                  persistChatSettings({ autoMemoryEnabled: true, autoMemoryInterval: 20 });
+                                }}
+                                activeOpacity={0.8}
+                                style={{
+                                  alignSelf: 'flex-start',
+                                  marginTop: 6,
+                                  paddingHorizontal: 9,
+                                  paddingVertical: 4,
+                                  borderRadius: 7,
+                                  backgroundColor: 'rgba(251, 191, 36, 0.16)',
+                                  borderWidth: 1,
+                                  borderColor: 'rgba(251, 191, 36, 0.4)',
+                                }}
+                              >
+                                <Text style={{ color: '#fde68a', fontSize: 10.5, fontWeight: '700' }}>
+                                  Enable Auto-Memory (every 20 msgs)
+                                </Text>
+                              </TouchableOpacity>
+                            )}
+                          </View>
+                        </View>
+                      );
+                    })()}
+
+                    {/* Generation Controls Drill-Down Row */}
+                    <TouchableOpacity
+                      style={[styles.settingsBentoCard, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
+                      onPress={() => setSettingsSubView('generation')}
+                      activeOpacity={0.75}
+                    >
+                      <View>
+                        <Text style={styles.settingsCardTitle}>{t('chat.generationControls')}</Text>
+                        <Text style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>
+                          Temperature {chatTemperature.toFixed(1)} · Max tokens {chatMaxTokens === 0 ? 'Unlimited' : chatMaxTokens}
+                        </Text>
+                      </View>
+                      <ChevronRight size={17} color="#64748b" />
+                    </TouchableOpacity>
+
+                    {/* Instructions Bento Group */}
+                    <View style={[styles.settingsBentoCard, { paddingVertical: 6 }]}>
+                      <Text style={[styles.settingsCardTitle, { paddingTop: 6, paddingBottom: 6 }]}>Instructions</Text>
+
                       <TouchableOpacity
-                        style={styles.settingsSubHeader}
-                        onPress={() => setSettingsSubView('main')}
+                        style={styles.settingsDrillRow}
+                        onPress={() => setSettingsSubView('custom_prompt')}
                         activeOpacity={0.75}
                       >
-                        <ChevronLeft size={18} color="#f8fafc" />
-                        <Text style={styles.settingsSubHeaderTitle}>Custom prompt</Text>
+                        <Text style={styles.settingsRowLabel}>Custom prompt</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '55%' }}>
+                          <Text style={styles.settingsRowValue} numberOfLines={1}>
+                            {promptPresets.find(p => p.id === activePresetId || (customPrompt.trim() && p.prompt.trim() === customPrompt.trim()))?.name ||
+                              (customPrompt.trim() ? 'Custom' : 'None')}
+                          </Text>
+                          <ChevronRight size={15} color="#64748b" />
+                        </View>
                       </TouchableOpacity>
+
+                      <View style={styles.settingsHairline} />
 
                       <TouchableOpacity
-                        style={[
-                          styles.settingsBentoCard,
-                          {
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            marginBottom: 12,
-                            borderColor: !customPrompt.trim() ? palette.accent : 'rgba(255,255,255,0.08)',
-                            backgroundColor: !customPrompt.trim() ? `rgba(${palette.accentRgb}, 0.1)` : 'rgba(255,255,255,0.035)',
-                          },
-                        ]}
-                        onPress={() => handleApplyCustomPrompt('', null)}
-                        activeOpacity={0.8}
+                        style={styles.settingsDrillRow}
+                        onPress={() => setSettingsSubView('prefill')}
+                        activeOpacity={0.75}
                       >
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.settingsCardTitle}>None</Text>
-                          <Text style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 2 }}>
-                            {"Use NekoChat's default instructions."}
+                        <Text style={styles.settingsRowLabel}>Prefill</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={styles.settingsRowValue}>
+                            {prefillEnabled && prefillText.trim() ? 'On' : 'Off'}
                           </Text>
+                          <ChevronRight size={15} color="#64748b" />
                         </View>
-                        {!customPrompt.trim() && <Check size={16} color={palette.accent} />}
                       </TouchableOpacity>
 
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <Text style={{ color: '#94a3b8', fontSize: 12.5, fontWeight: '600' }}>Prompts</Text>
+                      <View style={styles.settingsHairline} />
+
+                      <TouchableOpacity
+                        style={styles.settingsDrillRow}
+                        onPress={() => setSettingsSubView('forbidden_words')}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={styles.settingsRowLabel}>Forbidden words</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={styles.settingsRowValue}>{forbiddenWords.length}/10</Text>
+                          <ChevronRight size={15} color="#64748b" />
+                        </View>
+                      </TouchableOpacity>
+
+                      <View style={styles.settingsHairline} />
+
+                      <TouchableOpacity
+                        style={styles.settingsDrillRow}
+                        onPress={() => setSettingsSubView('lorebooks')}
+                        activeOpacity={0.75}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <BookOpen size={15} color={palette.accent} />
+                          <Text style={styles.settingsRowLabel}>Attached Lorebooks</Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={styles.settingsRowValue}>
+                            {attachedLorebookIds.length > 0 ? `${attachedLorebookIds.length} active` : 'Global only'}
+                          </Text>
+                          <ChevronRight size={15} color="#64748b" />
+                        </View>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+
+                {/* ── SUB-VIEW: GENERATION CONTROLS (Image 2) ── */}
+                {settingsSubView === 'generation' && (
+                  <View>
+                    <TouchableOpacity
+                      style={styles.settingsSubHeader}
+                      onPress={() => setSettingsSubView('main')}
+                      activeOpacity={0.75}
+                    >
+                      <ChevronLeft size={18} color="#f8fafc" />
+                      <Text style={styles.settingsSubHeaderTitle}>{t('chat.generationControls')}</Text>
+                    </TouchableOpacity>
+
+                    <View style={styles.settingsBentoCard}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <Text style={styles.settingsCardTitle}>Temperature</Text>
+                        <View style={styles.settingsValueBadge}>
+                          <Text style={styles.settingsValueBadgeText}>{chatTemperature.toFixed(1)}</Text>
+                        </View>
+                      </View>
+                      <SmoothSlider
+                        value={Math.round(chatTemperature * 10)}
+                        min={0}
+                        max={20}
+                        step={1}
+                        onValueChange={val => handleSelectTemperature(Number((val / 10).toFixed(1)))}
+                        minLabel="0.0 Focused"
+                        maxLabel="2.0 Creative"
+                      />
+                      <Text style={styles.settingsHelperText}>
+                        Controls how varied replies are. Lower is more focused; higher is more creative.
+                      </Text>
+
+                      <View style={[styles.settingsHairline, { marginVertical: 14 }]} />
+
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <Text style={styles.settingsCardTitle}>Max tokens</Text>
+                        <View style={styles.settingsValueBadge}>
+                          <Text style={styles.settingsValueBadgeText}>{chatMaxTokens === 0 ? 'Unlimited' : chatMaxTokens}</Text>
+                        </View>
+                      </View>
+                      <SmoothSlider
+                        value={Math.min(chatMaxTokens, 32768)}
+                        min={0}
+                        max={32768}
+                        step={256}
+                        onValueChange={val => {
+                          setChatMaxTokens(val);
+                          persistChatSettings({ maxTokens: val });
+                        }}
+                        minLabel="0 Unlimited"
+                        maxLabel="32K+"
+                      />
+                      <View style={{ flexDirection: 'row', gap: 6, marginTop: 8, marginBottom: 8 }}>
+                        {[
+                          { val: 0, label: 'Unlimited' },
+                          { val: 1024, label: '1K' },
+                          { val: 4096, label: '4K' },
+                          { val: 8192, label: '8K' },
+                          { val: 15000, label: '15K' },
+                        ].map(preset => (
+                          <TouchableOpacity
+                            key={preset.val}
+                            onPress={() => {
+                              setChatMaxTokens(preset.val);
+                              persistChatSettings({ maxTokens: preset.val });
+                            }}
+                            style={{
+                              flex: 1,
+                              paddingVertical: 6,
+                              borderRadius: 8,
+                              alignItems: 'center',
+                              borderWidth: 1,
+                              borderColor: chatMaxTokens === preset.val ? palette.accent : 'rgba(255,255,255,0.1)',
+                              backgroundColor:
+                                chatMaxTokens === preset.val
+                                  ? `rgba(${palette.accentRgb}, 0.14)`
+                                  : 'rgba(255,255,255,0.03)',
+                            }}
+                          >
+                            <Text
+                              style={{
+                                color: chatMaxTokens === preset.val ? palette.accent : '#cbd5e1',
+                                fontSize: 11,
+                                fontWeight: '700',
+                              }}
+                            >
+                              {preset.label}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                      <TextInput
+                        style={{
+                          backgroundColor: 'rgba(15, 23, 42, 0.7)',
+                          borderWidth: 1,
+                          borderColor: 'rgba(255,255,255,0.12)',
+                          borderRadius: 10,
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          color: '#f8fafc',
+                          fontSize: 13,
+                          marginBottom: 6,
+                        }}
+                        value={String(chatMaxTokens)}
+                        onChangeText={v => {
+                          const digits = v.replace(/\D/g, '');
+                          const parsed = digits === '' ? 0 : parseInt(digits, 10);
+                          setChatMaxTokens(parsed);
+                          persistChatSettings({ maxTokens: parsed });
+                        }}
+                        keyboardType="number-pad"
+                        placeholder="Custom max tokens (0 = Unlimited)"
+                        placeholderTextColor="#64748b"
+                      />
+                      <Text style={styles.settingsHelperText}>
+                        Enter any custom limit (no 15K cap) or 0 = Unlimited (omits client-side cap; provider limits remain authoritative).
+                      </Text>
+
+                      <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 12 }}>
                         <TouchableOpacity
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 4, paddingHorizontal: 8 }}
                           onPress={() => {
-                            setNewPresetName('');
-                            setNewPresetBody('');
-                            setSettingsSubView('new_custom_prompt');
+                            setChatTemperature(0.7);
+                            setChatMaxTokens(4096);
+                            persistChatSettings({ temperature: 0.7, maxTokens: 4096 });
                           }}
+                        >
+                          <RotateCcw size={13} color="#94a3b8" />
+                          <Text style={{ color: '#94a3b8', fontSize: 12, fontWeight: '600' }}>Reset</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                )}
+
+                {/* ── SUB-VIEW: CUSTOM PROMPT LIST (Image 3) ── */}
+                {settingsSubView === 'custom_prompt' && (
+                  <View>
+                    <TouchableOpacity
+                      style={styles.settingsSubHeader}
+                      onPress={() => setSettingsSubView('main')}
+                      activeOpacity={0.75}
+                    >
+                      <ChevronLeft size={18} color="#f8fafc" />
+                      <Text style={styles.settingsSubHeaderTitle}>Custom prompt</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.settingsBentoCard,
+                        {
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          marginBottom: 12,
+                          borderColor: !customPrompt.trim() ? palette.accent : 'rgba(255,255,255,0.08)',
+                          backgroundColor: !customPrompt.trim() ? `rgba(${palette.accentRgb}, 0.1)` : 'rgba(255,255,255,0.035)',
+                        },
+                      ]}
+                      onPress={() => handleApplyCustomPrompt('', null)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.settingsCardTitle}>None</Text>
+                        <Text style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 2 }}>
+                          {"Use NekoChat's default instructions."}
+                        </Text>
+                      </View>
+                      {!customPrompt.trim() && <Check size={16} color={palette.accent} />}
+                    </TouchableOpacity>
+
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <Text style={{ color: '#94a3b8', fontSize: 12.5, fontWeight: '600' }}>Prompts</Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setNewPresetName('');
+                          setNewPresetBody('');
+                          setSettingsSubView('new_custom_prompt');
+                        }}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 4,
+                          paddingHorizontal: 10,
+                          paddingVertical: 5,
+                          borderRadius: 10,
+                          borderWidth: 1,
+                          borderColor: 'rgba(255,255,255,0.14)',
+                          backgroundColor: 'rgba(255,255,255,0.05)',
+                        }}
+                      >
+                        <Plus size={13} color="#f8fafc" />
+                        <Text style={{ color: '#f8fafc', fontSize: 12, fontWeight: '600' }}>New</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    {promptPresets.length > 0 && (
+                      <View style={[styles.settingsBentoCard, { paddingVertical: 4, marginBottom: 10 }]}>
+                        {promptPresets.map((preset, idx) => {
+                          const isSelected = activePresetId === preset.id || customPrompt.trim() === preset.prompt.trim();
+                          const estTokens = Math.max(1, Math.ceil(preset.prompt.length / 4));
+                          const dateStr = new Date(preset.updatedAt).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          });
+                          return (
+                            <React.Fragment key={preset.id}>
+                              {idx > 0 && <View style={styles.settingsHairline} />}
+                              <TouchableOpacity
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  paddingVertical: 10,
+                                  gap: 8,
+                                }}
+                                onPress={() => handleApplyCustomPrompt(preset.prompt, preset.id)}
+                                activeOpacity={0.8}
+                              >
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ color: '#f8fafc', fontSize: 13.5, fontWeight: '700' }} numberOfLines={1}>
+                                    {preset.name}
+                                  </Text>
+                                  <Text style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 2 }} numberOfLines={1}>
+                                    {preset.prompt}
+                                  </Text>
+                                  <Text style={{ color: '#64748b', fontSize: 10.5, marginTop: 2 }}>
+                                    ~{estTokens} tokens · {dateStr}
+                                  </Text>
+                                </View>
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                                  {isSelected && <Check size={16} color={palette.accent} />}
+                                  <TouchableOpacity
+                                    onPress={() => handleDeletePreset(preset.id)}
+                                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                  >
+                                    <Trash2 size={14} color="#64748b" />
+                                  </TouchableOpacity>
+                                </View>
+                              </TouchableOpacity>
+                            </React.Fragment>
+                          );
+                        })}
+                      </View>
+                    )}
+
+                    <Text style={styles.settingsHelperText}>
+                      Your top-level system prompt for each reply. Sent before persona, scenario, and memory. Use {'{{char}}'} / {'{{user}}'} for names.
+                    </Text>
+                  </View>
+                )}
+
+                {/* ── SUB-VIEW: NEW CUSTOM PROMPT (Image 4) ── */}
+                {settingsSubView === 'new_custom_prompt' && (
+                  <View>
+                    <TouchableOpacity
+                      style={styles.settingsSubHeader}
+                      onPress={() => setSettingsSubView('custom_prompt')}
+                      activeOpacity={0.75}
+                    >
+                      <ChevronLeft size={18} color="#f8fafc" />
+                      <Text style={styles.settingsSubHeaderTitle}>New custom prompt</Text>
+                    </TouchableOpacity>
+
+                    <Text style={{ color: '#e2e8f0', fontSize: 12.5, fontWeight: '600', marginBottom: 6 }}>Name</Text>
+                    <TextInput
+                      style={[styles.personaNameInput, { marginBottom: 12 }]}
+                      value={newPresetName}
+                      onChangeText={setNewPresetName}
+                      placeholder="Name this prompt"
+                      placeholderTextColor="rgba(255,255,255,0.35)"
+                    />
+
+                    <Text style={{ color: '#e2e8f0', fontSize: 12.5, fontWeight: '600', marginBottom: 6 }}>Custom prompt</Text>
+                    <TextInput
+                      style={[styles.personaPersonalityInput, { minHeight: 150, marginBottom: 10 }]}
+                      value={newPresetBody}
+                      onChangeText={setNewPresetBody}
+                      placeholder="Write the instructions the model should follow..."
+                      placeholderTextColor="rgba(255,255,255,0.35)"
+                      multiline
+                      textAlignVertical="top"
+                    />
+
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={{ color: '#64748b', fontSize: 11.5 }}>
+                        ~{Math.ceil(newPresetBody.length / 4)} tokens
+                      </Text>
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        <TouchableOpacity
+                          style={{
+                            paddingHorizontal: 14,
+                            paddingVertical: 8,
+                            borderRadius: 10,
+                            borderWidth: 1,
+                            borderColor: 'rgba(255,255,255,0.14)',
+                          }}
+                          onPress={() => setSettingsSubView('custom_prompt')}
+                        >
+                          <Text style={{ color: '#cbd5e1', fontSize: 12.5, fontWeight: '600' }}>Cancel</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={{
+                            paddingHorizontal: 16,
+                            paddingVertical: 8,
+                            borderRadius: 10,
+                            backgroundColor: newPresetName.trim() && newPresetBody.trim() ? palette.accent : 'rgba(255,255,255,0.1)',
+                          }}
+                          onPress={async () => {
+                            await handleSaveNewPreset();
+                            setSettingsSubView('custom_prompt');
+                          }}
+                          disabled={!newPresetName.trim() || !newPresetBody.trim()}
+                        >
+                          <Text
+                            style={{
+                              color: newPresetName.trim() && newPresetBody.trim() ? palette.bgDark : '#64748b',
+                              fontSize: 12.5,
+                              fontWeight: '700',
+                            }}
+                          >
+                            Save
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                )}
+
+                {/* ── SUB-VIEW: ATTACHED LOREBOOKS ── */}
+                {settingsSubView === 'lorebooks' && (
+                  <View>
+                    <TouchableOpacity
+                      style={styles.settingsSubHeader}
+                      onPress={() => setSettingsSubView('main')}
+                      activeOpacity={0.75}
+                    >
+                      <ChevronLeft size={18} color="#f8fafc" />
+                      <Text style={styles.settingsSubHeaderTitle}>Attached Lorebooks</Text>
+                    </TouchableOpacity>
+
+                    <View style={[styles.settingsBentoCard, { marginBottom: 10 }]}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <Text style={{ color: '#94a3b8', fontSize: 12, flex: 1, lineHeight: 17 }}>
+                          Attach any Codex Lorebook to {character.name} — works with JanitorAI, Chub.ai, and custom cards.
+                        </Text>
+                        <TouchableOpacity
+                          onPress={() => setHelpLorebookVisible(true)}
+                          activeOpacity={0.8}
                           style={{
                             flexDirection: 'row',
                             alignItems: 'center',
                             gap: 4,
-                            paddingHorizontal: 10,
-                            paddingVertical: 5,
-                            borderRadius: 10,
+                            paddingHorizontal: 9,
+                            paddingVertical: 6,
+                            borderRadius: 9,
                             borderWidth: 1,
-                            borderColor: 'rgba(255,255,255,0.14)',
-                            backgroundColor: 'rgba(255,255,255,0.05)',
+                            borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+                            backgroundColor: `rgba(${palette.accentRgb}, 0.1)`,
                           }}
                         >
-                          <Plus size={13} color="#f8fafc" />
-                          <Text style={{ color: '#f8fafc', fontSize: 12, fontWeight: '600' }}>New</Text>
+                          <HelpCircle size={13} color={palette.accent} />
+                          <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '700' }}>
+                            What is a Lorebook?
+                          </Text>
                         </TouchableOpacity>
                       </View>
-
-                      {promptPresets.length > 0 && (
-                        <View style={[styles.settingsBentoCard, { paddingVertical: 4, marginBottom: 10 }]}>
-                          {promptPresets.map((preset, idx) => {
-                            const isSelected = activePresetId === preset.id || customPrompt.trim() === preset.prompt.trim();
-                            const estTokens = Math.max(1, Math.ceil(preset.prompt.length / 4));
-                            const dateStr = new Date(preset.updatedAt).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric',
-                            });
-                            return (
-                              <React.Fragment key={preset.id}>
-                                {idx > 0 && <View style={styles.settingsHairline} />}
-                                <TouchableOpacity
-                                  style={{
-                                    flexDirection: 'row',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    paddingVertical: 10,
-                                    gap: 8,
-                                  }}
-                                  onPress={() => handleApplyCustomPrompt(preset.prompt, preset.id)}
-                                  activeOpacity={0.8}
-                                >
-                                  <View style={{ flex: 1 }}>
-                                    <Text style={{ color: '#f8fafc', fontSize: 13.5, fontWeight: '700' }} numberOfLines={1}>
-                                      {preset.name}
-                                    </Text>
-                                    <Text style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 2 }} numberOfLines={1}>
-                                      {preset.prompt}
-                                    </Text>
-                                    <Text style={{ color: '#64748b', fontSize: 10.5, marginTop: 2 }}>
-                                      ~{estTokens} tokens · {dateStr}
-                                    </Text>
-                                  </View>
-                                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                                    {isSelected && <Check size={16} color={palette.accent} />}
-                                    <TouchableOpacity
-                                      onPress={() => handleDeletePreset(preset.id)}
-                                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                                    >
-                                      <Trash2 size={14} color="#64748b" />
-                                    </TouchableOpacity>
-                                  </View>
-                                </TouchableOpacity>
-                              </React.Fragment>
-                            );
-                          })}
-                        </View>
-                      )}
-
-                      <Text style={styles.settingsHelperText}>
-                        Your top-level system prompt for each reply. Sent before persona, scenario, and memory. Use {'{{char}}'} / {'{{user}}'} for names.
-                      </Text>
                     </View>
-                  )}
 
-                  {/* ── SUB-VIEW: NEW CUSTOM PROMPT (Image 4) ── */}
-                  {settingsSubView === 'new_custom_prompt' && (
-                    <View>
-                      <TouchableOpacity
-                        style={styles.settingsSubHeader}
-                        onPress={() => setSettingsSubView('custom_prompt')}
-                        activeOpacity={0.75}
-                      >
-                        <ChevronLeft size={18} color="#f8fafc" />
-                        <Text style={styles.settingsSubHeaderTitle}>New custom prompt</Text>
-                      </TouchableOpacity>
+                    {lorebooks.length === 0 ? (
+                      <View style={styles.settingsBentoCard}>
+                        <Text style={{ color: '#cbd5e1', fontSize: 13, fontWeight: '600', marginBottom: 4 }}>
+                          No Lorebooks Created Yet
+                        </Text>
+                        <Text style={{ color: '#64748b', fontSize: 12, lineHeight: 17 }}>
+                          Create or import a Lorebook in Studio → Codex, then come back here to attach it to any character.
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={[styles.settingsBentoCard, { paddingVertical: 6 }]}>
+                        {lorebooks.map((lb, idx) => {
+                          const active = attachedLorebookIds.includes(lb.id);
+                          return (
+                            <React.Fragment key={lb.id}>
+                              {idx > 0 && <View style={styles.settingsHairline} />}
+                              <View
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  paddingVertical: 10,
+                                  gap: 10,
+                                }}
+                              >
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ color: '#f8fafc', fontSize: 13.5, fontWeight: '700' }}>
+                                    {lb.title}
+                                  </Text>
+                                  <Text style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 2 }} numberOfLines={1}>
+                                    {lb.entries.length} entries · {lb.description || 'Keyword-triggered lore'}
+                                  </Text>
+                                </View>
+                                <NekoSwitch
+                                  value={active}
+                                  onValueChange={val => {
+                                    const next = val
+                                      ? Array.from(new Set([...attachedLorebookIds, lb.id]))
+                                      : attachedLorebookIds.filter(id => id !== lb.id);
+                                    setAttachedLorebookIds(next);
+                                    persistChatSettings({ attachedLorebookIds: next });
+                                  }}
+                                />
+                              </View>
+                            </React.Fragment>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </View>
+                )}
 
-                      <Text style={{ color: '#e2e8f0', fontSize: 12.5, fontWeight: '600', marginBottom: 6 }}>Name</Text>
+                {/* ── SUB-VIEW: PREFILL (Image 5) ── */}
+                {settingsSubView === 'prefill' && (
+                  <View>
+                    <TouchableOpacity
+                      style={styles.settingsSubHeader}
+                      onPress={() => setSettingsSubView('main')}
+                      activeOpacity={0.75}
+                    >
+                      <ChevronLeft size={18} color="#f8fafc" />
+                      <Text style={styles.settingsSubHeaderTitle}>Prefill</Text>
+                    </TouchableOpacity>
+
+                    <View style={styles.settingsBentoCard}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                        <Text style={styles.settingsCardTitle}>Enable response prefill</Text>
+                        <NekoSwitch
+                          value={prefillEnabled}
+                          onValueChange={val => {
+                            setPrefillEnabled(val);
+                            persistChatSettings({ prefillEnabled: val });
+                          }}
+                        />
+                      </View>
+
+                      <View style={[styles.settingsHairline, { marginBottom: 12 }]} />
+
+                      <Text style={{ color: '#cbd5e1', fontSize: 12, fontWeight: '600', marginBottom: 6 }}>Prefill</Text>
                       <TextInput
-                        style={[styles.personaNameInput, { marginBottom: 12 }]}
-                        value={newPresetName}
-                        onChangeText={setNewPresetName}
-                        placeholder="Name this prompt"
-                        placeholderTextColor="rgba(255,255,255,0.35)"
-                      />
-
-                      <Text style={{ color: '#e2e8f0', fontSize: 12.5, fontWeight: '600', marginBottom: 6 }}>Custom prompt</Text>
-                      <TextInput
-                        style={[styles.personaPersonalityInput, { minHeight: 150, marginBottom: 10 }]}
-                        value={newPresetBody}
-                        onChangeText={setNewPresetBody}
-                        placeholder="Write the instructions the model should follow..."
+                        style={[styles.personaPersonalityInput, { minHeight: 110, marginBottom: 10 }]}
+                        value={prefillText}
+                        onChangeText={txt => {
+                          setPrefillText(txt);
+                          persistChatSettings({ prefillText: txt });
+                        }}
+                        placeholder="Start the assistant's response with..."
                         placeholderTextColor="rgba(255,255,255,0.35)"
                         multiline
                         textAlignVertical="top"
                       />
 
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={{ color: '#64748b', fontSize: 11.5 }}>
-                          ~{Math.ceil(newPresetBody.length / 4)} tokens
-                        </Text>
-                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <Text style={styles.settingsHelperText}>
+                        {"Puts words in the AI's mouth: your text is slipped in as the start of its reply, right after your latest message, and it continues in that voice and format. Applies to every reply while on."}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* ── SUB-VIEW: FORBIDDEN WORDS (Image 6) ── */}
+                {settingsSubView === 'forbidden_words' && (
+                  <View>
+                    <TouchableOpacity
+                      style={styles.settingsSubHeader}
+                      onPress={() => setSettingsSubView('main')}
+                      activeOpacity={0.75}
+                    >
+                      <ChevronLeft size={18} color="#f8fafc" />
+                      <Text style={styles.settingsSubHeaderTitle}>Forbidden words</Text>
+                    </TouchableOpacity>
+
+                    <View style={styles.settingsBentoCard}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                        <Text style={styles.settingsCardTitle}>Forbidden words</Text>
+                        <Text style={{ color: '#94a3b8', fontSize: 12.5, fontWeight: '600' }}>{forbiddenWords.length}/10</Text>
+                      </View>
+
+                      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+                        <TextInput
+                          style={[styles.personaNameInput, { flex: 1, marginBottom: 0 }]}
+                          value={forbiddenWordInput}
+                          onChangeText={setForbiddenWordInput}
+                          onSubmitEditing={handleAddForbiddenWord}
+                          returnKeyType="done"
+                          placeholder="Type a word and press Enter..."
+                          placeholderTextColor="rgba(255,255,255,0.35)"
+                          editable={forbiddenWords.length < 10}
+                        />
+                        {forbiddenWordInput.trim().length > 0 && (
                           <TouchableOpacity
                             style={{
                               paddingHorizontal: 14,
-                              paddingVertical: 8,
                               borderRadius: 10,
-                              borderWidth: 1,
-                              borderColor: 'rgba(255,255,255,0.14)',
+                              backgroundColor: palette.accent,
+                              justifyContent: 'center',
                             }}
-                            onPress={() => setSettingsSubView('custom_prompt')}
+                            onPress={handleAddForbiddenWord}
                           >
-                            <Text style={{ color: '#cbd5e1', fontSize: 12.5, fontWeight: '600' }}>Cancel</Text>
+                            <Text style={{ color: palette.bgDark, fontSize: 12, fontWeight: '700' }}>Add</Text>
                           </TouchableOpacity>
-                          <TouchableOpacity
-                            style={{
-                              paddingHorizontal: 16,
-                              paddingVertical: 8,
-                              borderRadius: 10,
-                              backgroundColor: newPresetName.trim() && newPresetBody.trim() ? palette.accent : 'rgba(255,255,255,0.1)',
-                            }}
-                            onPress={async () => {
-                              await handleSaveNewPreset();
-                              setSettingsSubView('custom_prompt');
-                            }}
-                            disabled={!newPresetName.trim() || !newPresetBody.trim()}
-                          >
-                            <Text
-                              style={{
-                                color: newPresetName.trim() && newPresetBody.trim() ? palette.bgDark : '#64748b',
-                                fontSize: 12.5,
-                                fontWeight: '700',
-                              }}
-                            >
-                              Save
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </View>
-                  )}
-
-                  {/* ── SUB-VIEW: ATTACHED LOREBOOKS ── */}
-                  {settingsSubView === 'lorebooks' && (
-                    <View>
-                      <TouchableOpacity
-                        style={styles.settingsSubHeader}
-                        onPress={() => setSettingsSubView('main')}
-                        activeOpacity={0.75}
-                      >
-                        <ChevronLeft size={18} color="#f8fafc" />
-                        <Text style={styles.settingsSubHeaderTitle}>Attached Lorebooks</Text>
-                      </TouchableOpacity>
-
-                      <View style={[styles.settingsBentoCard, { marginBottom: 10 }]}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                          <Text style={{ color: '#94a3b8', fontSize: 12, flex: 1, lineHeight: 17 }}>
-                            Attach any Codex Lorebook to {character.name} — works with JanitorAI, Chub.ai, and custom cards.
-                          </Text>
-                          <TouchableOpacity
-                            onPress={() => setHelpLorebookVisible(true)}
-                            activeOpacity={0.8}
-                            style={{
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              gap: 4,
-                              paddingHorizontal: 9,
-                              paddingVertical: 6,
-                              borderRadius: 9,
-                              borderWidth: 1,
-                              borderColor: `rgba(${palette.accentRgb}, 0.35)`,
-                              backgroundColor: `rgba(${palette.accentRgb}, 0.1)`,
-                            }}
-                          >
-                            <HelpCircle size={13} color={palette.accent} />
-                            <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '700' }}>
-                              What is a Lorebook?
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-
-                      {lorebooks.length === 0 ? (
-                        <View style={styles.settingsBentoCard}>
-                          <Text style={{ color: '#cbd5e1', fontSize: 13, fontWeight: '600', marginBottom: 4 }}>
-                            No Lorebooks Created Yet
-                          </Text>
-                          <Text style={{ color: '#64748b', fontSize: 12, lineHeight: 17 }}>
-                            Create or import a Lorebook in Studio → Codex, then come back here to attach it to any character.
-                          </Text>
-                        </View>
-                      ) : (
-                        <View style={[styles.settingsBentoCard, { paddingVertical: 6 }]}>
-                          {lorebooks.map((lb, idx) => {
-                            const active = attachedLorebookIds.includes(lb.id);
-                            return (
-                              <React.Fragment key={lb.id}>
-                                {idx > 0 && <View style={styles.settingsHairline} />}
-                                <View
-                                  style={{
-                                    flexDirection: 'row',
-                                    alignItems: 'center',
-                                    justifyContent: 'space-between',
-                                    paddingVertical: 10,
-                                    gap: 10,
-                                  }}
-                                >
-                                  <View style={{ flex: 1 }}>
-                                    <Text style={{ color: '#f8fafc', fontSize: 13.5, fontWeight: '700' }}>
-                                      {lb.title}
-                                    </Text>
-                                    <Text style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 2 }} numberOfLines={1}>
-                                      {lb.entries.length} entries · {lb.description || 'Keyword-triggered lore'}
-                                    </Text>
-                                  </View>
-                                  <NekoSwitch
-                                    value={active}
-                                    onValueChange={val => {
-                                      const next = val
-                                        ? Array.from(new Set([...attachedLorebookIds, lb.id]))
-                                        : attachedLorebookIds.filter(id => id !== lb.id);
-                                      setAttachedLorebookIds(next);
-                                      persistChatSettings({ attachedLorebookIds: next });
-                                    }}
-                                  />
-                                </View>
-                              </React.Fragment>
-                            );
-                          })}
-                        </View>
-                      )}
-                    </View>
-                  )}
-
-                  {/* ── SUB-VIEW: PREFILL (Image 5) ── */}
-                  {settingsSubView === 'prefill' && (
-                    <View>
-                      <TouchableOpacity
-                        style={styles.settingsSubHeader}
-                        onPress={() => setSettingsSubView('main')}
-                        activeOpacity={0.75}
-                      >
-                        <ChevronLeft size={18} color="#f8fafc" />
-                        <Text style={styles.settingsSubHeaderTitle}>Prefill</Text>
-                      </TouchableOpacity>
-
-                      <View style={styles.settingsBentoCard}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                          <Text style={styles.settingsCardTitle}>Enable response prefill</Text>
-                          <NekoSwitch
-                            value={prefillEnabled}
-                            onValueChange={val => {
-                              setPrefillEnabled(val);
-                              persistChatSettings({ prefillEnabled: val });
-                            }}
-                          />
-                        </View>
-
-                        <View style={[styles.settingsHairline, { marginBottom: 12 }]} />
-
-                        <Text style={{ color: '#cbd5e1', fontSize: 12, fontWeight: '600', marginBottom: 6 }}>Prefill</Text>
-                        <TextInput
-                          style={[styles.personaPersonalityInput, { minHeight: 110, marginBottom: 10 }]}
-                          value={prefillText}
-                          onChangeText={txt => {
-                            setPrefillText(txt);
-                            persistChatSettings({ prefillText: txt });
-                          }}
-                          placeholder="Start the assistant's response with..."
-                          placeholderTextColor="rgba(255,255,255,0.35)"
-                          multiline
-                          textAlignVertical="top"
-                        />
-
-                        <Text style={styles.settingsHelperText}>
-                          {"Puts words in the AI's mouth: your text is slipped in as the start of its reply, right after your latest message, and it continues in that voice and format. Applies to every reply while on."}
-                        </Text>
-                      </View>
-                    </View>
-                  )}
-
-                  {/* ── SUB-VIEW: FORBIDDEN WORDS (Image 6) ── */}
-                  {settingsSubView === 'forbidden_words' && (
-                    <View>
-                      <TouchableOpacity
-                        style={styles.settingsSubHeader}
-                        onPress={() => setSettingsSubView('main')}
-                        activeOpacity={0.75}
-                      >
-                        <ChevronLeft size={18} color="#f8fafc" />
-                        <Text style={styles.settingsSubHeaderTitle}>Forbidden words</Text>
-                      </TouchableOpacity>
-
-                      <View style={styles.settingsBentoCard}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                          <Text style={styles.settingsCardTitle}>Forbidden words</Text>
-                          <Text style={{ color: '#94a3b8', fontSize: 12.5, fontWeight: '600' }}>{forbiddenWords.length}/10</Text>
-                        </View>
-
-                        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-                          <TextInput
-                            style={[styles.personaNameInput, { flex: 1, marginBottom: 0 }]}
-                            value={forbiddenWordInput}
-                            onChangeText={setForbiddenWordInput}
-                            onSubmitEditing={handleAddForbiddenWord}
-                            returnKeyType="done"
-                            placeholder="Type a word and press Enter..."
-                            placeholderTextColor="rgba(255,255,255,0.35)"
-                            editable={forbiddenWords.length < 10}
-                          />
-                          {forbiddenWordInput.trim().length > 0 && (
-                            <TouchableOpacity
-                              style={{
-                                paddingHorizontal: 14,
-                                borderRadius: 10,
-                                backgroundColor: palette.accent,
-                                justifyContent: 'center',
-                              }}
-                              onPress={handleAddForbiddenWord}
-                            >
-                              <Text style={{ color: palette.bgDark, fontSize: 12, fontWeight: '700' }}>Add</Text>
-                            </TouchableOpacity>
-                          )}
-                        </View>
-
-                        {forbiddenWords.length > 0 && (
-                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-                            {forbiddenWords.map(word => (
-                              <TouchableOpacity
-                                key={word}
-                                style={{
-                                  flexDirection: 'row',
-                                  alignItems: 'center',
-                                  gap: 5,
-                                  paddingHorizontal: 10,
-                                  paddingVertical: 5,
-                                  borderRadius: 999,
-                                  backgroundColor: `rgba(${palette.accentRgb}, 0.14)`,
-                                  borderWidth: 1,
-                                  borderColor: `rgba(${palette.accentRgb}, 0.35)`,
-                                }}
-                                onPress={() => handleRemoveForbiddenWord(word)}
-                                activeOpacity={0.75}
-                              >
-                                <Text style={{ color: '#f8fafc', fontSize: 12 }}>{word}</Text>
-                                <X size={12} color="#94a3b8" />
-                              </TouchableOpacity>
-                            ))}
-                          </View>
                         )}
-
-                        <Text style={styles.settingsHelperText}>
-                          Sent as a note with your latest message telling the AI to avoid these words and phrases. It steers strongly but is best-effort — not a hard filter.
-                        </Text>
                       </View>
-                    </View>
-                  )}
-                </View>
-              )}
 
-              {/* TAB 3 (Customize): Options, Background Image & Text Settings */}
-              {chatControlTab === 'syntax' && (
-                <View style={{ paddingHorizontal: 20, gap: 12 }}>
-                  {/* ── CARD 1: OPTIONS ── */}
-                  <View style={styles.settingsBentoCard}>
-                    <Text style={{ color: '#f8fafc', fontSize: 15, fontWeight: '700', marginBottom: 10 }}>
-                      Options
-                    </Text>
-
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.settingsCardTitle}>{t('chat.autoscroll')}</Text>
-                        <Text style={styles.settingsHelperText}>
-                          {"When off, the chat won't follow replies as they're being generated."}
-                        </Text>
-                      </View>
-                      <NekoSwitch
-                        value={autoScrollEnabled}
-                        onValueChange={val => {
-                          setAutoScrollEnabled(val);
-                          persistCustomizePrefs({ autoScrollEnabled: val });
-                        }}
-                      />
-                    </View>
-
-                    <View style={[styles.settingsHairline, { marginVertical: 12 }]} />
-
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.settingsCardTitle}>Text streaming</Text>
-                        <Text style={styles.settingsHelperText}>
-                          Determines if text comes all at once or bit-by-bit. Turning this off may improve performance.
-                        </Text>
-                      </View>
-                      <NekoSwitch
-                        value={textStreamingEnabled}
-                        onValueChange={val => {
-                          setTextStreamingEnabled(val);
-                          persistCustomizePrefs({ textStreamingEnabled: val });
-                        }}
-                      />
-                    </View>
-
-                    <View style={[styles.settingsHairline, { marginVertical: 12 }]} />
-
-                    <Text style={[styles.settingsCardTitle, { marginBottom: 8 }]}>{t('chat.readingLayout')}</Text>
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        backgroundColor: 'rgba(255,255,255,0.04)',
-                        borderRadius: 12,
-                        padding: 3,
-                        borderWidth: 1,
-                        borderColor: 'rgba(255,255,255,0.07)',
-                      }}
-                    >
-                      {(['bubble', 'novel'] as const).map(mode => {
-                        const active = chatStyle === mode;
-                        return (
-                          <TouchableOpacity
-                            key={mode}
-                            style={{
-                              flex: 1,
-                              paddingVertical: 8,
-                              borderRadius: 9,
-                              alignItems: 'center',
-                              backgroundColor: active ? `rgba(${palette.accentRgb}, 0.16)` : 'transparent',
-                              borderWidth: active ? 1 : 0,
-                              borderColor: active ? `rgba(${palette.accentRgb}, 0.45)` : 'transparent',
-                            }}
-                            onPress={() => {
-                              setChatStyle(mode);
-                              AsyncStorage.setItem('@nekochat:chat_style', mode);
-                            }}
-                            activeOpacity={0.8}
-                          >
-                            <Text
-                              style={{
-                                color: active ? palette.accent : '#94a3b8',
-                                fontSize: 12.5,
-                                fontWeight: active ? '700' : '600',
-                              }}
-                            >
-                              {mode === 'bubble' ? 'Chat Bubbles' : 'Novel View'}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  </View>
-
-                  {/* ── CARD 2: BACKGROUND IMAGE ── */}
-                  <View style={styles.settingsBentoCard}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                      <Text style={{ color: '#f8fafc', fontSize: 15, fontWeight: '700' }}>
-                        Background image
-                      </Text>
-                      {appearance.wallpaperUrl ? (
-                        <TouchableOpacity
-                          style={{
-                            width: 26,
-                            height: 26,
-                            borderRadius: 13,
-                            backgroundColor: `rgba(${palette.accentRgb}, 0.2)`,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                          onPress={() => saveChatAppearance({ enableWallpaper: false, wallpaperUrl: '' })}
-                        >
-                          <X size={14} color={palette.accent} />
-                        </TouchableOpacity>
-                      ) : null}
-                    </View>
-
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                      <View style={{ flex: 1, paddingRight: 10 }}>
-                        <Text style={{ color: '#e2e8f0', fontSize: 13, fontWeight: '600' }}>
-                          Smart Auto-Darken
-                        </Text>
-                        <Text style={{ color: '#64748b', fontSize: 11 }}>
-                          Automatically darkens bright wallpapers so text stays readable
-                        </Text>
-                      </View>
-                      <NekoSwitch
-                        value={appearance.smartAutoOverlay !== false}
-                        onValueChange={val => saveChatAppearance({ smartAutoOverlay: val })}
-                      />
-                    </View>
-
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                      <View style={{ flex: 1, paddingRight: 10 }}>
-                        <Text style={{ color: '#e2e8f0', fontSize: 13, fontWeight: '600' }}>
-                          Apply background to all chats
-                        </Text>
-                        <Text style={{ color: '#64748b', fontSize: 11 }}>
-                          Use this wallpaper & darkness across every character
-                        </Text>
-                      </View>
-                      <NekoSwitch
-                        value={Boolean(appearance.applyToAllChats)}
-                        onValueChange={val => saveChatAppearance({ applyToAllChats: val })}
-                      />
-                    </View>
-
-                    {appearance.wallpaperUrl ? (
-                      <TouchableOpacity
-                        onPress={handlePickWallpaper}
-                        activeOpacity={0.85}
-                        style={{ alignItems: 'center', marginBottom: 12 }}
-                      >
-                        <Image
-                          source={{ uri: appearance.wallpaperUrl }}
-                          style={{
-                            width: 110,
-                            height: 150,
-                            borderRadius: 12,
-                            borderWidth: 1,
-                            borderColor: 'rgba(255,255,255,0.14)',
-                          }}
-                          resizeMode="cover"
-                        />
-                        <Text style={{ color: '#94a3b8', fontSize: 11, marginTop: 5 }}>Tap image to change</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        style={{
-                          paddingVertical: 14,
-                          borderRadius: 12,
-                          borderWidth: 1,
-                          borderStyle: 'dashed',
-                          borderColor: 'rgba(255,255,255,0.16)',
-                          backgroundColor: 'rgba(255,255,255,0.03)',
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 8,
-                          marginBottom: 12,
-                        }}
-                        onPress={handlePickWallpaper}
-                        activeOpacity={0.8}
-                      >
-                        <ImagePlus size={16} color={palette.accent} />
-                        <Text style={{ color: '#e2e8f0', fontSize: 12.5, fontWeight: '600' }}>
-                          Choose background image
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                      <Text style={styles.settingsRowLabel}>Background darkness</Text>
-                      <View style={styles.settingsValueBadge}>
-                        <Text style={styles.settingsValueBadgeText}>
-                          {Math.round(appearance.overlayOpacity * 100)}%
-                        </Text>
-                      </View>
-                    </View>
-                    <SmoothSlider
-                      value={Math.round(appearance.overlayOpacity * 100)}
-                      min={0}
-                      max={98}
-                      step={1}
-                      onValueChange={val => saveChatAppearance({ overlayOpacity: val / 100 })}
-                      minLabel="0%"
-                      maxLabel="98%"
-                    />
-
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 2 }}>
-                      <Text style={styles.settingsRowLabel}>Background blur</Text>
-                      <View style={styles.settingsValueBadge}>
-                        <Text style={styles.settingsValueBadgeText}>{appearance.blurRadius}px</Text>
-                      </View>
-                    </View>
-                    <SmoothSlider
-                      value={appearance.blurRadius}
-                      min={0}
-                      max={24}
-                      step={1}
-                      onValueChange={val => saveChatAppearance({ blurRadius: val })}
-                      minLabel="0px"
-                      maxLabel="24px"
-                    />
-
-                    <View style={[styles.settingsHairline, { marginVertical: 12 }]} />
-
-                    <Text style={{ color: '#94a3b8', fontSize: 11.5, marginBottom: 6 }}>Or paste image URL</Text>
-                    <TextInput
-                      style={[styles.personaNameInput, { marginBottom: 8 }]}
-                      placeholder="https://..."
-                      placeholderTextColor="rgba(255,255,255,0.35)"
-                      value={appearance.wallpaperUrl}
-                      onChangeText={v => saveChatAppearance({ enableWallpaper: !!v.trim(), wallpaperUrl: v })}
-                      autoCapitalize="none"
-                    />
-                    <TouchableOpacity
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', paddingVertical: 2 }}
-                      onPress={() => saveChatAppearance({ enableWallpaper: true, wallpaperUrl: character.coverUrl || character.avatar || '' })}
-                      activeOpacity={0.75}
-                    >
-                      <RotateCcw size={12} color={palette.accent} />
-                      <Text style={{ color: palette.accent, fontSize: 12, fontWeight: '600' }}>Reset to default character art</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* ── CARD 3: TEXT SETTINGS ── */}
-                  <View style={styles.settingsBentoCard}>
-                    <Text style={{ color: '#f8fafc', fontSize: 15, fontWeight: '700', marginBottom: 10 }}>
-                      Text settings
-                    </Text>
-
-                    {/* Live Preview Box */}
-                    <View
-                      style={{
-                        backgroundColor: 'rgba(10, 12, 18, 0.72)',
-                        borderRadius: 12,
-                        padding: 12,
-                        borderWidth: 1,
-                        borderColor: 'rgba(255,255,255,0.09)',
-                        marginBottom: 12,
-                      }}
-                    >
-                      <Text style={{ color: '#64748b', fontSize: 10, fontWeight: '700', letterSpacing: 0.8, marginBottom: 5 }}>
-                        PREVIEW
-                      </Text>
-                      <Text style={{ color: '#e2e8f0', fontSize: chatFontSize, lineHeight: Math.round(chatFontSize * 1.45) }}>
-                        This is regular text.{' '}
-                        <Text style={{ color: syntaxColors.narration, fontStyle: 'italic' }}>This is italic text.</Text>{' '}
-                        <Text style={{ fontWeight: '800', color: syntaxColors.bold }}>This is bold text.</Text>{' '}
-                        <Text style={{ color: syntaxColors.code, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }}>
-                          code
-                        </Text>{' '}
-                        <Text style={{ color: syntaxColors.dialogue }}>{'"dialogue"'}</Text>
-                      </Text>
-                    </View>
-
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-                      <Text style={styles.settingsRowLabel}>Font size</Text>
-                      <View style={styles.settingsValueBadge}>
-                        <Text style={styles.settingsValueBadgeText}>{chatFontSize}px</Text>
-                      </View>
-                    </View>
-                    <SmoothSlider
-                      value={chatFontSize}
-                      min={12}
-                      max={20}
-                      step={1}
-                      onValueChange={val => {
-                        setChatFontSize(val);
-                        persistCustomizePrefs({ chatFontSize: val });
-                      }}
-                      minLabel="12px"
-                      maxLabel="20px"
-                    />
-
-                    <Text style={{ color: '#94a3b8', fontSize: 12, fontWeight: '700', marginTop: 10, marginBottom: 6 }}>
-                      Message Font
-                    </Text>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-                      {([
-                        { id: 'default', label: 'Default' },
-                        { id: 'serif', label: 'Serif' },
-                        { id: 'monospace', label: 'Mono' },
-                        { id: 'light', label: 'Light' },
-                      ] as const).map(f => {
-                        const active = chatFontFamily === f.id;
-                        return (
-                          <TouchableOpacity
-                            key={f.id}
-                            onPress={() => {
-                              setChatFontFamily(f.id);
-                              persistCustomizePrefs({ chatFontFamily: f.id });
-                            }}
-                            style={{
-                              paddingHorizontal: 12,
-                              paddingVertical: 6,
-                              borderRadius: 10,
-                              borderWidth: 1,
-                              borderColor: active ? palette.accent : 'rgba(255,255,255,0.14)',
-                              backgroundColor: active ? `rgba(${palette.accentRgb}, 0.16)` : 'rgba(255,255,255,0.04)',
-                            }}
-                          >
-                            <Text style={{ color: active ? palette.accent : '#cbd5e1', fontSize: 12, fontWeight: '700' }}>
-                              {f.label}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-
-                    <TouchableOpacity
-                      style={{
-                        alignSelf: 'flex-start',
-                        marginTop: 10,
-                        marginBottom: 12,
-                        paddingHorizontal: 12,
-                        paddingVertical: 7,
-                        borderRadius: 10,
-                        borderWidth: 1,
-                        borderColor: 'rgba(255,255,255,0.14)',
-                        backgroundColor: 'rgba(255,255,255,0.04)',
-                      }}
-                      onPress={() => {
-                        setChatFontSize(15);
-                        persistCustomizePrefs({ chatFontSize: 15 });
-                        handleUpdateSyntaxColors({
-                          dialogue: '#FFFFFF',
-                          narration: '#94A3B8',
-                          thoughts: '#38BDF8',
-                          bold: '#FFFFFF',
-                          code: '#A78BFA',
-                        });
-                      }}
-                      activeOpacity={0.8}
-                    >
-                      <Text style={{ color: '#e2e8f0', fontSize: 12, fontWeight: '600' }}>Reset text settings</Text>
-                    </TouchableOpacity>
-
-                    {/* Expandable Color Rows */}
-                    {([
-                      {
-                        key: 'dialogue' as const,
-                        label: 'Dialogue color',
-                        color: syntaxColors.dialogue,
-                        swatches: ['#FFFFFF', palette.accent, '#38bdf8', '#fb7185', '#facc15', '#c084fc'],
-                      },
-                      {
-                        key: 'narration' as const,
-                        label: 'Italic text color',
-                        color: syntaxColors.narration,
-                        swatches: ['#94A3B8', '#cbd5e1', '#a3e635', '#64748b', '#e2e8f0', '#38bdf8'],
-                      },
-                      {
-                        key: 'bold' as const,
-                        label: 'Bold text color',
-                        color: syntaxColors.bold,
-                        swatches: ['#FFFFFF', palette.accent, '#38bdf8', '#facc15', '#fb7185', '#cbd5e1'],
-                      },
-                      {
-                        key: 'code' as const,
-                        label: 'Code color',
-                        color: syntaxColors.code,
-                        swatches: ['#A78BFA', '#38BDF8', '#34d399', '#facc15', '#f472b6', '#e2e8f0'],
-                      },
-                    ]).map(item => {
-                      const isOpen = expandedColorPicker === item.key;
-                      return (
-                        <View
-                          key={item.key}
-                          style={{
-                            borderRadius: 12,
-                            backgroundColor: 'rgba(255,255,255,0.03)',
-                            borderWidth: 1,
-                            borderColor: 'rgba(255,255,255,0.08)',
-                            marginBottom: 8,
-                            overflow: 'hidden',
-                          }}
-                        >
-                          <TouchableOpacity
-                            style={{
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              paddingHorizontal: 12,
-                              paddingVertical: 10,
-                            }}
-                            onPress={() => setExpandedColorPicker(isOpen ? null : item.key)}
-                            activeOpacity={0.8}
-                          >
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                              <View
-                                style={{
-                                  width: 20,
-                                  height: 20,
-                                  borderRadius: 6,
-                                  backgroundColor: item.color,
-                                  borderWidth: 1,
-                                  borderColor: 'rgba(255,255,255,0.25)',
-                                }}
-                              />
-                              <Text style={{ color: '#e2e8f0', fontSize: 13, fontWeight: '600' }}>{item.label}</Text>
-                            </View>
-                            <ChevronDown
-                              size={15}
-                              color="#94a3b8"
-                              style={{ transform: [{ rotate: isOpen ? '180deg' : '0deg' }] }}
-                            />
-                          </TouchableOpacity>
-                          {isOpen && (
-                            <View
+                      {forbiddenWords.length > 0 && (
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                          {forbiddenWords.map(word => (
+                            <TouchableOpacity
+                              key={word}
                               style={{
                                 flexDirection: 'row',
-                                gap: 10,
-                                paddingHorizontal: 12,
-                                paddingBottom: 12,
-                                paddingTop: 2,
+                                alignItems: 'center',
+                                gap: 5,
+                                paddingHorizontal: 10,
+                                paddingVertical: 5,
+                                borderRadius: 999,
+                                backgroundColor: `rgba(${palette.accentRgb}, 0.14)`,
+                                borderWidth: 1,
+                                borderColor: `rgba(${palette.accentRgb}, 0.35)`,
                               }}
+                              onPress={() => handleRemoveForbiddenWord(word)}
+                              activeOpacity={0.75}
                             >
-                              {item.swatches.map(col => (
-                                <TouchableOpacity
-                                  key={col}
-                                  style={{
-                                    width: 30,
-                                    height: 30,
-                                    borderRadius: 15,
-                                    backgroundColor: col,
-                                    borderWidth: item.color === col ? 2.5 : 1,
-                                    borderColor: item.color === col ? '#FFFFFF' : 'rgba(255,255,255,0.2)',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                  }}
-                                  onPress={() => handleUpdateSyntaxColors({ [item.key]: col })}
-                                  activeOpacity={0.8}
-                                >
-                                  {item.color === col && <Check size={13} color="#000000" />}
-                                </TouchableOpacity>
-                              ))}
-                            </View>
-                          )}
+                              <Text style={{ color: '#f8fafc', fontSize: 12 }}>{word}</Text>
+                              <X size={12} color="#94a3b8" />
+                            </TouchableOpacity>
+                          ))}
                         </View>
+                      )}
+
+                      <Text style={styles.settingsHelperText}>
+                        Sent as a note with your latest message telling the AI to avoid these words and phrases. It steers strongly but is best-effort — not a hard filter.
+                      </Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* TAB 3 (Customize): Options, Background Image & Text Settings */}
+            {chatControlTab === 'syntax' && (
+              <View style={{ paddingHorizontal: 20, gap: 12 }}>
+                {/* ── CARD 1: OPTIONS ── */}
+                <View style={styles.settingsBentoCard}>
+                  <Text style={{ color: '#f8fafc', fontSize: 15, fontWeight: '700', marginBottom: 10 }}>
+                    Options
+                  </Text>
+
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.settingsCardTitle}>{t('chat.autoscroll')}</Text>
+                      <Text style={styles.settingsHelperText}>
+                        {"When off, the chat won't follow replies as they're being generated."}
+                      </Text>
+                    </View>
+                    <NekoSwitch
+                      value={autoScrollEnabled}
+                      onValueChange={val => {
+                        setAutoScrollEnabled(val);
+                        persistCustomizePrefs({ autoScrollEnabled: val });
+                      }}
+                    />
+                  </View>
+
+                  <View style={[styles.settingsHairline, { marginVertical: 12 }]} />
+
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.settingsCardTitle}>Text streaming</Text>
+                      <Text style={styles.settingsHelperText}>
+                        Determines if text comes all at once or bit-by-bit. Turning this off may improve performance.
+                      </Text>
+                    </View>
+                    <NekoSwitch
+                      value={textStreamingEnabled}
+                      onValueChange={val => {
+                        setTextStreamingEnabled(val);
+                        persistCustomizePrefs({ textStreamingEnabled: val });
+                      }}
+                    />
+                  </View>
+
+                  {(lastStreamMode === 'non-stream-fallback' || lastStreamMode === 'sse-single-burst') && (
+                    <View
+                      style={{
+                        marginTop: 10,
+                        padding: 10,
+                        borderRadius: 10,
+                        backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                        borderWidth: 1,
+                        borderColor: 'rgba(245, 158, 11, 0.35)',
+                      }}
+                    >
+                      <Text style={{ color: '#fbbf24', fontSize: 11.5, lineHeight: 16 }}>
+                        ⚠️ Your active provider/model sent a buffered reply instead of live streaming ({lastStreamMode}).
+                      </Text>
+                    </View>
+                  )}
+
+                  {textStreamingEnabled && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 12 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.settingsCardTitle}>Animate non-streamed replies</Text>
+                        <Text style={styles.settingsHelperText}>
+                          Visual-only typing reveal when a provider buffers its reply. Includes a Show All button so you never wait twice.
+                        </Text>
+                      </View>
+                      <NekoSwitch
+                        value={animateNonStreamed}
+                        onValueChange={val => {
+                          setAnimateNonStreamed(val);
+                          persistCustomizePrefs({ animateNonStreamed: val });
+                        }}
+                      />
+                    </View>
+                  )}
+
+                  <View style={[styles.settingsHairline, { marginVertical: 12 }]} />
+
+                  <Text style={[styles.settingsCardTitle, { marginBottom: 8 }]}>{t('chat.readingLayout')}</Text>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      backgroundColor: 'rgba(255,255,255,0.04)',
+                      borderRadius: 12,
+                      padding: 3,
+                      borderWidth: 1,
+                      borderColor: 'rgba(255,255,255,0.07)',
+                    }}
+                  >
+                    {(['bubble', 'novel'] as const).map(mode => {
+                      const active = chatStyle === mode;
+                      return (
+                        <TouchableOpacity
+                          key={mode}
+                          style={{
+                            flex: 1,
+                            paddingVertical: 8,
+                            borderRadius: 9,
+                            alignItems: 'center',
+                            backgroundColor: active ? `rgba(${palette.accentRgb}, 0.16)` : 'transparent',
+                            borderWidth: active ? 1 : 0,
+                            borderColor: active ? `rgba(${palette.accentRgb}, 0.45)` : 'transparent',
+                          }}
+                          onPress={() => {
+                            setChatStyle(mode);
+                            AsyncStorage.setItem('@nekochat:chat_style', mode);
+                          }}
+                          activeOpacity={0.8}
+                        >
+                          <Text
+                            style={{
+                              color: active ? palette.accent : '#94a3b8',
+                              fontSize: 12.5,
+                              fontWeight: active ? '700' : '600',
+                            }}
+                          >
+                            {mode === 'bubble' ? 'Chat Bubbles' : 'Novel View'}
+                          </Text>
+                        </TouchableOpacity>
                       );
                     })}
                   </View>
                 </View>
-              )}
-              </Animated.View>
-            </ScrollView>
 
-            <TouchableOpacity
-              style={[styles.appearanceDoneBtn, { backgroundColor: palette.accent }]}
-              onPress={() => {
-                persistSessionMemory(activeConversationId, chatMemory);
-                setShowChatControlModal(false);
-              }}
-              activeOpacity={0.8}
-            >
-              <Text style={[styles.appearanceDoneText, { color: palette.bgDark }]}>{t('chat.applyClose')}</Text>
-            </TouchableOpacity>
+                {/* ── CARD 2: BACKGROUND IMAGE ── */}
+                <View style={styles.settingsBentoCard}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <Text style={{ color: '#f8fafc', fontSize: 15, fontWeight: '700' }}>
+                      Background image
+                    </Text>
+                    {appearance.wallpaperUrl ? (
+                      <TouchableOpacity
+                        style={{
+                          width: 26,
+                          height: 26,
+                          borderRadius: 13,
+                          backgroundColor: `rgba(${palette.accentRgb}, 0.2)`,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                        onPress={() => saveChatAppearance({ enableWallpaper: false, wallpaperUrl: '' })}
+                      >
+                        <X size={14} color={palette.accent} />
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <View style={{ flex: 1, paddingRight: 10 }}>
+                      <Text style={{ color: '#e2e8f0', fontSize: 13, fontWeight: '600' }}>
+                        Smart Auto-Darken
+                      </Text>
+                      <Text style={{ color: '#64748b', fontSize: 11 }}>
+                        Automatically darkens bright wallpapers so text stays readable
+                      </Text>
+                    </View>
+                    <NekoSwitch
+                      value={appearance.smartAutoOverlay !== false}
+                      onValueChange={val => saveChatAppearance({ smartAutoOverlay: val })}
+                    />
+                  </View>
+
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <View style={{ flex: 1, paddingRight: 10 }}>
+                      <Text style={{ color: '#e2e8f0', fontSize: 13, fontWeight: '600' }}>
+                        Apply background to all chats
+                      </Text>
+                      <Text style={{ color: '#64748b', fontSize: 11 }}>
+                        Use this wallpaper & darkness across every character
+                      </Text>
+                    </View>
+                    <NekoSwitch
+                      value={Boolean(appearance.applyToAllChats)}
+                      onValueChange={val => saveChatAppearance({ applyToAllChats: val })}
+                    />
+                  </View>
+
+                  {appearance.wallpaperUrl ? (
+                    <TouchableOpacity
+                      onPress={handlePickWallpaper}
+                      activeOpacity={0.85}
+                      style={{ alignItems: 'center', marginBottom: 12 }}
+                    >
+                      <Image
+                        source={{ uri: appearance.wallpaperUrl }}
+                        style={{
+                          width: 110,
+                          height: 150,
+                          borderRadius: 12,
+                          borderWidth: 1,
+                          borderColor: 'rgba(255,255,255,0.14)',
+                        }}
+                        resizeMode="cover"
+                      />
+                      <Text style={{ color: '#94a3b8', fontSize: 11, marginTop: 5 }}>Tap image to change</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={{
+                        paddingVertical: 14,
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderStyle: 'dashed',
+                        borderColor: 'rgba(255,255,255,0.16)',
+                        backgroundColor: 'rgba(255,255,255,0.03)',
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        marginBottom: 12,
+                      }}
+                      onPress={handlePickWallpaper}
+                      activeOpacity={0.8}
+                    >
+                      <ImagePlus size={16} color={palette.accent} />
+                      <Text style={{ color: '#e2e8f0', fontSize: 12.5, fontWeight: '600' }}>
+                        Choose background image
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                    <Text style={styles.settingsRowLabel}>Background darkness</Text>
+                    <View style={styles.settingsValueBadge}>
+                      <Text style={styles.settingsValueBadgeText}>
+                        {Math.round(appearance.overlayOpacity * 100)}%
+                      </Text>
+                    </View>
+                  </View>
+                  <SmoothSlider
+                    value={Math.round(appearance.overlayOpacity * 100)}
+                    min={0}
+                    max={98}
+                    step={1}
+                    onValueChange={val => saveChatAppearance({ overlayOpacity: val / 100 })}
+                    minLabel="0%"
+                    maxLabel="98%"
+                  />
+
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 2 }}>
+                    <Text style={styles.settingsRowLabel}>Background blur</Text>
+                    <View style={styles.settingsValueBadge}>
+                      <Text style={styles.settingsValueBadgeText}>{appearance.blurRadius}px</Text>
+                    </View>
+                  </View>
+                  <SmoothSlider
+                    value={appearance.blurRadius}
+                    min={0}
+                    max={24}
+                    step={1}
+                    onValueChange={val => saveChatAppearance({ blurRadius: val })}
+                    minLabel="0px"
+                    maxLabel="24px"
+                  />
+
+                  <View style={[styles.settingsHairline, { marginVertical: 12 }]} />
+
+                  <Text style={{ color: '#94a3b8', fontSize: 11.5, marginBottom: 6 }}>Or paste image URL</Text>
+                  <TextInput
+                    style={[styles.personaNameInput, { marginBottom: 8 }]}
+                    placeholder="https://..."
+                    placeholderTextColor="rgba(255,255,255,0.35)"
+                    value={appearance.wallpaperUrl}
+                    onChangeText={v => saveChatAppearance({ enableWallpaper: !!v.trim(), wallpaperUrl: v })}
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 5, alignSelf: 'flex-start', paddingVertical: 2 }}
+                    onPress={() => saveChatAppearance({ enableWallpaper: true, wallpaperUrl: character.coverUrl || character.avatar || '' })}
+                    activeOpacity={0.75}
+                  >
+                    <RotateCcw size={12} color={palette.accent} />
+                    <Text style={{ color: palette.accent, fontSize: 12, fontWeight: '600' }}>Reset to default character art</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* ── CARD 3: TEXT SETTINGS ── */}
+                <View style={styles.settingsBentoCard}>
+                  <Text style={{ color: '#f8fafc', fontSize: 15, fontWeight: '700', marginBottom: 10 }}>
+                    Text settings
+                  </Text>
+
+                  {/* Live Preview Box */}
+                  <View
+                    style={{
+                      backgroundColor: 'rgba(10, 12, 18, 0.72)',
+                      borderRadius: 12,
+                      padding: 12,
+                      borderWidth: 1,
+                      borderColor: 'rgba(255,255,255,0.09)',
+                      marginBottom: 12,
+                    }}
+                  >
+                    <Text style={{ color: '#64748b', fontSize: 10, fontWeight: '700', letterSpacing: 0.8, marginBottom: 5 }}>
+                      PREVIEW
+                    </Text>
+                    <Text
+                      style={{
+                        color: '#e2e8f0',
+                        fontSize: chatFontSize,
+                        lineHeight: Math.round(chatFontSize * 1.45),
+                        ...(resolveMessageFontFamily() ? { fontFamily: resolveMessageFontFamily() } : {}),
+                      }}
+                    >
+                      This is regular text.{' '}
+                      <Text style={{ color: syntaxColors.narration, fontStyle: 'italic' }}>This is italic text.</Text>{' '}
+                      <Text style={{ fontWeight: '800', color: syntaxColors.bold }}>This is bold text.</Text>{' '}
+                      <Text style={{ color: syntaxColors.code, fontFamily: 'JetBrainsMono_400Regular' }}>
+                        code
+                      </Text>{' '}
+                      <Text style={{ color: syntaxColors.dialogue }}>{'"dialogue"'}</Text>
+                    </Text>
+                  </View>
+
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                    <Text style={styles.settingsRowLabel}>Font size</Text>
+                    <View style={styles.settingsValueBadge}>
+                      <Text style={styles.settingsValueBadgeText}>{chatFontSize}px</Text>
+                    </View>
+                  </View>
+                  <SmoothSlider
+                    value={chatFontSize}
+                    min={12}
+                    max={20}
+                    step={1}
+                    onValueChange={val => {
+                      setChatFontSize(val);
+                      persistCustomizePrefs({ chatFontSize: val });
+                    }}
+                    minLabel="12px"
+                    maxLabel="20px"
+                  />
+
+                  <Text style={{ color: '#94a3b8', fontSize: 12, fontWeight: '700', marginTop: 10, marginBottom: 6 }}>
+                    Message Font
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                    {([
+                      { id: 'default', label: 'Default' },
+                      { id: 'serif', label: 'Serif' },
+                      { id: 'monospace', label: 'Mono' },
+                      { id: 'light', label: 'Light' },
+                    ] as const).map(f => {
+                      const active = chatFontFamily === f.id;
+                      return (
+                        <TouchableOpacity
+                          key={f.id}
+                          onPress={() => {
+                            setChatFontFamily(f.id);
+                            persistCustomizePrefs({ chatFontFamily: f.id });
+                          }}
+                          style={{
+                            paddingHorizontal: 12,
+                            paddingVertical: 6,
+                            borderRadius: 10,
+                            borderWidth: 1,
+                            borderColor: active ? palette.accent : 'rgba(255,255,255,0.14)',
+                            backgroundColor: active ? `rgba(${palette.accentRgb}, 0.16)` : 'rgba(255,255,255,0.04)',
+                          }}
+                        >
+                          <Text
+                            style={{
+                              color: active ? palette.accent : '#cbd5e1',
+                              fontSize: 12,
+                              fontWeight: '700',
+                              ...(resolveMessageFontFamily(f.id)
+                                ? { fontFamily: resolveMessageFontFamily(f.id) }
+                                : {}),
+                            }}
+                          >
+                            {f.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+
+                  <TouchableOpacity
+                    style={{
+                      alignSelf: 'flex-start',
+                      marginTop: 10,
+                      marginBottom: 12,
+                      paddingHorizontal: 12,
+                      paddingVertical: 7,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: 'rgba(255,255,255,0.14)',
+                      backgroundColor: 'rgba(255,255,255,0.04)',
+                    }}
+                    onPress={() => {
+                      setChatFontSize(15);
+                      persistCustomizePrefs({ chatFontSize: 15 });
+                      handleUpdateSyntaxColors({
+                        dialogue: '#FFFFFF',
+                        narration: '#94A3B8',
+                        thoughts: '#38BDF8',
+                        bold: '#FFFFFF',
+                        code: '#A78BFA',
+                      });
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={{ color: '#e2e8f0', fontSize: 12, fontWeight: '600' }}>Reset text settings</Text>
+                  </TouchableOpacity>
+
+                  {/* Expandable Color Rows */}
+                  {([
+                    {
+                      key: 'dialogue' as const,
+                      label: 'Dialogue color',
+                      color: syntaxColors.dialogue,
+                      swatches: ['#FFFFFF', palette.accent, '#38bdf8', '#fb7185', '#facc15', '#c084fc'],
+                    },
+                    {
+                      key: 'narration' as const,
+                      label: 'Italic text color',
+                      color: syntaxColors.narration,
+                      swatches: ['#94A3B8', '#cbd5e1', '#a3e635', '#64748b', '#e2e8f0', '#38bdf8'],
+                    },
+                    {
+                      key: 'bold' as const,
+                      label: 'Bold text color',
+                      color: syntaxColors.bold,
+                      swatches: ['#FFFFFF', palette.accent, '#38bdf8', '#facc15', '#fb7185', '#cbd5e1'],
+                    },
+                    {
+                      key: 'code' as const,
+                      label: 'Code color',
+                      color: syntaxColors.code,
+                      swatches: ['#A78BFA', '#38BDF8', '#34d399', '#facc15', '#f472b6', '#e2e8f0'],
+                    },
+                  ]).map(item => {
+                    const isOpen = expandedColorPicker === item.key;
+                    return (
+                      <View
+                        key={item.key}
+                        style={{
+                          borderRadius: 12,
+                          backgroundColor: 'rgba(255,255,255,0.03)',
+                          borderWidth: 1,
+                          borderColor: 'rgba(255,255,255,0.08)',
+                          marginBottom: 8,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <TouchableOpacity
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            paddingHorizontal: 12,
+                            paddingVertical: 10,
+                          }}
+                          onPress={() => setExpandedColorPicker(isOpen ? null : item.key)}
+                          activeOpacity={0.8}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                            <View
+                              style={{
+                                width: 20,
+                                height: 20,
+                                borderRadius: 6,
+                                backgroundColor: item.color,
+                                borderWidth: 1,
+                                borderColor: 'rgba(255,255,255,0.25)',
+                              }}
+                            />
+                            <Text style={{ color: '#e2e8f0', fontSize: 13, fontWeight: '600' }}>{item.label}</Text>
+                          </View>
+                          <ChevronDown
+                            size={15}
+                            color="#94a3b8"
+                            style={{ transform: [{ rotate: isOpen ? '180deg' : '0deg' }] }}
+                          />
+                        </TouchableOpacity>
+                        {isOpen && (
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              gap: 10,
+                              paddingHorizontal: 12,
+                              paddingBottom: 12,
+                              paddingTop: 2,
+                            }}
+                          >
+                            {item.swatches.map(col => (
+                              <TouchableOpacity
+                                key={col}
+                                style={{
+                                  width: 30,
+                                  height: 30,
+                                  borderRadius: 15,
+                                  backgroundColor: col,
+                                  borderWidth: item.color === col ? 2.5 : 1,
+                                  borderColor: item.color === col ? '#FFFFFF' : 'rgba(255,255,255,0.2)',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                                onPress={() => handleUpdateSyntaxColors({ [item.key]: col })}
+                                activeOpacity={0.8}
+                              >
+                                {item.color === col && <Check size={13} color="#000000" />}
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+          </Animated.View>
+        </ScrollView>
+
+        <TouchableOpacity
+          style={[styles.appearanceDoneBtn, { backgroundColor: palette.accent }]}
+          onPress={() => {
+            persistSessionMemory(activeConversationId, chatMemory);
+            setShowChatControlModal(false);
+          }}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.appearanceDoneText, { color: palette.bgDark }]}>{t('chat.applyClose')}</Text>
+        </TouchableOpacity>
       </BottomSheetModal>
       <HelpCenterModal
         visible={helpLorebookVisible}
@@ -5885,13 +6500,16 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   bubbleActionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minHeight: 36,
+    minWidth: 36,
+    borderRadius: 10,
   },
   bubbleActionText: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
   },
   novelRow: {
@@ -6163,8 +6781,8 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   },
   unifiedComposerCardExpanded: {
     borderColor: palette.accent,
-    minHeight: 280,
-    ...(Platform.OS === 'web' ? { height: 280 } : {}),
+    minHeight: 260,
+    justifyContent: 'space-between',
   },
   unifiedTextInput: {
     color: '#FFFFFF',
@@ -6177,9 +6795,9 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     textAlignVertical: 'top',
   },
   unifiedTextInputExpanded: {
-    minHeight: 220,
-    maxHeight: 380,
-    ...(Platform.OS === 'web' ? { height: 220, flex: 1 } : {}),
+    minHeight: 190,
+    maxHeight: 360,
+    ...(Platform.OS === 'web' ? { flex: 1 } : {}),
   },
   composerControlRow: {
     flexDirection: 'row',
@@ -6336,10 +6954,10 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     ...GLASS.backdrop,
     ...(Platform.OS === 'web'
       ? ({
-          backgroundColor: 'transparent',
-          backgroundImage:
-            'linear-gradient(to bottom, rgba(6, 8, 14, 0.12) 0%, rgba(6, 8, 14, 0.48) 50%, rgba(6, 8, 14, 0.88) 100%)',
-        } as any)
+        backgroundColor: 'transparent',
+        backgroundImage:
+          'linear-gradient(to bottom, rgba(6, 8, 14, 0.12) 0%, rgba(6, 8, 14, 0.48) 50%, rgba(6, 8, 14, 0.88) 100%)',
+      } as any)
       : {}),
   },
   modalSheet: {
@@ -6429,8 +7047,12 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     fontWeight: '700',
   },
   miniVoiceBtn: {
-    padding: 4,
-    borderRadius: 6,
+    padding: 8,
+    minWidth: 34,
+    minHeight: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
     backgroundColor: 'rgba(255, 255, 255, 0.06)',
   },
   ttsPillActive: {

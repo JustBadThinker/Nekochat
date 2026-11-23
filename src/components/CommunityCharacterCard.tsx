@@ -5,7 +5,7 @@
  * Zero hardcoded mock data — if the card looks cute, it's 100% real catalog aura (+1000 aura).
  */
 
-import React, { useState, useRef, useEffect , useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -30,7 +30,6 @@ import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
 import { getCardSurfaceStyle } from '../theme/skins';
 import {
-  runEnterAnimation,
   runPressInAnimation,
   runPressOutAnimation,
 } from '../theme/animations';
@@ -52,7 +51,7 @@ interface CommunityCharacterCardProps {
   isExiting?: boolean;
 }
 
-export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
+export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = React.memo(function CommunityCharacterCard({
   character,
   onSelect,
   onStartChat,
@@ -66,21 +65,25 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
   onCreatorClick,
   onTagClick,
   isExiting = false,
-}) => {
+}) {
   const { palette, skin } = useTheme();
-  const styles = useMemo(() => createStyles(palette), [palette]);
+  const styles = useMemo(() => getCachedCardStyles(palette), [palette]);
   const [imgError, setImgError] = useState(false);
   const [isLiked, setIsLiked] = useState<boolean>(
     Boolean(isLikedProp ?? isBookmarked ?? matchAlgorithmService.isCharacterLiked(character.id))
   );
   const [likesCount, setLikesCount] = useState<number>(character.favoritesCount || 0);
-  const likeScale = useRef(new Animated.Value(1)).current;
-  const enterAnim = useRef(new Animated.Value(0)).current;
-  const pressScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    runEnterAnimation(enterAnim, skin.animation);
-  }, []);
+    setIsLiked(Boolean(isLikedProp ?? isBookmarked ?? matchAlgorithmService.isCharacterLiked(character.id)));
+  }, [isLikedProp, isBookmarked, character.id]);
+
+  useEffect(() => {
+    setLikesCount(character.favoritesCount || 0);
+  }, [character.favoritesCount]);
+  const likeScale = useRef(new Animated.Value(1)).current;
+  const enterAnim = useRef(new Animated.Value(1)).current;
+  const pressScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     if (isExiting) {
@@ -150,227 +153,247 @@ export const CommunityCharacterCard: React.FC<CommunityCharacterCardProps> = ({
         },
       ]}
     >
-    <TouchableOpacity
-      style={{ flex: 1 }}
-      onPress={() => onSelect(character)}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      activeOpacity={0.92}
-    >
-      {/* 1. Artwork Banner with 16/11 Aspect Ratio & Badges */}
-      <View style={styles.bannerWrapper}>
-        {!imgError && character.avatarUrl ? (
-          <Image
-            source={{ uri: character.avatarUrl }}
-            style={styles.bannerImage}
-            onError={() => setImgError(true)}
-          />
-        ) : (
-          <View style={styles.fallbackBanner}>
-            <View style={styles.fallbackAvatar}>
-              <Text style={styles.fallbackAvatarText}>
-                {character.name.charAt(0).toUpperCase()}
+      <TouchableOpacity
+        style={{ flex: 1 }}
+        onPress={() => onSelect(character)}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        activeOpacity={0.92}
+      >
+        {/* 1. Artwork Banner with 16/11 Aspect Ratio & Badges */}
+        <View style={styles.bannerWrapper}>
+          {!imgError && character.avatarUrl ? (
+            <Image
+              source={{ uri: character.avatarUrl }}
+              style={styles.bannerImage}
+              onError={() => setImgError(true)}
+            />
+          ) : (
+            <View style={styles.fallbackBanner}>
+              <View style={styles.fallbackAvatar}>
+                <Text style={styles.fallbackAvatarText}>
+                  {character.name.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <Text style={styles.fallbackName} numberOfLines={1}>
+                {character.name}
               </Text>
             </View>
-            <Text style={styles.fallbackName} numberOfLines={1}>
-              {character.name}
-            </Text>
-          </View>
-        )}
-
-        {/* Progressive Top Gradient Scrim behind badges */}
-        <LinearGradient
-          pointerEvents="none"
-          colors={['rgba(12, 14, 20, 0.62)', 'rgba(12, 14, 20, 0.22)', 'transparent']}
-          locations={[0, 0.55, 1]}
-          style={styles.bannerTopScrim}
-        />
-
-        {/* Top Badges Row */}
-        <View style={styles.topBadgesRow}>
-          {character.isNsfw ? (
-            <View style={styles.nsfwBadge}>
-              <Text style={styles.badgeText}>18+</Text>
-            </View>
-          ) : (
-            <View style={styles.sfwBadge}>
-              <Text style={styles.badgeText}>SFW</Text>
-            </View>
           )}
 
-          {character.totalTokens > 0 && (
-            <View style={styles.tokenBadge}>
-              <Coins size={10} color={palette.accent} style={{ marginRight: 3 }} />
-              <Text style={styles.tokenText}>{formatCount(character.totalTokens)}</Text>
-            </View>
-          )}
-        </View>
-
-        {/* Top-Right Bookmark Button */}
-        <TouchableOpacity
-          style={styles.bookmarkBtn}
-          onPress={e => {
-            e.stopPropagation();
-            onToggleBookmark(character.id);
-          }}
-          activeOpacity={0.7}
-        >
-          <Bookmark
-            size={13}
-            color={isBookmarked ? palette.accent : '#e2e8f0'}
-            fill={isBookmarked ? palette.accent : 'transparent'}
+          {/* Progressive Top Gradient Scrim behind badges */}
+          <LinearGradient
+            pointerEvents="none"
+            colors={['rgba(12, 14, 20, 0.62)', 'rgba(12, 14, 20, 0.22)', 'transparent']}
+            locations={[0, 0.55, 1]}
+            style={styles.bannerTopScrim}
           />
-        </TouchableOpacity>
 
-        {/* Linear Transparent Gradient Scrim */}
-        <LinearGradient
-          pointerEvents="none"
-          colors={['transparent', 'rgba(15, 18, 29, 0.22)', 'rgba(15, 18, 29, 0.72)']}
-          locations={[0, 0.45, 1]}
-          style={styles.bannerGradientScrim}
-        />
-      </View>
+          {/* Top Badges Row */}
+          <View style={styles.topBadgesRow}>
+            {character.isNsfw ? (
+              <View style={styles.nsfwBadge}>
+                <Text style={styles.badgeText}>18+</Text>
+              </View>
+            ) : (
+              <View style={styles.sfwBadge}>
+                <Text style={styles.badgeText}>SFW</Text>
+              </View>
+            )}
 
-      {/* 2. Card Content Body */}
-      <View style={styles.cardBody}>
-        {/* Character Title */}
-        <Text style={styles.charTitle} numberOfLines={1}>
-          {character.name}
-        </Text>
+            {character.totalTokens > 0 && (
+              <View style={styles.tokenBadge}>
+                <Coins size={10} color={palette.accent} style={{ marginRight: 3 }} />
+                <Text style={styles.tokenText}>{formatCount(character.totalTokens)}</Text>
+              </View>
+            )}
+          </View>
 
-        {/* Chat Name / Subtitle (Theme Accent) */}
-        {character.chatName ? (
-          <Text style={[styles.chatSubtitle, { color: palette.accent }]} numberOfLines={1}>
-            {character.chatName}
-          </Text>
-        ) : null}
-
-        {/* Creator Attribution with Verified Check & + Follow Button */}
-        <View style={styles.creatorRow}>
+          {/* Top-Right Bookmark Button */}
           <TouchableOpacity
-            style={styles.creatorHandleWrap}
+            style={styles.bookmarkBtn}
             onPress={e => {
               e.stopPropagation();
-              onCreatorClick?.(character.creatorName);
+              onToggleBookmark(character.id);
             }}
             activeOpacity={0.7}
           >
-            <Text style={styles.creatorBy}>by</Text>
-            <Text style={styles.creatorHandle} numberOfLines={1}>
-              @{cleanHandle(character.creatorName || 'community')}
-            </Text>
-            <CheckCircle2 size={11} color={palette.accent} style={{ marginLeft: 2 }} />
+            <Bookmark
+              size={13}
+              color={isBookmarked ? palette.accent : '#e2e8f0'}
+              fill={isBookmarked ? palette.accent : 'transparent'}
+            />
           </TouchableOpacity>
 
-          {onToggleFollowCreator && (
-            <TouchableOpacity
-              style={[styles.followBtn, isFollowingCreator && styles.followBtnActive]}
-              onPress={e => {
-                e.stopPropagation();
-                onToggleFollowCreator(character.creatorName, character.avatarUrl);
-              }}
-              activeOpacity={0.8}
-            >
-              <Text
-                style={[styles.followBtnText, isFollowingCreator && styles.followBtnTextActive]}
-              >
-                {isFollowingCreator ? 'Following' : '+ Follow'}
-              </Text>
-            </TouchableOpacity>
-          )}
+          {/* Linear Transparent Gradient Scrim */}
+          <LinearGradient
+            pointerEvents="none"
+            colors={['transparent', 'rgba(15, 18, 29, 0.22)', 'rgba(15, 18, 29, 0.72)']}
+            locations={[0, 0.45, 1]}
+            style={styles.bannerGradientScrim}
+          />
         </View>
 
-        {/* 2-line Description Snippet */}
-        <Text style={styles.snippetText} numberOfLines={2}>
-          {character.shortDescription || 'Roleplay companion ready to chat.'}
-        </Text>
+        {/* 2. Card Content Body */}
+        <View style={styles.cardBody}>
+          {/* Character Title */}
+          <Text style={styles.charTitle} numberOfLines={1}>
+            {character.name}
+          </Text>
 
-        {/* Tag Chips Row */}
-        <View style={styles.tagsRow}>
-          {displayTags.map(tag => {
-            const tagName = typeof tag === 'string' ? tag : tag.name;
-            const tagId = typeof tag === 'string' ? tag : String(tag.id || tag.slug);
-            const cleanName = tagName.replace(/^[^\w\s]+/, '').trim();
-            return (
+          {/* Chat Name / Subtitle (Theme Accent) */}
+          {character.chatName ? (
+            <Text style={[styles.chatSubtitle, { color: palette.accent }]} numberOfLines={1}>
+              {character.chatName}
+            </Text>
+          ) : null}
+
+          {/* Creator Attribution with Verified Check & + Follow Button */}
+          <View style={styles.creatorRow}>
+            <TouchableOpacity
+              style={styles.creatorHandleWrap}
+              onPress={e => {
+                e.stopPropagation();
+                onCreatorClick?.(character.creatorName);
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.creatorBy}>by</Text>
+              <Text style={styles.creatorHandle} numberOfLines={1}>
+                @{cleanHandle(character.creatorName || 'community')}
+              </Text>
+              <CheckCircle2 size={11} color={palette.accent} style={{ marginLeft: 2 }} />
+            </TouchableOpacity>
+
+            {onToggleFollowCreator && (
               <TouchableOpacity
-                key={tagId}
-                style={styles.tagChip}
+                style={[styles.followBtn, isFollowingCreator && styles.followBtnActive]}
                 onPress={e => {
                   e.stopPropagation();
-                  onTagClick?.(tagId, cleanName);
+                  onToggleFollowCreator(character.creatorName, character.avatarUrl);
                 }}
-                activeOpacity={0.7}
+                activeOpacity={0.8}
               >
-                <Text style={styles.tagChipText} numberOfLines={1}>
-                  #{cleanName}
+                <Text
+                  style={[styles.followBtnText, isFollowingCreator && styles.followBtnTextActive]}
+                >
+                  {isFollowingCreator ? 'Following' : '+ Follow'}
                 </Text>
               </TouchableOpacity>
-            );
-          })}
-          {remainingTagCount > 0 && (
-            <View style={styles.moreTagChip}>
-              <Text style={styles.moreTagText}>+{remainingTagCount}</Text>
-            </View>
-          )}
-        </View>
-
-        {/* 3. Card Footer: Stats & Actions */}
-        <View style={styles.cardFooter}>
-          <View style={styles.statsGroup}>
-            <View style={styles.statItem}>
-              <Heart
-                size={11}
-                color={isLiked ? '#EF4444' : '#9ca3af'}
-                fill={isLiked ? '#EF4444' : 'transparent'}
-                style={{ marginRight: 3 }}
-              />
-              <Text style={[styles.statCount, isLiked && { color: '#EF4444', fontWeight: '700' }]}>
-                {formatCount(likesCount)}
-              </Text>
-            </View>
-            <View style={styles.statItem}>
-              <MessageSquare size={11} color="#9ca3af" style={{ marginRight: 3 }} />
-              <Text style={styles.statCount}>
-                {formatCount(character.chatCount || character.messageCount)}
-              </Text>
-            </View>
+            )}
           </View>
 
-          <View style={styles.actionsGroup}>
-            {/* Social Media Style Instant-Feedback Like Button */}
-            <TouchableOpacity
-              style={[styles.likeActionBtn, isLiked && styles.likeActionBtnActive]}
-              onPress={handlePressLike}
-              activeOpacity={0.7}
-              accessibilityLabel={isLiked ? "Unlike Companion" : "Like Companion"}
-            >
-              <Animated.View style={{ transform: [{ scale: likeScale }] }}>
+          {/* 2-line Description Snippet */}
+          <Text style={styles.snippetText} numberOfLines={2}>
+            {character.shortDescription || 'Roleplay companion ready to chat.'}
+          </Text>
+
+          {/* Tag Chips Row */}
+          <View style={styles.tagsRow}>
+            {displayTags.map(tag => {
+              const tagName = typeof tag === 'string' ? tag : tag.name;
+              const tagId = typeof tag === 'string' ? tag : String(tag.id || tag.slug);
+              const cleanName = tagName.replace(/^[^\w\s]+/, '').trim();
+              return (
+                <TouchableOpacity
+                  key={tagId}
+                  style={styles.tagChip}
+                  onPress={e => {
+                    e.stopPropagation();
+                    onTagClick?.(tagId, cleanName);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.tagChipText} numberOfLines={1}>
+                    #{cleanName}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+            {remainingTagCount > 0 && (
+              <View style={styles.moreTagChip}>
+                <Text style={styles.moreTagText}>+{remainingTagCount}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* 3. Card Footer: Stats & Actions */}
+          <View style={styles.cardFooter}>
+            <View style={styles.statsGroup}>
+              <View style={styles.statItem}>
                 <Heart
-                  size={13}
-                  color={isLiked ? '#EF4444' : palette.accent}
+                  size={11}
+                  color={isLiked ? '#EF4444' : '#9ca3af'}
                   fill={isLiked ? '#EF4444' : 'transparent'}
+                  style={{ marginRight: 3 }}
                 />
-              </Animated.View>
-            </TouchableOpacity>
+                <Text style={[styles.statCount, isLiked && { color: '#EF4444', fontWeight: '700' }]}>
+                  {formatCount(likesCount)}
+                </Text>
+              </View>
+              <View style={styles.statItem}>
+                <MessageSquare size={11} color="#9ca3af" style={{ marginRight: 3 }} />
+                <Text style={styles.statCount}>
+                  {formatCount(character.chatCount || character.messageCount)}
+                </Text>
+              </View>
+            </View>
 
-            {/* Glowing Accent Circular Play Button */}
-            <TouchableOpacity
-              style={[styles.playBtn, { backgroundColor: palette.accent, shadowColor: palette.accent }]}
-              onPress={e => {
-                e.stopPropagation();
-                onStartChat(character);
-              }}
-              activeOpacity={0.8}
-            >
-              <Play size={10} color="#000000" fill="#000000" style={{ marginLeft: 1 }} />
-            </TouchableOpacity>
+            <View style={styles.actionsGroup}>
+              {/* Social Media Style Instant-Feedback Like Button */}
+              <TouchableOpacity
+                style={[styles.likeActionBtn, isLiked && styles.likeActionBtnActive]}
+                onPress={handlePressLike}
+                activeOpacity={0.7}
+                accessibilityLabel={isLiked ? "Unlike Companion" : "Like Companion"}
+              >
+                <Animated.View style={{ transform: [{ scale: likeScale }] }}>
+                  <Heart
+                    size={13}
+                    color={isLiked ? '#EF4444' : palette.accent}
+                    fill={isLiked ? '#EF4444' : 'transparent'}
+                  />
+                </Animated.View>
+              </TouchableOpacity>
+
+              {/* Glowing Accent Circular Play Button */}
+              <TouchableOpacity
+                style={[styles.playBtn, { backgroundColor: palette.accent, shadowColor: palette.accent }]}
+                onPress={e => {
+                  e.stopPropagation();
+                  onStartChat(character);
+                }}
+                activeOpacity={0.8}
+              >
+                <Play size={10} color="#000000" fill="#000000" style={{ marginLeft: 1 }} />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
     </Animated.View>
   );
-};
+}, (prev, next) =>
+  prev.character.id === next.character.id &&
+  prev.character.name === next.character.name &&
+  prev.character.avatarUrl === next.character.avatarUrl &&
+  prev.character.favoritesCount === next.character.favoritesCount &&
+  prev.character.chatCount === next.character.chatCount &&
+  prev.isBookmarked === next.isBookmarked &&
+  prev.isLiked === next.isLiked &&
+  prev.isFollowingCreator === next.isFollowingCreator &&
+  prev.isExiting === next.isExiting
+);
+
+const cardStylesCache = new WeakMap<ThemePalette, ReturnType<typeof createStyles>>();
+function getCachedCardStyles(palette: ThemePalette) {
+  let cached = cardStylesCache.get(palette);
+  if (!cached) {
+    cached = createStyles(palette);
+    cardStylesCache.set(palette, cached);
+  }
+  return cached;
+}
 
 const createStyles = (palette: ThemePalette) => StyleSheet.create({
   cardContainer: {
@@ -448,9 +471,9 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     height: 52,
     ...(Platform.OS === 'web'
       ? ({
-          backgroundImage:
-            'linear-gradient(to bottom, rgba(15, 18, 29, 0) 0%, rgba(15, 18, 29, 0.45) 45%, rgba(15, 18, 29, 0.92) 85%, #0f121d 100%)',
-        } as any)
+        backgroundImage:
+          'linear-gradient(to bottom, rgba(15, 18, 29, 0) 0%, rgba(15, 18, 29, 0.45) 45%, rgba(15, 18, 29, 0.92) 85%, #0f121d 100%)',
+      } as any)
       : {}),
   },
   topBadgesRow: {

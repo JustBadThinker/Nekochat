@@ -105,6 +105,7 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 4,
+      onPanResponderTerminationRequest: () => false,
       onPanResponderMove: (_, gesture) => {
         if (gesture.dy > 0) {
           translateY.setValue(gesture.dy);
@@ -151,8 +152,9 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (evt, gesture) => {
         if (isEventInsideScrolledChild(evt)) return false;
-        return gesture.dy > 16 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.6;
+        return gesture.dy > 12 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.4;
       },
+      onPanResponderTerminationRequest: () => false,
       onPanResponderMove: (_, gesture) => {
         if (gesture.dy > 0) {
           translateY.setValue(gesture.dy);
@@ -282,7 +284,8 @@ const styles = StyleSheet.create({
   },
   dragZone: {
     width: '100%',
-    paddingVertical: 8,
+    paddingTop: 10,
+    paddingBottom: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },

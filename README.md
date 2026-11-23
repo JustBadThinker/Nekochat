@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🐾 NekoChat `(v0.2.1 Beta)`
+# 🐾 NekoChat `(v0.2.2 Beta)`
 
 ### **Local-First AI Roleplay Client — Zero Login, Zero Remote Chat DB**
 

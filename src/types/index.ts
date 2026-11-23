@@ -223,9 +223,22 @@ export interface LorebookEntry {
   enabled: boolean;
   selective?: boolean; // requires both primary and secondary triggers
   constant?: boolean; // always injected regardless of triggers
-  position?: 'before_char' | 'after_char';
+  position?: 'before_char' | 'after_char' | 'before_history';
+  depth?: number; // optional prompt depth hint
   probability?: number; // 0..100
   useProbability?: boolean;
+  caseSensitive?: boolean;
+  matchWholeWords?: boolean;
+  scanDepth?: number;
+  sticky?: number; // turns to stay active after trigger
+  cooldown?: number; // turns to suppress after deactivation
+  delay?: number; // minimum total turns before entry can activate
+  group?: string; // inclusion group name
+  groupWeight?: number;
+  ignoreBudget?: boolean;
+  preventRecursion?: boolean; // do not allow this entry's content to trigger others
+  excludeRecursion?: boolean; // do not allow other entries to recursively trigger this one
+  characterFilter?: string[]; // restrict entry to matching character names
 }
 
 export interface Lorebook {
@@ -233,9 +246,13 @@ export interface Lorebook {
   userId: string;
   title: string;
   description: string;
+  enabled?: boolean;
   scanDepth?: number;
   tokenBudget?: number;
+  globalBudget?: number;
+  maxEntries?: number;
   recursiveScanning?: boolean;
+  maxRecursionDepth?: number;
   entries: LorebookEntry[];
   isPublic: boolean;
   createdAt: string;
@@ -257,6 +274,7 @@ export interface ChatMessage {
   rawTemplate?: string;
   thought?: string;
   backendPrompt?: string;
+  finishReason?: string;
   imageUrl?: string;
   imagePrompt?: string;
   imageStyle?: string;

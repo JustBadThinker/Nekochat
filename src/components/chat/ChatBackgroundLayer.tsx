@@ -17,6 +17,7 @@ export interface ChatAppearanceConfig {
 interface ChatBackgroundLayerProps {
   appearance: ChatAppearanceConfig;
   fallbackUri?: string;
+  isNovel?: boolean;
 }
 
 /**
@@ -29,6 +30,7 @@ interface ChatBackgroundLayerProps {
 export const ChatBackgroundLayer: React.FC<ChatBackgroundLayerProps> = ({
   appearance,
   fallbackUri = '',
+  isNovel = false,
 }) => {
   const wallpaperTargetRef = useRef<React.ComponentRef<typeof View> | null>(null);
   const [autoDarkness, setAutoDarkness] = useState<number | null>(null);
@@ -94,10 +96,11 @@ export const ChatBackgroundLayer: React.FC<ChatBackgroundLayerProps> = ({
     return null;
   }
 
+  const baseOverlay = isNovel && appearance.overlayOpacity === 0.38 ? 0.8 : appearance.overlayOpacity;
   const effectiveOverlay =
     appearance.smartAutoOverlay !== false
-      ? Math.max(appearance.overlayOpacity, autoDarkness ?? 0.52)
-      : appearance.overlayOpacity;
+      ? Math.max(baseOverlay, autoDarkness ?? 0.52)
+      : baseOverlay;
 
   return (
     <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="none">

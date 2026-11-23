@@ -573,47 +573,15 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
   };
 
   const handleImportLorebookJson = (jsonString: string) => {
-    try {
-      const parsed = JSON.parse(jsonString);
-      const title = parsed.title || parsed.name || 'Imported Lorebook';
-      const desc = parsed.description || '';
-
-      let rawEntries: any[] = [];
-      if (Array.isArray(parsed.entries)) {
-        rawEntries = parsed.entries;
-      } else if (parsed.entries && typeof parsed.entries === 'object') {
-        rawEntries = Object.values(parsed.entries);
-      }
-
-      const imported: LorebookEntry[] = rawEntries.map((e, idx) => {
-        let keys: string[] = [];
-        if (Array.isArray(e.keys)) keys = e.keys;
-        else if (Array.isArray(e.key)) keys = e.key;
-        else if (typeof e.keys === 'string') keys = e.keys.split(',').map((k: string) => k.trim());
-        else if (typeof e.key === 'string') keys = e.key.split(',').map((k: string) => k.trim());
-
-        return {
-          id: `entry_${Date.now()}_${idx}`,
-          lorebookId: editingLorebookId || 'new',
-          title: e.title || e.comment || e.name || `Entry #${idx + 1}`,
-          keys: keys.filter(Boolean),
-          content: e.content || e.text || '',
-          enabled: e.enabled !== false,
-          priority: typeof e.order === 'number' ? e.order : 100,
-        };
-      });
-
-      setLbTitle(title);
-      if (desc) setLbDescription(desc);
-      if (imported.length > 0) {
-        setLbEntries(prev => [...prev, ...imported]);
-        alert(`Successfully imported ${imported.length} lorebook entries from Janitor / SillyTavern JSON format!`);
-      } else {
-        alert('Parsed JSON successfully, but no entries were found in the file.');
-      }
-    } catch (err: any) {
-      alert(`Invalid Lorebook JSON format: ${err.message || 'Syntax error'}`);
+    const res = parseJanitorLorebookJson(jsonString, lbTitle.trim() || undefined);
+    if (!res.success || !res.lorebook) {
+      alert(res.error || 'Could not parse lorebook JSON.');
+      return;
     }
+    if (!lbTitle.trim()) setLbTitle(res.lorebook.title);
+    if (!lbDescription.trim() && res.lorebook.description) setLbDescription(res.lorebook.description);
+    setLbEntries(prev => [...prev, ...res.lorebook!.entries]);
+    alert(`Successfully imported ${res.lorebook.entries.length} lorebook entries!`);
   };
 
   const handleSaveLorebook = async () => {
@@ -622,15 +590,28 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
       return;
     }
 
+    let finalEntries = lbEntries;
+    let finalDescription = lbDescription.trim();
+    if (
+      finalEntries.length === 0 &&
+      /^[\[{]|\b(?:var|let|const)\b|context\.(?:chat|character)/.test(finalDescription)
+    ) {
+      const autoParsed = parseJanitorLorebookJson(finalDescription, lbTitle.trim());
+      if (autoParsed.success && autoParsed.lorebook && autoParsed.lorebook.entries.length > 0) {
+        finalEntries = autoParsed.lorebook.entries;
+        finalDescription = autoParsed.lorebook.description;
+      }
+    }
+
     const lorebook: Lorebook = {
       id: editingLorebookId || `lorebook_${Date.now()}`,
       userId: 'user',
       title: lbTitle.trim(),
-      description: lbDescription.trim(),
+      description: finalDescription,
       scanDepth: parseInt(lbScanDepth, 10) || 2,
       tokenBudget: parseInt(lbTokenBudget, 10) || 1024,
       recursiveScanning: false,
-      entries: lbEntries,
+      entries: finalEntries,
       isPublic: false,
       createdAt: new Date().toISOString(),
     };

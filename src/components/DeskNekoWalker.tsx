@@ -13,11 +13,25 @@ import { ThemePalette } from '../theme/colors';
 
 // DeskNekoWalker: certified emotional-support pixel cat.
 // Do not question the throw physics; it works on my machine ¯\_(ツ)_/¯
-const DESK_SPRITE_4X4 = require('../../assets/neko-desk-4x4.png');
-const NEKO_LIFTED_IMG = require('../../assets/neko-lifted.png');
-const NEKO_THROWN_IMG = require('../../assets/neko-thrown.png');
+const PIXEL_KITTEN_SHEET = require('../../assets/pixel-kitten-sheet.png');
+const SHEET_COLS = 8;
+const SHEET_ROWS = 10;
 
-type DeskAction = 'idle' | 'walk' | 'groom' | 'sleep' | 'curious' | 'waiting' | 'grabbed' | 'thrown';
+type DeskAction =
+  | 'idle'
+  | 'walk'
+  | 'run'
+  | 'groom'
+  | 'sleep'
+  | 'hop'
+  | 'stretch'
+  | 'wave'
+  | 'dizzy'
+  | 'curious'
+  | 'waiting'
+  | 'grabbed'
+  | 'thrown'
+  | 'landing';
 
 interface DeskNekoWalkerProps {
   containerWidth: number;
@@ -43,6 +57,10 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
   const [action, setAction] = useState<DeskAction>('idle');
   const [frame, setFrame] = useState<{ row: number; col: number }>({ row: 0, col: 0 });
   const [facing, setFacing] = useState<1 | -1>(1);
+  const facingRef = useRef<1 | -1>(1);
+  facingRef.current = facing;
+  const [pillowState, setPillowState] = useState<{ x: number; col: number; poofing?: boolean } | null>(null);
+  const pillowOpacity = useRef(new Animated.Value(1)).current;
 
   const maxWalkX = Math.max(24, containerWidth - FRAME_SIZE - 24);
   const maxWalkXRef = useRef(maxWalkX);
@@ -59,6 +77,7 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
   const isGrabbedRef = useRef(false);
   const dragStartRef = useRef({ x: 28, y: 0 });
 
+  // Autonomous behavior loop when neither typing nor waiting
   useEffect(() => {
     const idX = posX.addListener(({ value }) => {
       currentXRef.current = value;
@@ -101,6 +120,10 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
         }
         posX.setValue(nextX);
         bounceY.setValue(nextY);
+        if (nextY < -12) {
+          pillowOpacity.setValue(1);
+          setPillowState({ x: nextX, col: 0, poofing: false });
+        }
       },
       onPanResponderRelease: (_evt, gesture) => {
         isGrabbedRef.current = false;
@@ -144,21 +167,17 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
           }
 
           if (y >= 0) {
-            y = 0;
-            if (Math.abs(vy) > 3.2) {
-              vy = -vy * 0.35;
-              vx *= 0.72;
-            } else {
-              posX.setValue(x);
-              bounceY.setValue(0);
-              throwRafRef.current = null;
-              setAction('idle');
-              return;
-            }
+            posX.setValue(x);
+            bounceY.setValue(0);
+            throwRafRef.current = null;
+            setPillowState({ x, col: 0 });
+            setAction('landing');
+            return;
           }
 
           posX.setValue(x);
           bounceY.setValue(y);
+          setPillowState({ x, col: 0 });
           throwRafRef.current = requestAnimationFrame(step);
         };
 
@@ -171,12 +190,13 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
           friction: 5,
           tension: 160,
           useNativeDriver: true,
-        }).start(() => setAction('idle'));
+        }).start(() => setAction('landing'));
       },
     })
   ).current;
 
   // React to user typing or AI waiting
+  // Autonomous behavior loop when neither typing nor waiting
   useEffect(() => {
     if (isGrabbedRef.current) return;
     if (isTypingUser) {
@@ -199,20 +219,58 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
     setAction('idle');
   }, [isTypingUser, isAiWaiting, bounceY]);
 
+  // Dedicated pillow poof/disappear animation (runs independently so setAction('idle') never cancels it)
   // Autonomous behavior loop when neither typing nor waiting
   useEffect(() => {
-    if (action === 'curious' || action === 'waiting' || action === 'grabbed' || action === 'thrown') return;
+    if (!pillowState?.poofing) return;
+    const poofCols = [1, 2, 3, 4, 5, 6, 7];
+    let pTick = 0;
+    pillowOpacity.setValue(1);
+    Animated.timing(pillowOpacity, {
+      toValue: 0,
+      duration: poofCols.length * 165,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+
+    const iv = setInterval(() => {
+      pTick += 1;
+      if (pTick < poofCols.length) {
+        setPillowState(prev => (prev ? { ...prev, col: poofCols[pTick] } : null));
+      } else {
+        clearInterval(iv);
+        setPillowState(null);
+      }
+    }, 165);
+    return () => clearInterval(iv);
+  }, [pillowState?.poofing, pillowOpacity]);
+  // Autonomous behavior loop when neither typing nor waiting
+  useEffect(() => {
+    if (
+      action === 'curious' ||
+      action === 'waiting' ||
+      action === 'grabbed' ||
+      action === 'thrown' ||
+      action === 'landing'
+    ) {
+      return;
+    }
 
     const pickNextBehavior = () => {
       const r = Math.random();
-      if (r < 0.42 && maxWalkX > 48) {
-        // Walk to a random X along the top of the input bar
+      if (r < 0.44 && maxWalkX > 48) {
+        // Walk or dash to a random X along the top of the input bar
         const targetX = 18 + Math.random() * (maxWalkX - 18);
         const dist = Math.abs(targetX - currentXRef.current);
         if (dist > 16) {
-          setFacing(targetX >= currentXRef.current ? 1 : -1);
-          setAction('walk');
-          const duration = Math.min(3400, Math.max(900, Math.round(dist * 16)));
+          const dir: 1 | -1 = targetX >= currentXRef.current ? 1 : -1;
+          // Row 3 (run) faces right only, so only dash right; walk left uses Row 2 at faster cadence (no moonwalk!)
+          const isFastRight = dir === 1 && dist > 120;
+          setFacing(dir);
+          setAction(isFastRight ? 'run' : 'walk');
+          const duration = isFastRight
+            ? Math.min(2200, Math.max(700, Math.round(dist * 10)))
+            : Math.min(3400, Math.max(900, Math.round(dist * 15)));
           const anim = Animated.timing(posX, {
             toValue: targetX,
             duration,
@@ -228,12 +286,18 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
           return;
         }
       }
-      if (r < 0.72) {
+      if (r < 0.56) {
         setAction('groom');
-      } else if (r < 0.88) {
-        setAction('idle');
-      } else {
+      } else if (r < 0.68) {
+        setAction('wave');
+      } else if (r < 0.78) {
+        setAction('hop');
+      } else if (r < 0.87) {
+        setAction('stretch');
+      } else if (r < 0.96) {
         setAction('sleep');
+      } else {
+        setAction('idle');
       }
     };
 
@@ -241,68 +305,222 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
     return () => clearInterval(timer);
   }, [action, maxWalkX, posX]);
 
-  // Frame sequencer per action
+  // Frame sequencer per action (8x10 Pixel Kitten Sprite Sheet — no horizontal flip needed)
   useEffect(() => {
+    if (action !== 'walk' && action !== 'run') {
+      walkAnimRef.current?.stop();
+      walkAnimRef.current = null;
+    }
     let tick = 0;
     if (action === 'walk') {
-      setFrame({ row: 1, col: 0 });
+      // Row 1 = walk right, Row 2 = walk left (native unflipped art)
+      const walkRow = facingRef.current === 1 ? 1 : 2;
+      setFrame({ row: walkRow, col: 0 });
       const iv = setInterval(() => {
-        tick = (tick + 1) % 4;
-        setFrame({ row: 1, col: tick });
-      }, 160);
+        tick = (tick + 1) % 8;
+        setFrame({ row: walkRow, col: tick });
+      }, 115);
+      return () => clearInterval(iv);
+    }
+
+    if (action === 'run') {
+      setFrame({ row: 3, col: 0 });
+      const iv = setInterval(() => {
+        tick = (tick + 1) % 8;
+        setFrame({ row: 3, col: tick });
+      }, 90);
       return () => clearInterval(iv);
     }
 
     if (action === 'groom') {
-      const seq = [0, 1, 2, 1, 2, 3];
-      setFrame({ row: 2, col: seq[0] });
+      setFrame({ row: 6, col: 0 });
+      const iv = setInterval(() => {
+        tick = (tick + 1) % 8;
+        setFrame({ row: 6, col: tick });
+      }, 220);
+      return () => clearInterval(iv);
+    }
+
+    if (action === 'hop') {
+      setFrame({ row: 8, col: 0 });
+      const iv = setInterval(() => {
+        tick = (tick + 1) % 8;
+        setFrame({ row: 8, col: tick });
+      }, 170);
+      return () => clearInterval(iv);
+    }
+
+    if (action === 'wave') {
+      const seq = [0, 1, 2, 1, 2, 0];
+      setFrame({ row: 9, col: seq[0] });
       const iv = setInterval(() => {
         tick = (tick + 1) % seq.length;
-        setFrame({ row: 2, col: seq[tick] });
-      }, 340);
+        setFrame({ row: 9, col: seq[tick] });
+      }, 280);
+      return () => clearInterval(iv);
+    }
+
+    if (action === 'stretch') {
+      const seq = [3, 4, 3, 4];
+      setFrame({ row: 9, col: seq[0] });
+      const iv = setInterval(() => {
+        tick = (tick + 1) % seq.length;
+        setFrame({ row: 9, col: seq[tick] });
+      }, 360);
+      return () => clearInterval(iv);
+    }
+
+    if (action === 'dizzy') {
+      const seq = [1, 2, 3, 4, 3, 4];
+      setFrame({ row: 7, col: seq[0] });
+      const iv = setInterval(() => {
+        tick = (tick + 1) % seq.length;
+        setFrame({ row: 7, col: seq[tick] });
+      }, 220);
       return () => clearInterval(iv);
     }
 
     if (action === 'sleep') {
-      setFrame({ row: 3, col: 2 });
-      return;
-    }
-
-    if (action === 'curious') {
-      setFrame({ row: 0, col: 3 });
-      return;
-    }
-
-    if (action === 'grabbed' || action === 'thrown') {
-      return;
-    }
-
-    if (action === 'waiting') {
-      setFrame({ row: 0, col: 3 });
+      // Alternate between different sleep poses (Zzz, curled ball, flopped)
+      const seq = [
+        { row: 9, col: 5 },
+        { row: 9, col: 6 },
+        { row: 9, col: 5 },
+        { row: 7, col: 7 },
+      ];
+      setFrame(seq[0]);
       const iv = setInterval(() => {
-        tick = (tick + 1) % 3;
-        setFrame(tick === 0 ? { row: 0, col: 3 } : tick === 1 ? { row: 0, col: 2 } : { row: 3, col: 3 });
+        tick = (tick + 1) % seq.length;
+        setFrame(seq[tick]);
       }, 900);
       return () => clearInterval(iv);
     }
 
-    // Idle: sit + occasional blink & ear twitch
+    if (action === 'curious') {
+      setFrame({ row: 0, col: 4 });
+      const iv = setInterval(() => {
+        tick = (tick + 1) % 2;
+        setFrame({ row: 0, col: tick === 0 ? 4 : 3 });
+      }, 650);
+      return () => clearInterval(iv);
+    }
+
+    if (action === 'grabbed') {
+      setFrame({ row: 4, col: 0 });
+      return;
+    }
+
+    if (action === 'thrown') {
+      setFrame({ row: 4, col: 1 });
+      return;
+    }
+
+    if (action === 'landing') {
+      // 1) Land on pillow (image 2: 4,2..4,4 -> image 3: 4,5..4,7)
+      // 2) Jump off pillow forward & let pillow poof/disappear behind (row 5 cols 1..7)
+      const seq = [
+        { row: 4, col: 2 },
+        { row: 4, col: 3 },
+        { row: 4, col: 4 },
+        { row: 4, col: 5 },
+        { row: 4, col: 6 },
+        { row: 4, col: 7 },
+      ];
+      setFrame(seq[0]);
+      // Hide separate pillow while cat+pillow sprite (row 4 cols 2..7) is active
+      setPillowState(prev => (prev ? { ...prev, col: -1, poofing: false } : null));
+      const iv = setInterval(() => {
+        tick += 1;
+        if (tick < seq.length) {
+          setFrame(seq[tick]);
+        } else {
+          clearInterval(iv);
+          // Cat jumps off the pillow!
+          const landX = currentXRef.current;
+          const jumpOffset = landX + 26 <= maxWalkXRef.current ? 26 : -26;
+          setFacing(jumpOffset >= 0 ? 1 : -1);
+          setFrame({ row: 8, col: 3 });
+          setPillowState({ x: landX, col: 1, poofing: true });
+
+          Animated.parallel([
+            Animated.sequence([
+              Animated.timing(bounceY, { toValue: -18, duration: 150, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+              Animated.timing(bounceY, { toValue: 0, duration: 170, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+            ]),
+            Animated.timing(posX, { toValue: landX + jumpOffset, duration: 320, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+          ]).start(() => {
+            setAction('idle');
+          });
+        }
+      }, 150);
+      return () => {
+        clearInterval(iv);
+      };
+    }
+
+    if (action === 'waiting') {
+      const seq = [
+        { row: 0, col: 4 },
+        { row: 0, col: 3 },
+        { row: 9, col: 2 },
+        { row: 0, col: 5 },
+      ];
+      setFrame(seq[0]);
+      const iv = setInterval(() => {
+        tick = (tick + 1) % seq.length;
+        setFrame(seq[tick]);
+      }, 720);
+      return () => clearInterval(iv);
+    }
+
+    // Idle: sit + blink, glance, happy smile, occasional back-turned look
     setFrame({ row: 0, col: 0 });
     const iv = setInterval(() => {
-      tick = (tick + 1) % 10;
-      if (tick === 5) {
+      tick = (tick + 1) % 14;
+      if (tick === 4) {
         setFrame({ row: 0, col: 1 }); // blink
-      } else if (tick === 8) {
-        setFrame({ row: 0, col: 2 }); // ear twitch
+      } else if (tick === 7) {
+        setFrame({ row: 0, col: 2 }); // glance
+      } else if (tick === 10) {
+        setFrame({ row: 0, col: 5 }); // happy smile
+      } else if (tick === 12) {
+        setFrame({ row: 9, col: 7 }); // look away / back view
       } else {
         setFrame({ row: 0, col: 0 });
       }
     }, 320);
     return () => clearInterval(iv);
-  }, [action]);
+  }, [action, bounceY, posX]);
 
   return (
     <View style={styles.rail} pointerEvents="box-none">
+      {pillowState && pillowState.col >= 0 && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.petAnchor,
+            {
+              opacity: pillowOpacity,
+              transform: [{ translateX: pillowState.x }, { translateY: 12 }],
+            },
+          ]}
+        >
+          <View style={styles.spriteViewport}>
+            <Image
+              source={PIXEL_KITTEN_SHEET}
+              style={{
+                width: FRAME_SIZE * SHEET_COLS,
+                height: FRAME_SIZE * SHEET_ROWS,
+                transform: [
+                  { translateX: -pillowState.col * FRAME_SIZE },
+                  { translateY: -5 * FRAME_SIZE },
+                ],
+              }}
+              resizeMode="stretch"
+            />
+          </View>
+        </Animated.View>
+      )}
       <Animated.View
         {...panResponder.panHandlers}
         style={[
@@ -326,38 +544,19 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
               <Text style={styles.waitBubbleText}>Writing...</Text>
             </View>
           )}
-          <View
-            style={[
-              styles.spriteViewport,
-              { transform: [{ scaleX: action === 'grabbed' ? 1 : facing }] },
-            ]}
-          >
-            {action === 'grabbed' ? (
-              <Image
-                source={NEKO_LIFTED_IMG}
-                style={{ width: FRAME_SIZE, height: FRAME_SIZE }}
-                resizeMode="contain"
-              />
-            ) : action === 'thrown' ? (
-              <Image
-                source={NEKO_THROWN_IMG}
-                style={{ width: FRAME_SIZE, height: FRAME_SIZE }}
-                resizeMode="contain"
-              />
-            ) : (
-              <Image
-                source={DESK_SPRITE_4X4}
-                style={{
-                  width: FRAME_SIZE * 4,
-                  height: FRAME_SIZE * 4,
-                  transform: [
-                    { translateX: -frame.col * FRAME_SIZE },
-                    { translateY: -frame.row * FRAME_SIZE },
-                  ],
-                }}
-                resizeMode="stretch"
-              />
-            )}
+          <View style={styles.spriteViewport}>
+            <Image
+              source={PIXEL_KITTEN_SHEET}
+              style={{
+                width: FRAME_SIZE * SHEET_COLS,
+                height: FRAME_SIZE * SHEET_ROWS,
+                transform: [
+                  { translateX: -frame.col * FRAME_SIZE },
+                  { translateY: -frame.row * FRAME_SIZE },
+                ],
+              }}
+              resizeMode="stretch"
+            />
           </View>
         </View>
       </Animated.View>

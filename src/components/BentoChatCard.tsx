@@ -25,31 +25,32 @@ interface BentoChatCardProps {
   isExiting?: boolean;
 }
 
-export const BentoChatCard: React.FC<BentoChatCardProps> = ({
+export const BentoChatCard: React.FC<BentoChatCardProps> = React.memo(function BentoChatCard({
   character,
   onPress,
   onToggleFavorite,
   isExiting = false,
-}) => {
+}) {
   const { palette, skin } = useTheme();
-  const styles = useMemo(() => createStyles(palette), [palette]);
+  const styles = useMemo(() => getCachedBentoCardStyles(palette), [palette]);
   const enterAnim = useRef(new Animated.Value(0)).current;
   const pressScale = useRef(new Animated.Value(1)).current;
   const heartScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     runEnterAnimation(enterAnim, skin.animation);
-  }, []);
+  }, [enterAnim, skin.animation]);
 
   useEffect(() => {
     if (isExiting) {
       Animated.timing(enterAnim, {
         toValue: 0,
-        duration: 200,
+        duration: Math.max(160, Math.round(skin.animation.enterDuration * 0.75)),
+        easing: skin.animation.easing,
         useNativeDriver: true,
       }).start();
     }
-  }, [isExiting, enterAnim]);
+  }, [isExiting, enterAnim, skin.animation]);
 
   const handlePressIn = () => {
     runPressInAnimation(pressScale, skin.animation);
@@ -158,7 +159,25 @@ export const BentoChatCard: React.FC<BentoChatCardProps> = ({
     </TouchableOpacity>
     </Animated.View>
   );
-};
+}, (prev, next) =>
+  prev.character.id === next.character.id &&
+  prev.character.name === next.character.name &&
+  prev.character.avatar === next.character.avatar &&
+  prev.character.lastActive === next.character.lastActive &&
+  prev.character.isFavorite === next.character.isFavorite &&
+  (prev.character as any).totalChats === (next.character as any).totalChats &&
+  prev.isExiting === next.isExiting
+);
+
+const bentoCardStylesCache = new WeakMap<ThemePalette, ReturnType<typeof createStyles>>();
+function getCachedBentoCardStyles(palette: ThemePalette) {
+  let cached = bentoCardStylesCache.get(palette);
+  if (!cached) {
+    cached = createStyles(palette);
+    bentoCardStylesCache.set(palette, cached);
+  }
+  return cached;
+}
 
 const createStyles = (palette: ThemePalette) => StyleSheet.create({
   cardWrapper: {
