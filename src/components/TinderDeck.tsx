@@ -1103,8 +1103,6 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
       ? ({
           backgroundImage:
             'linear-gradient(to bottom, rgba(10, 12, 18, 0) 0%, rgba(10, 12, 18, 0.65) 50%, rgba(10, 12, 18, 0.94) 100%)',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
         } as any)
       : {}),
   },
@@ -1119,12 +1117,6 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.08)',
     zIndex: 20,
-    ...(Platform.OS === 'web'
-      ? ({
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
-        } as any)
-      : {}),
   },
   nameRow: {
     flexDirection: 'row',

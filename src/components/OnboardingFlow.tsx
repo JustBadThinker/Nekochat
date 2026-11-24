@@ -34,6 +34,7 @@ import {
 } from 'lucide-react-native';
 import { AppSettings, ProviderConfig } from '../types';
 import { useTheme } from '../theme/ThemeContext';
+import { getScreenBg } from '../theme/skins';
 import { useTranslation } from '../i18n/LanguageContext';
 import { LANGUAGE_OPTIONS, UiLanguage, getDefaultLanguagePrompt } from '../i18n/translations';
 import { NekoLogoSvg } from './NekoLogoSvg';
@@ -384,7 +385,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   const TourIcon = activeTour.Icon;
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.bgDark }]}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: getScreenBg(palette, skin) }]}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

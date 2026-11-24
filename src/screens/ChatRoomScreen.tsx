@@ -44,6 +44,7 @@ import { ModelDropdown } from '../components/ModelDropdown';
 import { RichHtmlRenderer } from '../components/RichHtmlRenderer';
 import { BottomSheetModal } from '../components/BottomSheetModal';
 import { NekoSwitch } from '../components/NekoSwitch';
+import { AnimatedChevron, AnimatedCollapsible } from '../components/SmoothTransition';
 import { GLASS } from '../theme/glassTheme';
 import {
   ArrowLeft,
@@ -98,9 +99,9 @@ import {
   CastPresenceStatus,
   TokenOptimizerLevel,
 } from '../types';
-import { colors } from '../theme/colors';
+import { colors, ThemePalette } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
-import { getBubbleSurfaceStyle, getCardSurfaceStyle } from '../theme/skins';
+import { getBubbleSurfaceStyle, getCardSurfaceStyle, getSurfaceBg } from '../theme/skins';
 import { runToggleAnimation } from '../theme/animations';
 import { useTranslation } from '../i18n/LanguageContext';
 import { imageGenService, IMAGE_STYLE_OPTIONS, ImageStylePreset } from '../services/imageGenService';
@@ -130,7 +131,6 @@ import {
   ChatAppearanceConfig,
   GLOBAL_CHAT_APPEARANCE_KEY,
 } from '../components/chat/ChatBackgroundLayer';
-import { ThemePalette } from '../theme/colors';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -286,6 +286,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [newPresetName, setNewPresetName] = useState('');
   const [newPresetBody, setNewPresetBody] = useState('');
   const [settingsSubView, setSettingsSubView] = useState<'main' | 'generation' | 'custom_prompt' | 'new_custom_prompt' | 'prefill' | 'forbidden_words' | 'lorebooks'>('main');
+  const [showAdvancedControls, setShowAdvancedControls] = useState(false);
   const [attachedLorebookIds, setAttachedLorebookIds] = useState<string[]>(character.lorebookIds || []);
   const [helpLorebookVisible, setHelpLorebookVisible] = useState(false);
   const [responseLength, setResponseLength] = useState<'standard' | 'shorter'>('standard');
@@ -297,7 +298,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [memoryReplacesOld, setMemoryReplacesOld] = useState(false);
   const [autoMemoryEnabled, setAutoMemoryEnabled] = useState(false);
   const [autoMemoryInterval, setAutoMemoryInterval] = useState(20);
-  const [visibleMessageCount, setVisibleMessageCount] = useState(40);
+  const [visibleMessageCount, setVisibleMessageCount] = useState(6);
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const [textStreamingEnabled, setTextStreamingEnabled] = useState(true);
   const [animateNonStreamed, setAnimateNonStreamed] = useState(false);
@@ -380,6 +381,10 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 
   const scrollViewRef = useRef<any>(null);
   const lastStreamFlushRef = useRef<number>(0);
+  const isNearBottomRef = useRef(true);
+  const prevMsgCountRef = useRef(0);
+  const initialScrollSettledRef = useRef(false);
+  const chatListOpacity = useRef(new Animated.Value(0)).current;
 
   const chatCharName = extractCleanCharacterName(
     character.chatName || character.name,
@@ -481,10 +486,10 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const sub = Keyboard.addListener(showEvt, () => {
-      if (autoScrollEnabled) {
+      if (autoScrollEnabled && isNearBottomRef.current) {
         setTimeout(() => {
-          scrollViewRef.current?.scrollToEnd({ animated: true });
-        }, 80);
+          scrollViewRef.current?.scrollToEnd({ animated: false });
+        }, 120);
       }
     });
     return () => sub.remove();
@@ -1119,6 +1124,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       setActiveConversationId(activeConv.id);
       setActiveScenarioId(activeConv.scenarioId || null);
       setCustomPrompt(activeConv.customPrompt || '');
+      initialScrollSettledRef.current = false;
+      isNearBottomRef.current = true;
+      prevMsgCountRef.current = 0;
+      chatListOpacity.setValue(0);
+      setVisibleMessageCount(6);
       setMessages(activeConv.messages || []);
     } else {
       // Create first conversation
@@ -1133,6 +1143,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       setActiveConversationId(newConv.id);
       setActiveScenarioId(newConv.scenarioId || null);
       setCustomPrompt(newConv.customPrompt || '');
+      initialScrollSettledRef.current = false;
+      isNearBottomRef.current = true;
+      prevMsgCountRef.current = 0;
+      chatListOpacity.setValue(0);
+      setVisibleMessageCount(6);
       setMessages(newConv.messages || []);
     }
   };
@@ -2455,13 +2470,19 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             backgroundColor: 'rgba(0, 0, 0, 0.5)',
           }}
         >
-          <Brain size={12} color={isAbnormalFinish ? '#fbbf24' : `rgba(${palette.accentRgb}, 0.85)`} />
-          <Text style={{ color: isAbnormalFinish ? '#fde68a' : `rgba(${palette.accentRgb}, 0.88)`, fontSize: 11.5, fontWeight: '700' }}>
-            Thinking {isExpanded ? '▲' : '▼'}
-            {isAbnormalFinish ? ` · Cut: ${rawFinishCode}` : ''}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <Brain size={12} color={isAbnormalFinish ? '#fbbf24' : `rgba(${palette.accentRgb}, 0.85)`} />
+            <Text style={{ color: isAbnormalFinish ? '#fde68a' : `rgba(${palette.accentRgb}, 0.88)`, fontSize: 11.5, fontWeight: '700' }}>
+              Thinking{isAbnormalFinish ? ` · Cut: ${rawFinishCode}` : ''}
+            </Text>
+            <AnimatedChevron
+              expanded={isExpanded}
+              size={12}
+              color={isAbnormalFinish ? '#fde68a' : `rgba(${palette.accentRgb}, 0.88)`}
+            />
+          </View>
         </TouchableOpacity>
-        {isExpanded && (
+        <AnimatedCollapsible expanded={isExpanded}>
           <LinearGradient
             colors={['rgba(0, 0, 0, 0.56)', 'rgba(0, 0, 0, 0.44)', 'rgba(0, 0, 0, 0.26)']}
             start={{ x: 0, y: 0 }}
@@ -2551,7 +2572,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               </View>
             </ScrollView>
           </LinearGradient>
-        )}
+        </AnimatedCollapsible>
       </View>
     );
   };
@@ -2559,7 +2580,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const totalTokens = messages.reduce((acc, m) => acc + (m.tokenCount || estimateTokens(m.content)), 0);
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.bgDark }]}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: skin.screenBg || palette.bgDark }]}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior="padding"
@@ -2577,16 +2598,17 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           style={[
             styles.header,
             skin.id === 'ios' && {
-              backgroundColor: 'rgba(22, 22, 24, 0.84)',
+              backgroundColor: '#141416',
               borderBottomWidth: 0.5,
               borderBottomColor: 'rgba(255, 255, 255, 0.14)',
             },
             skin.id === 'material' && {
-              backgroundColor: palette.bgSurfaceSubtle,
+              backgroundColor: getSurfaceBg(palette, skin),
               borderBottomWidth: 0,
             },
             skin.id === 'janitor' && {
-              borderBottomColor: `rgba(${palette.accentRgb}, 0.25)`,
+              backgroundColor: getSurfaceBg(palette, skin),
+              borderBottomColor: 'rgba(255, 255, 255, 0.08)',
             },
           ]}
         >
@@ -3324,60 +3346,81 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           };
 
           return (
-            <FlatList
-              ref={scrollViewRef}
-              data={visibleMessages}
-              keyExtractor={item => item.id}
-              renderItem={renderMessageRowItem}
-              nestedScrollEnabled
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={styles.scrollContent}
-              initialNumToRender={16}
-              maxToRenderPerBatch={10}
-              windowSize={7}
-              removeClippedSubviews={Platform.OS === 'android'}
-              scrollEventThrottle={32}
-              onScroll={e => {
-                const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-                const distFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
-                const nextShow = distFromBottom > 140;
-                setShowScrollBottom(prev => (prev === nextShow ? prev : nextShow));
-              }}
-              onContentSizeChange={() => {
-                if (!showScrollBottom) {
-                  scrollViewRef.current?.scrollToEnd({ animated: true });
+            <Animated.View style={{ flex: 1, opacity: chatListOpacity }}>
+              <FlatList
+                ref={scrollViewRef}
+                data={visibleMessages}
+                keyExtractor={item => item.id}
+                renderItem={renderMessageRowItem}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={styles.scrollContent}
+                initialNumToRender={10}
+                maxToRenderPerBatch={8}
+                windowSize={7}
+                removeClippedSubviews={Platform.OS === 'android'}
+                maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+                scrollEventThrottle={32}
+                onScroll={e => {
+                  const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+                  const distFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
+                  isNearBottomRef.current = distFromBottom <= 140;
+                  const nextShow = distFromBottom > 140;
+                  setShowScrollBottom(prev => (prev === nextShow ? prev : nextShow));
+                }}
+                onContentSizeChange={() => {
+                  const grewMessages = messages.length > prevMsgCountRef.current;
+                  prevMsgCountRef.current = messages.length;
+                  if (!initialScrollSettledRef.current && visibleMessages.length > 0) {
+                    initialScrollSettledRef.current = true;
+                    isNearBottomRef.current = true;
+                    scrollViewRef.current?.scrollToEnd({ animated: false });
+                    requestAnimationFrame(() => {
+                      scrollViewRef.current?.scrollToEnd({ animated: false });
+                      Animated.timing(chatListOpacity, {
+                        toValue: 1,
+                        duration: 180,
+                        easing: Easing.out(Easing.cubic),
+                        useNativeDriver: true,
+                      }).start();
+                    });
+                    return;
+                  }
+                  if (isNearBottomRef.current && (isStreaming || grewMessages)) {
+                    scrollViewRef.current?.scrollToEnd({ animated: false });
+                  }
+                }}
+                ListHeaderComponent={
+                  messages.length > visibleMessageCount ? (
+                    <TouchableOpacity
+                      onPress={() => setVisibleMessageCount(c => c + 12)}
+                      activeOpacity={0.8}
+                      style={{
+                        alignSelf: 'center',
+                        marginVertical: 10,
+                        paddingHorizontal: 14,
+                        paddingVertical: 8,
+                        borderRadius: 999,
+                        borderWidth: 1,
+                        borderColor: 'rgba(255,255,255,0.14)',
+                        backgroundColor: getSurfaceBg(palette, skin),
+                      }}
+                    >
+                      <Text style={{ color: palette.accent, fontSize: 12, fontWeight: '700' }}>
+                        Tap to see earlier messages ({messages.length - visibleMessageCount} above)
+                      </Text>
+                    </TouchableOpacity>
+                  ) : undefined
                 }
-              }}
-              ListHeaderComponent={
-                messages.length > visibleMessageCount ? (
-                  <TouchableOpacity
-                    onPress={() => setVisibleMessageCount(c => c + 40)}
-                    activeOpacity={0.8}
-                    style={{
-                      alignSelf: 'center',
-                      marginVertical: 10,
-                      paddingHorizontal: 14,
-                      paddingVertical: 8,
-                      borderRadius: 999,
-                      borderWidth: 1,
-                      borderColor: 'rgba(255,255,255,0.14)',
-                      backgroundColor: 'rgba(15, 23, 42, 0.72)',
-                    }}
-                  >
-                    <Text style={{ color: palette.accent, fontSize: 12, fontWeight: '700' }}>
-                      Load earlier messages ({messages.length - visibleMessageCount} hidden)
-                    </Text>
-                  </TouchableOpacity>
-                ) : undefined
-              }
-              ListFooterComponent={
-                isStreaming && !fidgetOpen ? (
-                  <View style={{ padding: 14, alignItems: 'center' }}>
-                    <NekoPulseLoader size={30} />
-                  </View>
-                ) : undefined
-              }
-            />
+                ListFooterComponent={
+                  isStreaming && !fidgetOpen ? (
+                    <View style={{ padding: 14, alignItems: 'center' }}>
+                      <NekoPulseLoader size={30} />
+                    </View>
+                  ) : undefined
+                }
+              />
+            </Animated.View>
           );
         })()}
 
@@ -3409,11 +3452,18 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             style={[
               styles.scrollBottomFab,
               {
-                backgroundColor: palette.bgSurface,
+                backgroundColor: getSurfaceBg(palette, skin),
                 borderColor: `rgba(${palette.accentRgb}, 0.45)`,
               },
             ]}
-            onPress={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+            onPress={() => {
+              isNearBottomRef.current = true;
+              setShowScrollBottom(false);
+              scrollViewRef.current?.scrollToEnd({ animated: true });
+              setTimeout(() => {
+                scrollViewRef.current?.scrollToEnd({ animated: false });
+              }, 140);
+            }}
             activeOpacity={0.85}
             accessibilityLabel="Scroll to latest message"
           >
@@ -3685,14 +3735,9 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                 borderWidth: skin.id === 'material' ? 0 : Math.max(0.75, skin.cardBorderWidth),
                 borderColor:
                   skin.id === 'janitor'
-                    ? `rgba(${palette.accentRgb}, 0.35)`
+                    ? 'rgba(255, 255, 255, 0.1)'
                     : 'rgba(255, 255, 255, 0.14)',
-                backgroundColor:
-                  skin.surfaceMode === 'tonal'
-                    ? palette.bgSurfaceSubtle
-                    : skin.surfaceMode === 'frosted'
-                      ? 'rgba(28, 28, 30, 0.85)'
-                      : palette.bgSurface,
+                backgroundColor: getSurfaceBg(palette, skin),
                 shadowColor: skin.cardGlowOpacity > 0 ? palette.accent : '#000',
                 shadowOpacity: skin.cardGlowOpacity > 0 ? 0.2 : 0.15,
               },
@@ -5136,10 +5181,10 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                       onPress={() => setSettingsSubView('generation')}
                       activeOpacity={0.75}
                     >
-                      <View>
+                      <View style={{ flex: 1, paddingRight: 10 }}>
                         <Text style={styles.settingsCardTitle}>{t('chat.generationControls')}</Text>
                         <Text style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>
-                          Temperature {chatTemperature.toFixed(1)} · Max tokens {chatMaxTokens === 0 ? 'Unlimited' : chatMaxTokens}
+                          Creativity & reply length · Temp {chatTemperature.toFixed(1)} · Max {chatMaxTokens === 0 ? 'Unlimited' : chatMaxTokens}
                         </Text>
                       </View>
                       <ChevronRight size={17} color="#64748b" />
@@ -5154,8 +5199,13 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         onPress={() => setSettingsSubView('custom_prompt')}
                         activeOpacity={0.75}
                       >
-                        <Text style={styles.settingsRowLabel}>Custom prompt</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '55%' }}>
+                        <View style={{ flex: 1, paddingRight: 10 }}>
+                          <Text style={styles.settingsRowLabel}>Custom prompt</Text>
+                          <Text style={{ color: '#64748b', fontSize: 11, marginTop: 1 }}>
+                            Extra rules or writing style for the AI
+                          </Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '45%' }}>
                           <Text style={styles.settingsRowValue} numberOfLines={1}>
                             {promptPresets.find(p => p.id === activePresetId || (customPrompt.trim() && p.prompt.trim() === customPrompt.trim()))?.name ||
                               (customPrompt.trim() ? 'Custom' : 'None')}
@@ -5168,50 +5218,100 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 
                       <TouchableOpacity
                         style={styles.settingsDrillRow}
-                        onPress={() => setSettingsSubView('prefill')}
+                        onPress={() => setShowAdvancedControls(prev => !prev)}
                         activeOpacity={0.75}
                       >
-                        <Text style={styles.settingsRowLabel}>Prefill</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text style={styles.settingsRowValue}>
-                            {prefillEnabled && prefillText.trim() ? 'On' : 'Off'}
+                        <View style={{ flex: 1, paddingRight: 10 }}>
+                          <Text style={styles.settingsRowLabel}>Advanced controls</Text>
+                          <Text style={{ color: '#64748b', fontSize: 11, marginTop: 1 }}>
+                            Prefill, forbidden words & lorebooks
                           </Text>
-                          <ChevronRight size={15} color="#64748b" />
-                        </View>
-                      </TouchableOpacity>
-
-                      <View style={styles.settingsHairline} />
-
-                      <TouchableOpacity
-                        style={styles.settingsDrillRow}
-                        onPress={() => setSettingsSubView('forbidden_words')}
-                        activeOpacity={0.75}
-                      >
-                        <Text style={styles.settingsRowLabel}>Forbidden words</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text style={styles.settingsRowValue}>{forbiddenWords.length}/10</Text>
-                          <ChevronRight size={15} color="#64748b" />
-                        </View>
-                      </TouchableOpacity>
-
-                      <View style={styles.settingsHairline} />
-
-                      <TouchableOpacity
-                        style={styles.settingsDrillRow}
-                        onPress={() => setSettingsSubView('lorebooks')}
-                        activeOpacity={0.75}
-                      >
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                          <BookOpen size={15} color={palette.accent} />
-                          <Text style={styles.settingsRowLabel}>Attached Lorebooks</Text>
                         </View>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text style={styles.settingsRowValue}>
-                            {attachedLorebookIds.length > 0 ? `${attachedLorebookIds.length} active` : 'Global only'}
-                          </Text>
-                          <ChevronRight size={15} color="#64748b" />
+                          {(() => {
+                            const activeParts: string[] = [];
+                            if (prefillEnabled && prefillText.trim()) activeParts.push('Prefill On');
+                            if (forbiddenWords.length > 0) activeParts.push(`${forbiddenWords.length} banned`);
+                            if (attachedLorebookIds.length > 0) activeParts.push(`${attachedLorebookIds.length} lore`);
+                            return (
+                              <Text style={styles.settingsRowValue}>
+                                {activeParts.length > 0 ? activeParts.join(' · ') : (showAdvancedControls ? 'Hide' : 'Show')}
+                              </Text>
+                            );
+                          })()}
+                          <AnimatedChevron
+                            expanded={showAdvancedControls}
+                            size={15}
+                            color={showAdvancedControls ? palette.accent : '#64748b'}
+                          />
                         </View>
                       </TouchableOpacity>
+
+                      <AnimatedCollapsible expanded={showAdvancedControls}>
+                          <View style={styles.settingsHairline} />
+
+                          <TouchableOpacity
+                            style={styles.settingsDrillRow}
+                            onPress={() => setSettingsSubView('prefill')}
+                            activeOpacity={0.75}
+                          >
+                            <View style={{ flex: 1, paddingRight: 10 }}>
+                              <Text style={styles.settingsRowLabel}>Prefill</Text>
+                              <Text style={{ color: '#64748b', fontSize: 11, marginTop: 1 }}>
+                                Force how the AI starts its next reply
+                              </Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <Text style={styles.settingsRowValue}>
+                                {prefillEnabled && prefillText.trim() ? 'On' : 'Off'}
+                              </Text>
+                              <ChevronRight size={15} color="#64748b" />
+                            </View>
+                          </TouchableOpacity>
+
+                          <View style={styles.settingsHairline} />
+
+                          <TouchableOpacity
+                            style={styles.settingsDrillRow}
+                            onPress={() => setSettingsSubView('forbidden_words')}
+                            activeOpacity={0.75}
+                          >
+                            <View style={{ flex: 1, paddingRight: 10 }}>
+                              <Text style={styles.settingsRowLabel}>Forbidden words</Text>
+                              <Text style={{ color: '#64748b', fontSize: 11, marginTop: 1 }}>
+                                Words or clichés the AI must avoid
+                              </Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <Text style={styles.settingsRowValue}>{forbiddenWords.length}/10</Text>
+                              <ChevronRight size={15} color="#64748b" />
+                            </View>
+                          </TouchableOpacity>
+
+                          <View style={styles.settingsHairline} />
+
+                          <TouchableOpacity
+                            style={styles.settingsDrillRow}
+                            onPress={() => setSettingsSubView('lorebooks')}
+                            activeOpacity={0.75}
+                          >
+                            <View style={{ flex: 1, paddingRight: 10 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                <BookOpen size={15} color={palette.accent} />
+                                <Text style={styles.settingsRowLabel}>Attached Lorebooks</Text>
+                              </View>
+                              <Text style={{ color: '#64748b', fontSize: 11, marginTop: 1 }}>
+                                World info injected when keywords appear
+                              </Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <Text style={styles.settingsRowValue}>
+                                {attachedLorebookIds.length > 0 ? `${attachedLorebookIds.length} active` : 'Global only'}
+                              </Text>
+                              <ChevronRight size={15} color="#64748b" />
+                            </View>
+                          </TouchableOpacity>
+                      </AnimatedCollapsible>
                     </View>
                   </View>
                 )}
@@ -6235,13 +6335,13 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                             />
                             <Text style={{ color: '#e2e8f0', fontSize: 13, fontWeight: '600' }}>{item.label}</Text>
                           </View>
-                          <ChevronDown
+                          <AnimatedChevron
+                            expanded={isOpen}
                             size={15}
-                            color="#94a3b8"
-                            style={{ transform: [{ rotate: isOpen ? '180deg' : '0deg' }] }}
+                            color={isOpen ? palette.accent : '#94a3b8'}
                           />
                         </TouchableOpacity>
-                        {isOpen && (
+                        <AnimatedCollapsible expanded={isOpen}>
                           <View
                             style={{
                               flexDirection: 'row',
@@ -6271,7 +6371,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                               </TouchableOpacity>
                             ))}
                           </View>
-                        )}
+                        </AnimatedCollapsible>
                       </View>
                     );
                   })}

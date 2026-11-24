@@ -15,6 +15,7 @@ import {
   Platform,
 } from 'react-native';
 import { X, ShieldCheck, Play, RotateCcw } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomSheetModal } from './BottomSheetModal';
 import { useTheme } from '../theme/ThemeContext';
 import type { ProviderConfig } from '../types';
@@ -51,6 +52,7 @@ export const CapabilityMatrixModal: React.FC<CapabilityMatrixModalProps> = ({
   config,
 }) => {
   const { palette } = useTheme();
+  const insets = useSafeAreaInsets();
   const [matrix, setMatrix] = useState<CapabilityMatrixData>(createEmptyMatrixData);
   const [filterStatus, setFilterStatus] = useState<'all' | CapabilityStatus>('all');
   const [consentChecked, setConsentChecked] = useState(false);
@@ -227,7 +229,7 @@ export const CapabilityMatrixModal: React.FC<CapabilityMatrixModalProps> = ({
       </ScrollView>
 
       {/* Opt-In Consent + Run Buttons */}
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(16, insets.bottom + 12) }]}>
         <TouchableOpacity
           onPress={() => setConsentChecked(v => !v)}
           style={styles.consentRow}

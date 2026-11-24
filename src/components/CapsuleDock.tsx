@@ -7,7 +7,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MessageSquare, Compass, User, Settings } from 'lucide-react-native';
 import { useTheme } from '../theme/ThemeContext';
@@ -38,7 +37,6 @@ interface CapsuleDockProps {
 export const CapsuleDock: React.FC<CapsuleDockProps> = ({
   activeTab,
   onTabChange,
-  blurTargetRef,
   visible = true,
 }) => {
   const insets = useSafeAreaInsets();
@@ -89,9 +87,8 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({
           styles.dockedBarContainer,
           dockAnimatedStyle,
           {
-            backgroundColor: palette.bgSurfaceSubtle,
-            borderTopWidth: 1,
-            borderTopColor: 'rgba(255, 255, 255, 0.08)',
+            backgroundColor: skin.surfaceBg || palette.bgSurfaceSubtle,
+            borderTopWidth: 0,
             paddingBottom: Math.max(8, insets.bottom),
             paddingTop: 10,
           },
@@ -135,6 +132,62 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({
     );
   }
 
+  if (skin.navBarStyle === 'classic_bar') {
+    return (
+      <Animated.View
+        pointerEvents={visible ? 'auto' : 'none'}
+        style={[
+          styles.dockedBarContainer,
+          dockAnimatedStyle,
+          {
+            backgroundColor: '#181818',
+            borderTopWidth: 1,
+            borderTopColor: 'rgba(255, 255, 255, 0.08)',
+            paddingBottom: Math.max(8, insets.bottom),
+            paddingTop: 8,
+          },
+        ]}
+      >
+        {TAB_ITEMS.map(({ key, labelKey, Icon }, idx) => {
+          const isActive = activeTab === key;
+          return (
+            <TouchableOpacity
+              key={key}
+              style={styles.dockedTabItem}
+              onPress={() => onTabChange(key)}
+              activeOpacity={0.8}
+            >
+              <Animated.View style={{ transform: [{ scale: scaleAnims[idx] }], alignItems: 'center' }}>
+                <View
+                  style={[
+                    styles.classicActivePill,
+                    isActive && {
+                      backgroundColor: `rgba(${palette.accentRgb}, 0.16)`,
+                      borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+                    },
+                  ]}
+                >
+                  <Icon
+                    size={19}
+                    color={isActive ? palette.accent : '#9ca3af'}
+                  />
+                </View>
+                <Text
+                  style={[
+                    styles.classicLabel,
+                    { color: isActive ? '#f3f4f6' : '#9ca3af', fontWeight: isActive ? '700' : '500' },
+                  ]}
+                >
+                  {t(labelKey)}
+                </Text>
+              </Animated.View>
+            </TouchableOpacity>
+          );
+        })}
+      </Animated.View>
+    );
+  }
+
   if (skin.navBarStyle === 'ios_tab_bar') {
     return (
       <Animated.View
@@ -143,30 +196,14 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({
           styles.dockedBarContainer,
           dockAnimatedStyle,
           {
-            backgroundColor: Platform.OS === 'web' ? 'rgba(22, 22, 24, 0.72)' : 'rgba(22, 22, 24, 0.82)',
+            backgroundColor: '#141416',
             borderTopWidth: 0.5,
-            borderTopColor: 'rgba(255, 255, 255, 0.16)',
+            borderTopColor: 'rgba(255, 255, 255, 0.14)',
             paddingBottom: Math.max(6, insets.bottom),
             paddingTop: 7,
           },
-          Platform.OS === 'web'
-            ? ({
-                backdropFilter: 'blur(24px) saturate(180%)',
-                WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-              } as any)
-            : {},
         ]}
       >
-        {Platform.OS === 'ios' && (
-          <BlurView
-            intensity={55}
-            tint="dark"
-            blurMethod="dimezisBlurView"
-            blurTarget={blurTargetRef}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
-        )}
         {TAB_ITEMS.map(({ key, labelKey, Icon }, idx) => {
           const isActive = activeTab === key;
           return (
@@ -210,36 +247,13 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({
         style={[
           styles.dockCapsule,
           {
-            backgroundColor: skin.surfaceMode === 'tonal' ? palette.bgSurfaceSubtle : 'rgba(14, 17, 26, 0.46)',
-            borderColor: `rgba(${palette.accentRgb}, ${skin.id === 'janitor' ? 0.45 : 0.25})`,
+            backgroundColor: skin.surfaceMode === 'tonal' ? palette.bgSurfaceSubtle : 'rgba(14, 17, 26, 0.88)',
+            borderColor: `rgba(${palette.accentRgb}, 0.25)`,
             borderRadius: skin.dockRadius,
             borderWidth: skin.dockBorderWidth,
-            ...(skin.id === 'janitor'
-              ? {
-                  shadowColor: palette.accent,
-                  shadowOpacity: 0.25,
-                  shadowRadius: 14,
-                }
-              : {}),
           },
-          Platform.OS === 'web'
-            ? ({
-                backdropFilter: 'blur(20px) saturate(160%)',
-                WebkitBackdropFilter: 'blur(20px) saturate(160%)',
-              } as any)
-            : {},
         ]}
       >
-        {Platform.OS === 'ios' && (
-          <BlurView
-            intensity={48}
-            tint="dark"
-            blurMethod="dimezisBlurView"
-            blurTarget={blurTargetRef}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
-        )}
         {/* Frosted Glass Diagonal Sheen & Rim Highlight */}
         <LinearGradient
           pointerEvents="none"
@@ -320,12 +334,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.55,
     shadowRadius: 24,
     elevation: 14,
-    ...(Platform.OS === 'web'
-      ? ({
-          backdropFilter: 'blur(24px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-        } as any)
-      : {}),
   },
   topSpecularRim: {
     position: 'absolute',
@@ -399,6 +407,20 @@ const styles = StyleSheet.create({
   m3Label: {
     fontSize: 12,
     letterSpacing: 0.2,
+  },
+  classicActivePill: {
+    width: 44,
+    height: 30,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  classicLabel: {
+    fontSize: 11,
+    letterSpacing: 0.1,
   },
   iosLabel: {
     fontSize: 10,

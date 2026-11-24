@@ -12,7 +12,6 @@ import {
   Text,
   FlatList,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   ScrollView,
   Image,
@@ -20,8 +19,8 @@ import {
   Platform,
   UIManager,
   Animated,
-  Easing,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -49,6 +48,7 @@ import { StoryTray } from '../components/StoryTray';
 import { BentoChatCard } from '../components/BentoChatCard';
 import { StoryViewerModal } from '../components/StoryViewerModal';
 import { BottomSheetModal } from '../components/BottomSheetModal';
+import { AnimatedChevron, AnimatedEnterRow, AnimatedTabTransition } from '../components/SmoothTransition';
 import { storageService } from '../services/storageService';
 import { GLASS } from '../theme/glassTheme';
 import { matchAlgorithmService } from '../services/matchAlgorithmService';
@@ -478,7 +478,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
   const styles = useMemo(() => createStyles(palette), [palette]);
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: palette.bgDark }]}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: skin.screenBg || palette.bgDark }]}>
       <StatusBar style="light" />
 
       {/* Screen Header */}
@@ -505,6 +505,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
       {!viewModeLoaded ? (
         <View style={{ flex: 1 }} />
       ) : (
+      <AnimatedTabTransition transitionKey={viewMode} style={{ flex: 1 }}>
       <FlatList
         key={viewMode}
         data={chatListRows}
@@ -650,9 +651,13 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
                       {row.count}
                     </Text>
                   </View>
-                  <View style={{ transform: [{ rotate: row.isCollapsed ? '-90deg' : '0deg' }] }}>
-                    <ChevronDown size={14} color="#64748b" />
-                  </View>
+                  <AnimatedChevron
+                    expanded={!row.isCollapsed}
+                    size={14}
+                    color={row.isCollapsed ? '#64748b' : palette.accent}
+                    collapsedDeg="-90deg"
+                    expandedDeg="0deg"
+                  />
                 </View>
               </TouchableOpacity>
             );
@@ -685,6 +690,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
           const selectedCount = charSessions.filter(s => selectedSessionIds[s.id]).length;
 
           return (
+            <AnimatedEnterRow>
             <View
               style={[
                 styles.accordionCard,
@@ -927,9 +933,11 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
                 </View>
               </AccordionAnimatedBody>
             </View>
+            </AnimatedEnterRow>
           );
         }}
       />
+      </AnimatedTabTransition>
       )}
 
       {/* Fullscreen Story Viewer Modal */}

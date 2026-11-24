@@ -17,7 +17,6 @@ import {
   ScrollView,
   StyleSheet,
   ActivityIndicator,
-  Modal,
   Platform,
   Linking,
   Image,
@@ -41,7 +40,6 @@ import {
   ExternalLink,
   Zap,
   Volume2,
-  ChevronDown,
   ChevronRight,
   Image as ImageIcon,
   Globe,
@@ -57,9 +55,9 @@ import { GLASS } from '../theme/glassTheme';
 import { aiProviderService } from '../services/aiProviderService';
 import { wardenVaultService } from '../services/wardenVaultService';
 import { ttsService, VOICE_PROFILES, TtsConfig, DEFAULT_TTS_CONFIG } from '../services/ttsService';
-import { imageGenService, IMAGE_STYLE_OPTIONS, ImageGenConfig, DEFAULT_IMAGE_GEN_CONFIG, ImageStylePreset } from '../services/imageGenService';
+import { imageGenService, IMAGE_STYLE_OPTIONS, ImageGenConfig, DEFAULT_IMAGE_GEN_CONFIG } from '../services/imageGenService';
 import { colors, applyThemePalette, ThemeId, ThemePalette, THEME_PALETTES } from '../theme/colors';
-import { UI_SKINS, UiSkinId, getCardSurfaceStyle } from '../theme/skins';
+import { UI_SKINS, UiSkinId, getCardSurfaceStyle, getScreenBg } from '../theme/skins';
 import { APP_VERSION_LABEL } from '../constants/appInfo';
 import { useTheme } from '../theme/ThemeContext';
 import { useTranslation } from '../i18n/LanguageContext';
@@ -69,6 +67,7 @@ import { BottomSheetModal } from '../components/BottomSheetModal';
 import { HelpCenterModal } from '../components/HelpCenterModal';
 import { CapabilityMatrixModal } from '../components/CapabilityMatrixModal';
 import { NekoSwitch } from '../components/NekoSwitch';
+import { AnimatedChevron, AnimatedCollapsible } from '../components/SmoothTransition';
 
 interface SettingsScreenProps {
   config: ProviderConfig;
@@ -564,7 +563,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   return (
     <ScrollView
-      style={[styles.container, { backgroundColor: palette.bgDark }]}
+      style={[styles.container, { backgroundColor: getScreenBg(palette, skin) }]}
       contentContainerStyle={styles.contentContainer}
       scrollEventThrottle={16}
       onScroll={e => {
@@ -2028,14 +2027,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     Advanced Sampling & Context Truncation
                   </Text>
                 </View>
-                <ChevronDown
-                  size={16}
-                  color={palette.accent}
-                  style={{ transform: [{ rotate: showAdvancedSampling ? '180deg' : '0deg' }] }}
-                />
+                <AnimatedChevron expanded={showAdvancedSampling} size={16} color={palette.accent} />
               </TouchableOpacity>
 
-              {showAdvancedSampling && (
+              <AnimatedCollapsible expanded={showAdvancedSampling}>
                 <View style={{ backgroundColor: '#161922', padding: 12, borderRadius: 12, marginBottom: 14, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)' }}>
                   {/* Context Truncation Strategy */}
                   <Text style={styles.inputLabel}>Context Truncation Strategy</Text>
@@ -2170,7 +2165,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     ))}
                   </View>
                 </View>
-              )}
+              </AnimatedCollapsible>
             </ScrollView>
 
             <View style={styles.modalFooter}>
@@ -2610,7 +2605,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     backgroundColor: '#0f121d',
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     padding: 14,
     marginBottom: 18,
   },
@@ -2649,7 +2644,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     backgroundColor: '#151926',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     padding: 10,
   },
   healthItemTop: {
@@ -2797,7 +2792,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     maxHeight: '86%',
     flex: 1,
   },
@@ -2808,7 +2803,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#1e2436',
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
   modalTitleRow: {
     flexDirection: 'row',
@@ -2837,7 +2832,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     backgroundColor: '#151926',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     paddingHorizontal: 12,
     paddingVertical: 9,
     fontSize: 11.5,
@@ -2849,7 +2844,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     backgroundColor: '#151926',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     paddingHorizontal: 10,
   },
   inputPasswordText: {
@@ -2900,8 +2895,8 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   modalFooter: {
     padding: 14,
     borderTopWidth: 1,
-    borderTopColor: '#1e2436',
-    backgroundColor: '#0c0e15',
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'transparent',
   },
   saveBtn: {
     backgroundColor: palette.accent,
@@ -2970,7 +2965,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     backgroundColor: '#151926',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     padding: 10,
     marginBottom: 10,
   },
@@ -3023,7 +3018,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     backgroundColor: '#151926',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     padding: 10,
     marginBottom: 8,
   },
@@ -3034,7 +3029,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#1e2436',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
@@ -3063,7 +3058,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     backgroundColor: '#151926',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
@@ -3127,7 +3122,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     backgroundColor: '#151926',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     padding: 12,
     marginBottom: 10,
   },
@@ -3168,7 +3163,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#151926',
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
   radioChipActive: {
     borderColor: palette.accent,

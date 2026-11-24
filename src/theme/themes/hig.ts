@@ -3,15 +3,18 @@ import type { UiSkinTokens } from './types';
 
 /**
  *  HIG (iPhone / UIKit) Theme Pack
- * Edge-to-edge frosted UITabBar, insetGrouped lists, borderless iMessage bubbles,
- * 51×31 UISwitch, and fluid Cupertino spring/ease curves.
+ * True iOS dark systemBackground (#000000), secondarySystemGroupedBackground (#1C1C1E),
+ * crisp 0.5px hairlines without heavy GPU blur lag, and fluid Cupertino motion.
  */
 export const higTheme: UiSkinTokens = {
   id: 'ios',
   name: ' HIG (iPhone)',
   badge: 'HIG',
-  desc: 'Edge-to-edge frosted UITabBar, insetGrouped lists, and fluid iOS Cupertino motion',
+  desc: 'True iOS dark surfaces, 0.5px hairlines, insetGrouped lists, and Cupertino motion',
   surfaceMode: 'frosted',
+  screenBg: '#000000',
+  surfaceBg: '#1C1C1E',
+  surfaceSubtleBg: '#2C2C2E',
   navBarStyle: 'ios_tab_bar',
   settingsLayout: 'ios_inset_grouped',
   switchStyle: 'ios',

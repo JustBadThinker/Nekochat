@@ -165,7 +165,7 @@ export function getTokenStripperPreview(level: TokenOptimizerLevel): TokenStripp
       label: 'Easy',
       savingsBadge: '~15–20% saved',
       recommendation:
-        'Recommended for strict RP — removes only <think>, HTML & extra whitespace while keeping 100% of your card & story.',
+        'Recommended for strict RP — strips <think>, HTML tags & extra whitespace while preserving your card & story text.',
     },
     medium: {
       label: 'Medium',

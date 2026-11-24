@@ -14,6 +14,7 @@ import {
   Modal,
   TouchableWithoutFeedback,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X, Heart, MessageCircle } from 'lucide-react-native';
 import { Character } from '../types';
 import { GLASS } from '../theme/glassTheme';
@@ -40,6 +41,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
   onToggleFavorite,
 }) => {
   const { palette } = useTheme();
+  const insets = useSafeAreaInsets();
   const styles = useMemo(() => createStyles(palette), [palette]);
   const [currentIndex, setCurrentIndex] = useState(initialIndex || 0);
   const [showFullDesc, setShowFullDesc] = useState(false);
@@ -149,7 +151,7 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({
           </View>
 
           {/* Bottom Story Scrim Card: Avatar, Name, Title, Bio DOCKED AT BOTTOM */}
-          <View style={styles.bottomCard}>
+          <View style={[styles.bottomCard, { paddingBottom: Math.max(20, insets.bottom + 14) }]}>
             {/* Character Header at BOTTOM */}
             <View style={styles.characterBottomHeader}>
               <Image source={{ uri: currentCharacter.avatar }} style={styles.bottomAvatar} />

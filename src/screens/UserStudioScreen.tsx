@@ -5,7 +5,7 @@
  * 2. My Personas: Full persona roster with photo upload/compression, editing, and default persona switcher.
  */
 
-import React, { useState, useEffect, useRef , useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,34 +14,31 @@ import {
   ScrollView,
   Image,
   StyleSheet,
-  SafeAreaView,
-  Modal,
   Alert,
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
-import { getCardSurfaceStyle } from '../theme/skins';
+import { getCardSurfaceStyle, getScreenBg } from '../theme/skins';
 import { useTranslation } from '../i18n/LanguageContext';
 import { BottomSheetModal } from '../components/BottomSheetModal';
+import { AnimatedTabTransition } from '../components/SmoothTransition';
 import {
   Sparkles,
   Plus,
   Edit2,
   Trash2,
-  Star,
   Check,
   Upload,
   MessageSquare,
-  Share2,
   Layers,
   User,
-  Shield,
   X,
   Download,
   Globe,
@@ -51,7 +48,6 @@ import {
   HelpCircle,
 } from 'lucide-react-native';
 import { Character, CharacterScenario, Persona, ContentRating, Lorebook, LorebookEntry } from '../types';
-import { colors } from '../theme/colors';
 import { storageService } from '../services/storageService';
 import { characterImportService } from '../services/characterImportService';
 import { parseJanitorLorebookJson } from '../services/lorebookService';
@@ -629,7 +625,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: getScreenBg(palette, skin) }]}>
       <StatusBar style="light" />
 
       {/* Screen Title & Segmented Navigation */}
@@ -687,6 +683,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
           else if (dy < -8) onScrollDirectionChange(true);
         }}
       >
+        <AnimatedTabTransition transitionKey={activeTab}>
         {/* ================= TAB 1: MY CARDS ================= */}
         {activeTab === 'cards' && (
           <View>
@@ -991,6 +988,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
             )}
           </View>
         )}
+        </AnimatedTabTransition>
       </ScrollView>
 
       {/* ================= MODAL: IMPORT CHARACTER ================= */}
@@ -999,117 +997,117 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
         onClose={() => setImportModalVisible(false)}
         sheetStyle={{ maxHeight: '90%' }}
       >
-            <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Download size={18} color={palette.accent} />
-                <Text style={styles.modalTitle}>{t('studio.importModalTitle')}</Text>
-              </View>
-              <TouchableOpacity onPress={() => setImportModalVisible(false)}>
-                <X size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
+        <View style={styles.modalHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Download size={18} color={palette.accent} />
+            <Text style={styles.modalTitle}>{t('studio.importModalTitle')}</Text>
+          </View>
+          <TouchableOpacity onPress={() => setImportModalVisible(false)}>
+            <X size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
 
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {/* Import Mode Tabs */}
-              <View style={styles.segmentPill}>
-                <TouchableOpacity
-                  style={[styles.segmentBtn, importMode === 'text' && styles.segmentBtnActive]}
-                  onPress={() => setImportMode('text')}
-                >
-                  <FileText size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-                  <Text style={[styles.segmentText, importMode === 'text' && styles.segmentTextActive]}>
-                    JSON / W++ Text
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.segmentBtn, importMode === 'url' && styles.segmentBtnActive]}
-                  onPress={() => setImportMode('url')}
-                >
-                  <Globe size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-                  <Text style={[styles.segmentText, importMode === 'url' && styles.segmentTextActive]}>
-                    Community URL
-                  </Text>
-                </TouchableOpacity>
-              </View>
+        <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+          {/* Import Mode Tabs */}
+          <View style={styles.segmentPill}>
+            <TouchableOpacity
+              style={[styles.segmentBtn, importMode === 'text' && styles.segmentBtnActive]}
+              onPress={() => setImportMode('text')}
+            >
+              <FileText size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={[styles.segmentText, importMode === 'text' && styles.segmentTextActive]}>
+                JSON / W++ Text
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.segmentBtn, importMode === 'url' && styles.segmentBtnActive]}
+              onPress={() => setImportMode('url')}
+            >
+              <Globe size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={[styles.segmentText, importMode === 'url' && styles.segmentTextActive]}>
+                Community URL
+              </Text>
+            </TouchableOpacity>
+          </View>
 
-              {importMode === 'text' ? (
-                <View style={{ marginTop: 16 }}>
-                  <TouchableOpacity
-                    style={[
-                      styles.saveSubmitBtn,
-                      {
-                        marginBottom: 14,
-                        backgroundColor: `rgba(${palette.accentRgb}, 0.14)`,
-                        borderWidth: 1,
-                        borderColor: `rgba(${palette.accentRgb}, 0.45)`,
-                      },
-                    ]}
-                    onPress={handlePickCharacterFile}
-                    disabled={importLoading}
-                    activeOpacity={0.8}
-                  >
-                    <Upload size={16} color={palette.accent} style={{ marginRight: 8 }} />
-                    <Text style={[styles.saveSubmitBtnText, { color: palette.accent }]}>
-                      {t('studio.uploadFileBtn')}
-                    </Text>
-                  </TouchableOpacity>
-
-                  <Text style={styles.fieldLabel}>{t('studio.orPaste')}</Text>
-                  <TextInput
-                    style={[styles.textInput, { height: 160, textAlignVertical: 'top' }]}
-                    placeholder={`Paste Character Card JSON (V1, V2, V3, Tavern, Warden) or manual W++ text:\n\nName: Luna\nPersonality: Playful and energetic...\nScenario: Lost in the cyber city...\nFirst Message: "Hey there! Need a hand?"`}
-                    placeholderTextColor="rgba(255, 255, 255, 0.3)"
-                    multiline
-                    value={importRawText}
-                    onChangeText={setImportRawText}
-                  />
-                  <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 11, marginTop: 4 }}>
-                    Supports Chara Card V1/V2/V3, SillyTavern, JanitorAI format, and raw roleplay prompts.
-                  </Text>
-                </View>
-              ) : (
-                <View style={{ marginTop: 16 }}>
-                  <Text style={styles.fieldLabel}>Community Character URL</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="https://datacat.run/characters/... or jannyai.com/..."
-                    placeholderTextColor="rgba(255, 255, 255, 0.3)"
-                    value={importUrl}
-                    onChangeText={setImportUrl}
-                    autoCapitalize="none"
-                    keyboardType="url"
-                  />
-                  <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 11, marginTop: 4 }}>
-                    Enter a public character URL from Datacat, JannyAI, or JanitorAI.
-                  </Text>
-                </View>
-              )}
-
-              {importError && (
-                <View style={styles.errorBanner}>
-                  <AlertCircle size={16} color="#FF6B6B" style={{ marginRight: 6 }} />
-                  <Text style={styles.errorBannerText}>{importError}</Text>
-                </View>
-              )}
-
+          {importMode === 'text' ? (
+            <View style={{ marginTop: 16 }}>
               <TouchableOpacity
-                style={[styles.saveSubmitBtn, { marginTop: 24, backgroundColor: palette.accent }]}
-                onPress={handleImportSubmit}
+                style={[
+                  styles.saveSubmitBtn,
+                  {
+                    marginBottom: 14,
+                    backgroundColor: `rgba(${palette.accentRgb}, 0.14)`,
+                    borderWidth: 1,
+                    borderColor: `rgba(${palette.accentRgb}, 0.45)`,
+                  },
+                ]}
+                onPress={handlePickCharacterFile}
                 disabled={importLoading}
                 activeOpacity={0.8}
               >
-                {importLoading ? (
-                  <ActivityIndicator size="small" color="#000000" />
-                ) : (
-                  <>
-                    <Download size={16} color="#000000" style={{ marginRight: 6 }} />
-                    <Text style={[styles.saveSubmitBtnText, { color: '#000000' }]}>
-                      {t('studio.parseLoad')}
-                    </Text>
-                  </>
-                )}
+                <Upload size={16} color={palette.accent} style={{ marginRight: 8 }} />
+                <Text style={[styles.saveSubmitBtnText, { color: palette.accent }]}>
+                  {t('studio.uploadFileBtn')}
+                </Text>
               </TouchableOpacity>
-            </ScrollView>
+
+              <Text style={styles.fieldLabel}>{t('studio.orPaste')}</Text>
+              <TextInput
+                style={[styles.textInput, { height: 160, textAlignVertical: 'top' }]}
+                placeholder={`Paste Character Card JSON (V1, V2, V3, Tavern, Warden) or manual W++ text:\n\nName: Luna\nPersonality: Playful and energetic...\nScenario: Lost in the cyber city...\nFirst Message: "Hey there! Need a hand?"`}
+                placeholderTextColor="rgba(255, 255, 255, 0.3)"
+                multiline
+                value={importRawText}
+                onChangeText={setImportRawText}
+              />
+              <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 11, marginTop: 4 }}>
+                Supports Chara Card V1/V2/V3, SillyTavern, JanitorAI format, and raw roleplay prompts.
+              </Text>
+            </View>
+          ) : (
+            <View style={{ marginTop: 16 }}>
+              <Text style={styles.fieldLabel}>Community Character URL</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="https://datacat.run/characters/... or jannyai.com/..."
+                placeholderTextColor="rgba(255, 255, 255, 0.3)"
+                value={importUrl}
+                onChangeText={setImportUrl}
+                autoCapitalize="none"
+                keyboardType="url"
+              />
+              <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 11, marginTop: 4 }}>
+                Enter a public character URL from Datacat, JannyAI, or JanitorAI.
+              </Text>
+            </View>
+          )}
+
+          {importError && (
+            <View style={styles.errorBanner}>
+              <AlertCircle size={16} color="#FF6B6B" style={{ marginRight: 6 }} />
+              <Text style={styles.errorBannerText}>{importError}</Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={[styles.saveSubmitBtn, { marginTop: 24, backgroundColor: palette.accent }]}
+            onPress={handleImportSubmit}
+            disabled={importLoading}
+            activeOpacity={0.8}
+          >
+            {importLoading ? (
+              <ActivityIndicator size="small" color="#000000" />
+            ) : (
+              <>
+                <Download size={16} color="#000000" style={{ marginRight: 6 }} />
+                <Text style={[styles.saveSubmitBtnText, { color: '#000000' }]}>
+                  {t('studio.parseLoad')}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </ScrollView>
       </BottomSheetModal>
 
       {/* ================= FULL-SCREEN PAGE: CREATE / EDIT CHARACTER ================= */}
@@ -1188,121 +1186,121 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
         onClose={() => setPersonaModalVisible(false)}
         sheetStyle={{ maxHeight: '90%' }}
       >
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {editingPersonaId ? 'Edit Persona' : 'Add New Persona'}
-              </Text>
-              <TouchableOpacity onPress={() => setPersonaModalVisible(false)}>
-                <X size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>
+            {editingPersonaId ? 'Edit Persona' : 'Add New Persona'}
+          </Text>
+          <TouchableOpacity onPress={() => setPersonaModalVisible(false)}>
+            <X size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
 
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              {/* Persona Avatar Preview & Upload */}
-              <View style={styles.uploadRow}>
-                <Image source={{ uri: personaAvatar || ANIME_DEFAULT_FALLBACK }} style={styles.uploadPreviewRound} />
-                <View style={{ flex: 1, marginLeft: 14 }}>
-                  <Text style={styles.fieldLabel}>Persona Avatar</Text>
-                  <TouchableOpacity
-                    style={styles.uploadButton}
-                    onPress={() => handleTriggerUpload('persona')}
-                  >
-                    <Upload size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.uploadButtonText}>
-                      {isUploading ? 'Compressing...' : 'Upload Photo'}
-                    </Text>
-                  </TouchableOpacity>
-                  <TextInput
-                    style={[styles.textInput, { marginTop: 8 }]}
-                    placeholder="Or enter image URL..."
-                    placeholderTextColor="#666"
-                    value={personaAvatar}
-                    onChangeText={setPersonaAvatar}
-                  />
-                </View>
-              </View>
-
-              {/* Persona Name */}
-              <Text style={styles.fieldLabel}>Persona Display Name *</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. Master, Sensei, Ren, Detective"
-                placeholderTextColor="#666"
-                value={personaName}
-                onChangeText={setPersonaName}
-              />
-
-              {/* Pronouns / Role */}
-              <Text style={styles.fieldLabel}>Pronouns / Title</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. he/him, Master, Adventurer"
-                placeholderTextColor="#666"
-                value={personaPronouns}
-                onChangeText={setPersonaPronouns}
-              />
-
-              {/* Persona Description */}
-              <Text style={styles.fieldLabel}>Persona Description (Backstory, Appearance, Personality & RP Traits)</Text>
-              <TextInput
-                style={[styles.textInput, styles.textArea, { minHeight: 120 }]}
-                placeholder="Describe your character's backstory, appearance, personality, mannerisms, and roleplay traits..."
-                placeholderTextColor="#666"
-                multiline
-                numberOfLines={6}
-                value={personaDescription}
-                onChangeText={setPersonaDescription}
-              />
-
-              {/* Attached Codex Lorebooks for this Persona */}
-              {lorebooks.length > 0 && (
-                <View style={{ marginBottom: 12 }}>
-                  <Text style={styles.fieldLabel}>Codex Lorebooks for this Persona</Text>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                    {lorebooks.map(lb => {
-                      const active = personaLorebookIds.includes(lb.id);
-                      return (
-                        <TouchableOpacity
-                          key={lb.id}
-                          onPress={() =>
-                            setPersonaLorebookIds(prev =>
-                              prev.includes(lb.id) ? prev.filter(x => x !== lb.id) : [...prev, lb.id]
-                            )
-                          }
-                          style={{
-                            paddingHorizontal: 10,
-                            paddingVertical: 6,
-                            borderRadius: 999,
-                            borderWidth: 1,
-                            borderColor: active ? palette.accent : 'rgba(255,255,255,0.14)',
-                            backgroundColor: active ? `rgba(${palette.accentRgb}, 0.16)` : 'rgba(255,255,255,0.04)',
-                          }}
-                        >
-                          <Text style={{ color: active ? palette.accent : '#cbd5e1', fontSize: 12, fontWeight: '700' }}>
-                            {active ? '✓ ' : ''}{lb.title}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-                </View>
-              )}
-
-              {/* Set as Default Toggle */}
+        <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+          {/* Persona Avatar Preview & Upload */}
+          <View style={styles.uploadRow}>
+            <Image source={{ uri: personaAvatar || ANIME_DEFAULT_FALLBACK }} style={styles.uploadPreviewRound} />
+            <View style={{ flex: 1, marginLeft: 14 }}>
+              <Text style={styles.fieldLabel}>Persona Avatar</Text>
               <TouchableOpacity
-                style={styles.checkboxRow}
-                onPress={() => setIsPersonaDefault(!isPersonaDefault)}
+                style={styles.uploadButton}
+                onPress={() => handleTriggerUpload('persona')}
               >
-                <View style={[styles.checkboxBox, isPersonaDefault && styles.checkboxBoxActive]}>
-                  {isPersonaDefault && <Check size={14} color="#FFFFFF" />}
-                </View>
-                <Text style={styles.checkboxLabel}>Set as Default Active Persona</Text>
+                <Upload size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.uploadButtonText}>
+                  {isUploading ? 'Compressing...' : 'Upload Photo'}
+                </Text>
               </TouchableOpacity>
+              <TextInput
+                style={[styles.textInput, { marginTop: 8 }]}
+                placeholder="Or enter image URL..."
+                placeholderTextColor="#666"
+                value={personaAvatar}
+                onChangeText={setPersonaAvatar}
+              />
+            </View>
+          </View>
 
-              <TouchableOpacity style={styles.saveSubmitBtn} onPress={handleSavePersona}>
-                <Text style={styles.saveSubmitBtnText}>Save Persona</Text>
-              </TouchableOpacity>
-            </ScrollView>
+          {/* Persona Name */}
+          <Text style={styles.fieldLabel}>Persona Display Name *</Text>
+          <TextInput
+            style={styles.textInput}
+            placeholder="e.g. Master, Sensei, Ren, Detective"
+            placeholderTextColor="#666"
+            value={personaName}
+            onChangeText={setPersonaName}
+          />
+
+          {/* Pronouns / Role */}
+          <Text style={styles.fieldLabel}>Pronouns / Title</Text>
+          <TextInput
+            style={styles.textInput}
+            placeholder="e.g. he/him, Master, Adventurer"
+            placeholderTextColor="#666"
+            value={personaPronouns}
+            onChangeText={setPersonaPronouns}
+          />
+
+          {/* Persona Description */}
+          <Text style={styles.fieldLabel}>Persona Description (Backstory, Appearance, Personality & RP Traits)</Text>
+          <TextInput
+            style={[styles.textInput, styles.textArea, { minHeight: 120 }]}
+            placeholder="Describe your character's backstory, appearance, personality, mannerisms, and roleplay traits..."
+            placeholderTextColor="#666"
+            multiline
+            numberOfLines={6}
+            value={personaDescription}
+            onChangeText={setPersonaDescription}
+          />
+
+          {/* Attached Codex Lorebooks for this Persona */}
+          {lorebooks.length > 0 && (
+            <View style={{ marginBottom: 12 }}>
+              <Text style={styles.fieldLabel}>Codex Lorebooks for this Persona</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {lorebooks.map(lb => {
+                  const active = personaLorebookIds.includes(lb.id);
+                  return (
+                    <TouchableOpacity
+                      key={lb.id}
+                      onPress={() =>
+                        setPersonaLorebookIds(prev =>
+                          prev.includes(lb.id) ? prev.filter(x => x !== lb.id) : [...prev, lb.id]
+                        )
+                      }
+                      style={{
+                        paddingHorizontal: 10,
+                        paddingVertical: 6,
+                        borderRadius: 999,
+                        borderWidth: 1,
+                        borderColor: active ? palette.accent : 'rgba(255,255,255,0.14)',
+                        backgroundColor: active ? `rgba(${palette.accentRgb}, 0.16)` : 'rgba(255,255,255,0.04)',
+                      }}
+                    >
+                      <Text style={{ color: active ? palette.accent : '#cbd5e1', fontSize: 12, fontWeight: '700' }}>
+                        {active ? '✓ ' : ''}{lb.title}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
+          {/* Set as Default Toggle */}
+          <TouchableOpacity
+            style={styles.checkboxRow}
+            onPress={() => setIsPersonaDefault(!isPersonaDefault)}
+          >
+            <View style={[styles.checkboxBox, isPersonaDefault && styles.checkboxBoxActive]}>
+              {isPersonaDefault && <Check size={14} color="#FFFFFF" />}
+            </View>
+            <Text style={styles.checkboxLabel}>Set as Default Active Persona</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.saveSubmitBtn} onPress={handleSavePersona}>
+            <Text style={styles.saveSubmitBtnText}>Save Persona</Text>
+          </TouchableOpacity>
+        </ScrollView>
       </BottomSheetModal>
 
       {/* ================= MODAL: ADD / EDIT LOREBOOK ================= */}
@@ -1311,155 +1309,155 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
         onClose={() => setLorebookModalVisible(false)}
         sheetStyle={{ maxHeight: '90%' }}
       >
-            <View style={styles.modalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <BookOpen size={18} color={palette.accent} />
-                <Text style={styles.modalTitle}>
-                  {editingLorebookId ? 'Edit Codex Lorebook' : 'New Codex Lorebook'}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={() => setLorebookModalVisible(false)}>
-                <X size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
+        <View style={styles.modalHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <BookOpen size={18} color={palette.accent} />
+            <Text style={styles.modalTitle}>
+              {editingLorebookId ? 'Edit Codex Lorebook' : 'New Codex Lorebook'}
+            </Text>
+          </View>
+          <TouchableOpacity onPress={() => setLorebookModalVisible(false)}>
+            <X size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
 
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
-              <Text style={styles.fieldLabel}>Lorebook Title *</Text>
+        <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+          <Text style={styles.fieldLabel}>Lorebook Title *</Text>
+          <TextInput
+            style={styles.textInput}
+            placeholder="e.g. World of Eldoria, Guild Rules, Magic System"
+            placeholderTextColor="#666"
+            value={lbTitle}
+            onChangeText={setLbTitle}
+          />
+
+          <Text style={styles.fieldLabel}>Codex Summary / Description</Text>
+          <TextInput
+            style={[styles.textInput, styles.textArea, { minHeight: 48 }]}
+            placeholder="Brief summary of lore topics covered in this codex..."
+            placeholderTextColor="#666"
+            multiline
+            value={lbDescription}
+            onChangeText={setLbDescription}
+          />
+
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>Scan Depth (turns)</Text>
               <TextInput
                 style={styles.textInput}
-                placeholder="e.g. World of Eldoria, Guild Rules, Magic System"
+                placeholder="2"
                 placeholderTextColor="#666"
-                value={lbTitle}
-                onChangeText={setLbTitle}
+                keyboardType="numeric"
+                value={lbScanDepth}
+                onChangeText={setLbScanDepth}
               />
-
-              <Text style={styles.fieldLabel}>Codex Summary / Description</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>Token Budget</Text>
               <TextInput
-                style={[styles.textInput, styles.textArea, { minHeight: 48 }]}
-                placeholder="Brief summary of lore topics covered in this codex..."
+                style={styles.textInput}
+                placeholder="1024"
+                placeholderTextColor="#666"
+                keyboardType="numeric"
+                value={lbTokenBudget}
+                onChangeText={setLbTokenBudget}
+              />
+            </View>
+          </View>
+
+          {/* Entries Section */}
+          <View style={[styles.subSectionHeader, { marginTop: 16 }]}>
+            <Text style={styles.subSectionTitle}>
+              Codex Keyword Entries ({lbEntries.length})
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              <TouchableOpacity
+                style={[styles.addMiniBtn, { backgroundColor: `rgba(${palette.accentRgb}, 0.12)`, borderColor: `rgba(${palette.accentRgb}, 0.4)` }]}
+                onPress={async () => {
+                  try {
+                    const picked = await DocumentPicker.getDocumentAsync({
+                      type: ['application/json', '*/*'],
+                      copyToCacheDirectory: true,
+                    });
+                    if (picked.canceled || !picked.assets?.[0]) return;
+                    const file = picked.assets[0];
+                    let content = '';
+                    if (Platform.OS === 'web' && (file as any).file) {
+                      content = await (file as any).file.text();
+                    } else if (file.uri) {
+                      content = await FileSystem.readAsStringAsync(file.uri, {
+                        encoding: FileSystem.EncodingType.UTF8,
+                      });
+                    }
+                    if (content) handleImportLorebookJson(content);
+                  } catch { }
+                }}
+                activeOpacity={0.8}
+                accessibilityLabel="Import JanitorAI or SillyTavern Lorebook JSON"
+              >
+                <Download size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                <Text style={styles.addMiniBtnText}>Import JSON</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.addMiniBtn}
+                onPress={handleAddLorebookEntry}
+                activeOpacity={0.8}
+              >
+                <Plus size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                <Text style={styles.addMiniBtnText}>Add Entry</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {lbEntries.map((entry, eIdx) => (
+            <View key={entry.id} style={styles.subItemCard}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <Text style={styles.subItemIndex}>{entry.title || `Entry #${eIdx + 1}`}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => handleUpdateLorebookEntry(eIdx, { enabled: !entry.enabled })}
+                    style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: entry.enabled ? `rgba(${palette.accentRgb}, 0.15)` : 'rgba(255, 255, 255, 0.08)' }}
+                  >
+                    <Text style={{ color: entry.enabled ? palette.accent : '#888', fontSize: 10, fontWeight: '700' }}>
+                      {entry.enabled ? 'ACTIVE' : 'OFF'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleDeleteLorebookEntry(eIdx)}>
+                    <Trash2 size={13} color="#FF6B6B" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+              <TextInput
+                style={[styles.textInput, { marginBottom: 6 }]}
+                placeholder="Entry Title (e.g. Ancient Ruins of Zeth)"
+                placeholderTextColor="#666"
+                value={entry.title}
+                onChangeText={v => handleUpdateLorebookEntry(eIdx, { title: v })}
+              />
+              <TextInput
+                style={[styles.textInput, { marginBottom: 6 }]}
+                placeholder="Trigger Keywords (comma-separated, e.g. Zeth, ruins, ancient shrine)"
+                placeholderTextColor="#666"
+                value={entry.keys.join(', ')}
+                onChangeText={v => handleUpdateLorebookEntry(eIdx, { keys: v.split(',').map(k => k.trim()).filter(Boolean) })}
+              />
+              <TextInput
+                style={[styles.textInput, styles.textArea, { minHeight: 60 }]}
+                placeholder="World lore content injected into LLM context when keyword matches..."
                 placeholderTextColor="#666"
                 multiline
-                value={lbDescription}
-                onChangeText={setLbDescription}
+                value={entry.content}
+                onChangeText={v => handleUpdateLorebookEntry(eIdx, { content: v })}
               />
+            </View>
+          ))}
 
-              <View style={{ flexDirection: 'row', gap: 12 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.fieldLabel}>Scan Depth (turns)</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="2"
-                    placeholderTextColor="#666"
-                    keyboardType="numeric"
-                    value={lbScanDepth}
-                    onChangeText={setLbScanDepth}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.fieldLabel}>Token Budget</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    placeholder="1024"
-                    placeholderTextColor="#666"
-                    keyboardType="numeric"
-                    value={lbTokenBudget}
-                    onChangeText={setLbTokenBudget}
-                  />
-                </View>
-              </View>
-
-              {/* Entries Section */}
-              <View style={[styles.subSectionHeader, { marginTop: 16 }]}>
-                <Text style={styles.subSectionTitle}>
-                  Codex Keyword Entries ({lbEntries.length})
-                </Text>
-                <View style={{ flexDirection: 'row', gap: 6 }}>
-                  <TouchableOpacity
-                    style={[styles.addMiniBtn, { backgroundColor: `rgba(${palette.accentRgb}, 0.12)`, borderColor: `rgba(${palette.accentRgb}, 0.4)` }]}
-                    onPress={async () => {
-                      try {
-                        const picked = await DocumentPicker.getDocumentAsync({
-                          type: ['application/json', '*/*'],
-                          copyToCacheDirectory: true,
-                        });
-                        if (picked.canceled || !picked.assets?.[0]) return;
-                        const file = picked.assets[0];
-                        let content = '';
-                        if (Platform.OS === 'web' && (file as any).file) {
-                          content = await (file as any).file.text();
-                        } else if (file.uri) {
-                          content = await FileSystem.readAsStringAsync(file.uri, {
-                            encoding: FileSystem.EncodingType.UTF8,
-                          });
-                        }
-                        if (content) handleImportLorebookJson(content);
-                      } catch {}
-                    }}
-                    activeOpacity={0.8}
-                    accessibilityLabel="Import JanitorAI or SillyTavern Lorebook JSON"
-                  >
-                    <Download size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                    <Text style={styles.addMiniBtnText}>Import JSON</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.addMiniBtn}
-                    onPress={handleAddLorebookEntry}
-                    activeOpacity={0.8}
-                  >
-                    <Plus size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                    <Text style={styles.addMiniBtnText}>Add Entry</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {lbEntries.map((entry, eIdx) => (
-                <View key={entry.id} style={styles.subItemCard}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <Text style={styles.subItemIndex}>{entry.title || `Entry #${eIdx + 1}`}</Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <TouchableOpacity
-                        onPress={() => handleUpdateLorebookEntry(eIdx, { enabled: !entry.enabled })}
-                        style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: entry.enabled ? `rgba(${palette.accentRgb}, 0.15)` : 'rgba(255, 255, 255, 0.08)' }}
-                      >
-                        <Text style={{ color: entry.enabled ? palette.accent : '#888', fontSize: 10, fontWeight: '700' }}>
-                          {entry.enabled ? 'ACTIVE' : 'OFF'}
-                        </Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => handleDeleteLorebookEntry(eIdx)}>
-                        <Trash2 size={13} color="#FF6B6B" />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                  <TextInput
-                    style={[styles.textInput, { marginBottom: 6 }]}
-                    placeholder="Entry Title (e.g. Ancient Ruins of Zeth)"
-                    placeholderTextColor="#666"
-                    value={entry.title}
-                    onChangeText={v => handleUpdateLorebookEntry(eIdx, { title: v })}
-                  />
-                  <TextInput
-                    style={[styles.textInput, { marginBottom: 6 }]}
-                    placeholder="Trigger Keywords (comma-separated, e.g. Zeth, ruins, ancient shrine)"
-                    placeholderTextColor="#666"
-                    value={entry.keys.join(', ')}
-                    onChangeText={v => handleUpdateLorebookEntry(eIdx, { keys: v.split(',').map(k => k.trim()).filter(Boolean) })}
-                  />
-                  <TextInput
-                    style={[styles.textInput, styles.textArea, { minHeight: 60 }]}
-                    placeholder="World lore content injected into LLM context when keyword matches..."
-                    placeholderTextColor="#666"
-                    multiline
-                    value={entry.content}
-                    onChangeText={v => handleUpdateLorebookEntry(eIdx, { content: v })}
-                  />
-                </View>
-              ))}
-
-              <TouchableOpacity style={styles.saveSubmitBtn} onPress={handleSaveLorebook}>
-                <Text style={styles.saveSubmitBtnText}>Save Codex Lorebook</Text>
-              </TouchableOpacity>
-            </ScrollView>
+          <TouchableOpacity style={styles.saveSubmitBtn} onPress={handleSaveLorebook}>
+            <Text style={styles.saveSubmitBtnText}>Save Codex Lorebook</Text>
+          </TouchableOpacity>
+        </ScrollView>
       </BottomSheetModal>
 
       <HelpCenterModal
@@ -1844,10 +1842,10 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     ...GLASS.backdrop,
     ...(Platform.OS === 'web'
       ? ({
-          backgroundColor: 'transparent',
-          backgroundImage:
-            'linear-gradient(to bottom, rgba(6, 8, 14, 0.12) 0%, rgba(6, 8, 14, 0.48) 50%, rgba(6, 8, 14, 0.88) 100%)',
-        } as any)
+        backgroundColor: 'transparent',
+        backgroundImage:
+          'linear-gradient(to bottom, rgba(6, 8, 14, 0.12) 0%, rgba(6, 8, 14, 0.48) 50%, rgba(6, 8, 14, 0.88) 100%)',
+      } as any)
       : {}),
   },
   modalSheet: {

@@ -27,7 +27,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { Character, ContentRating } from '../types';
 import { useTheme } from '../theme/ThemeContext';
-import { getCardSurfaceStyle } from '../theme/skins';
+import { getCardSurfaceStyle, getScreenBg, getSurfaceBg } from '../theme/skins';
 import { estimateTokens } from '../services/tokenOptimizerService';
 import { compressImageFile } from '../utils/imageUtils';
 
@@ -208,7 +208,7 @@ export const CharacterCreatorScreen: React.FC<CharacterCreatorScreenProps> = ({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onCancel}>
-      <SafeAreaView style={[styles.safe, { backgroundColor: palette.bgDark }]}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: getScreenBg(palette, skin) }]}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -219,7 +219,7 @@ export const CharacterCreatorScreen: React.FC<CharacterCreatorScreenProps> = ({
               styles.header,
               {
                 borderBottomColor: 'rgba(255,255,255,0.08)',
-                backgroundColor: skin.surfaceMode === 'tonal' ? palette.bgSurfaceSubtle : palette.bgSurface,
+                backgroundColor: getSurfaceBg(palette, skin),
               },
             ]}
           >

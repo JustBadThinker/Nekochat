@@ -10,7 +10,7 @@ import { MessageSquare, Heart } from 'lucide-react-native';
 import { Character } from '../types';
 import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
-import { getCardSurfaceStyle } from '../theme/skins';
+import { getCardSurfaceStyle, getScreenBg } from '../theme/skins';
 import {
   runEnterAnimation,
   runPressInAnimation,
@@ -106,7 +106,7 @@ export const BentoChatCard: React.FC<BentoChatCardProps> = React.memo(function B
       {/* Progressive Top Scrim behind badges */}
       <LinearGradient
         pointerEvents="none"
-        colors={['rgba(12, 14, 20, 0.58)', 'rgba(12, 14, 20, 0.22)', 'transparent']}
+        colors={['rgba(0, 0, 0, 0.56)', 'rgba(0, 0, 0, 0.2)', 'transparent']}
         locations={[0, 0.55, 1]}
         style={styles.topScrim}
       />
@@ -137,7 +137,7 @@ export const BentoChatCard: React.FC<BentoChatCardProps> = React.memo(function B
 
       {/* Progressive Gradient Scrim Behind Text (Character remains sharp and clear above) */}
       <LinearGradient
-        colors={['transparent', 'rgba(12, 14, 20, 0.4)', 'rgba(12, 14, 20, 0.85)', palette.bgDark]}
+        colors={['transparent', 'rgba(0, 0, 0, 0.42)', 'rgba(0, 0, 0, 0.86)', getScreenBg(palette, skin)]}
         locations={[0, 0.28, 0.68, 1]}
         style={styles.scrimContainer}
       >
@@ -257,7 +257,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     ...(Platform.OS === 'web'
       ? ({
           backgroundImage:
-            'linear-gradient(to bottom, rgba(12, 14, 20, 0) 0%, rgba(12, 14, 20, 0.4) 28%, rgba(12, 14, 20, 0.85) 68%, #0c0e14 100%)',
+            'linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.42) 28%, rgba(0, 0, 0, 0.86) 68%, rgba(0, 0, 0, 0.96) 100%)',
         } as any)
       : {}),
   },

@@ -10,6 +10,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Lock, Delete } from 'lucide-react-native';
 import { useTheme } from '../theme/ThemeContext';
+import { getScreenBg } from '../theme/skins';
 import { runEnterAnimation } from '../theme/animations';
 import { NekoLogoSvg } from './NekoLogoSvg';
 
@@ -71,7 +72,7 @@ export const PasscodeGate: React.FC<PasscodeGateProps> = ({ expectedPin, onUnloc
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'];
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: palette.bgDark }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: getScreenBg(palette, skin) }]}>
       <Animated.View
         style={[
           styles.inner,

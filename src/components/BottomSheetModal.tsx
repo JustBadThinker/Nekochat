@@ -12,7 +12,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   Animated,
-  Easing,
   PanResponder,
   StyleProp,
   ViewStyle,
@@ -214,7 +213,11 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
             {
               borderTopLeftRadius: skin.sheetRadius,
               borderTopRightRadius: skin.sheetRadius,
-              backgroundColor: skin.surfaceMode === 'tonal' ? palette.bgSurfaceSubtle : palette.bgSurface,
+              backgroundColor: skin.surfaceBg
+                ? skin.surfaceBg
+                : skin.surfaceMode === 'tonal'
+                  ? palette.bgSurfaceSubtle
+                  : palette.bgSurface,
               borderColor:
                 skin.id === 'janitor'
                   ? `rgba(${palette.accentRgb}, 0.35)`

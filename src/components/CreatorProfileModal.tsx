@@ -17,6 +17,7 @@ import {
   Animated,
   Easing,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   X,
   ArrowLeft,
@@ -93,6 +94,7 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
   onFollowChange,
 }) => {
   const colors = NEKO_THEME;
+  const insets = useSafeAreaInsets();
   const [profile, setProfile] = useState<CommunityCreatorProfile | null>(null);
   const [characters, setCharacters] = useState<CommunityCharacter[]>([]);
   const [loadingProfile, setLoadingProfile] = useState(false);
@@ -345,7 +347,7 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
 
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(36, insets.bottom + 24) }]}
           showsVerticalScrollIndicator={false}
         >
           {/* Profile Hero Card (Default NekoChat Theme) */}

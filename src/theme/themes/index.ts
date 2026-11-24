@@ -21,6 +21,19 @@ export function getUiSkin(skinId?: string): UiSkinTokens {
   return UI_SKINS[key] || UI_SKINS.bento;
 }
 
+export function getScreenBg(palette: ThemePalette, skin: UiSkinTokens): string {
+  return skin.screenBg || palette.bgDark;
+}
+
+export function getSurfaceBg(palette: ThemePalette, skin: UiSkinTokens): string {
+  if (skin.surfaceBg) return skin.surfaceBg;
+  return skin.surfaceMode === 'tonal' ? palette.bgSurfaceSubtle : palette.bgSurface;
+}
+
+export function getSubtleSurfaceBg(palette: ThemePalette, skin: UiSkinTokens): string {
+  return skin.surfaceSubtleBg || palette.bgSurfaceSubtle;
+}
+
 export function getCardSurfaceStyle(palette: ThemePalette, skin: UiSkinTokens): ViewStyle {
   const borderColor =
     skin.cardBorderAccentMix > 0
@@ -29,12 +42,7 @@ export function getCardSurfaceStyle(palette: ThemePalette, skin: UiSkinTokens): 
         ? 'rgba(255, 255, 255, 0.14)'
         : 'rgba(255, 255, 255, 0.08)';
 
-  const backgroundColor =
-    skin.surfaceMode === 'tonal'
-      ? palette.bgSurfaceSubtle
-      : skin.surfaceMode === 'frosted'
-        ? 'rgba(28, 28, 30, 0.78)'
-        : palette.bgSurface;
+  const backgroundColor = getSurfaceBg(palette, skin);
 
   return {
     borderRadius: skin.cardRadius,
@@ -76,30 +84,24 @@ export function getBubbleSurfaceStyle(
       };
 
   const borderColor = isUser
-    ? `rgba(${palette.accentRgb}, ${skin.id === 'janitor' ? 0.55 : 0.25})`
+    ? `rgba(${palette.accentRgb}, ${skin.id === 'janitor' ? 0.35 : 0.25})`
     : skin.cardBorderAccentMix > 0
       ? `rgba(${palette.accentRgb}, ${Math.max(0.18, skin.cardBorderAccentMix * 0.6)})`
       : 'rgba(255, 255, 255, 0.08)';
 
   const backgroundOverride: ViewStyle =
-    skin.id === 'material'
-      ? { backgroundColor: isUser ? `rgba(${palette.accentRgb}, 0.2)` : palette.bgSurfaceSubtle }
-      : skin.id === 'ios'
-        ? { backgroundColor: isUser ? `rgba(${palette.accentRgb}, 0.24)` : 'rgba(44, 44, 46, 0.92)' }
-        : {};
+    skin.id === 'janitor'
+      ? { backgroundColor: isUser ? '#25232E' : (skin.surfaceBg || '#1E1E1E') }
+      : skin.id === 'material'
+        ? { backgroundColor: isUser ? `rgba(${palette.accentRgb}, 0.2)` : getSubtleSurfaceBg(palette, skin) }
+        : skin.id === 'ios'
+          ? { backgroundColor: isUser ? `rgba(${palette.accentRgb}, 0.24)` : getSubtleSurfaceBg(palette, skin) }
+          : {};
 
   return {
     ...cornerRadii,
     ...backgroundOverride,
     borderWidth: skin.bubbleBorderWidth,
     borderColor: skin.bubbleBorderWidth > 0 ? borderColor : 'transparent',
-    ...(skin.id === 'janitor'
-      ? {
-          shadowColor: palette.accent,
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: isUser ? 0.22 : 0.12,
-          shadowRadius: 10,
-        }
-      : {}),
   };
 }

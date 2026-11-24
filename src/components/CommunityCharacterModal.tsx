@@ -21,6 +21,7 @@ import {
   LayoutAnimation,
   UIManager,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   X,
   Play,
@@ -32,16 +33,14 @@ import {
   ExternalLink,
   UserCheck,
   UserPlus,
-  Sparkles,
-  ChevronDown,
 } from 'lucide-react-native';
 import { CommunityCharacter, CommunityCharacterDetail, Character } from '../types';
 import { communityCatalogService } from '../services/communityCatalogService';
 import { storageService } from '../services/storageService';
 import { RichHtmlRenderer } from './RichHtmlRenderer';
 import { GLASS } from '../theme/glassTheme';
-import { useTheme } from '../theme/ThemeContext';
 import { LinearGradient } from 'expo-linear-gradient';
+import { AnimatedChevron, AnimatedCollapsible } from './SmoothTransition';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -62,40 +61,6 @@ const GreetingAccordionItem: React.FC<GreetingAccordionItemProps> = ({
   onToggle,
   onStartWithGreeting,
 }) => {
-  const { skin } = useTheme();
-  const rotateAnim = useRef(new Animated.Value(isExpanded ? 1 : 0)).current;
-  const bodyFadeAnim = useRef(new Animated.Value(isExpanded ? 1 : 0)).current;
-  const bodySlideAnim = useRef(new Animated.Value(isExpanded ? 0 : -6)).current;
-
-  useEffect(() => {
-    const dur = Math.max(160, Math.round(skin.animation.enterDuration * 0.85));
-    Animated.parallel([
-      Animated.timing(rotateAnim, {
-        toValue: isExpanded ? 1 : 0,
-        duration: dur,
-        easing: skin.animation.easing,
-        useNativeDriver: true,
-      }),
-      Animated.timing(bodyFadeAnim, {
-        toValue: isExpanded ? 1 : 0,
-        duration: dur,
-        easing: skin.animation.easing,
-        useNativeDriver: true,
-      }),
-      Animated.timing(bodySlideAnim, {
-        toValue: isExpanded ? 0 : -6,
-        duration: dur,
-        easing: skin.animation.easing,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [isExpanded, rotateAnim, bodyFadeAnim, bodySlideAnim, skin.animation]);
-
-  const chevronRotate = rotateAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '180deg'],
-  });
-
   const preview = greet
     .replace(/<[^>]*>/g, ' ')
     .replace(/\s+/g, ' ')
@@ -107,7 +72,7 @@ const GreetingAccordionItem: React.FC<GreetingAccordionItemProps> = ({
         styles.descCard,
         {
           marginBottom: 10,
-          borderColor: isExpanded ? 'rgba(212, 255, 0, 0.35)' : '#1e2436',
+          borderColor: isExpanded ? 'rgba(212, 255, 0, 0.35)' : 'rgba(255, 255, 255, 0.1)',
         },
       ]}
     >
@@ -117,14 +82,13 @@ const GreetingAccordionItem: React.FC<GreetingAccordionItemProps> = ({
         activeOpacity={0.8}
       >
         <View style={styles.accordionTitleWrap}>
-          <Animated.View
-            style={{
-              marginRight: 6,
-              transform: [{ rotate: chevronRotate }],
-            }}
-          >
-            <ChevronDown size={16} color={isExpanded ? '#d4ff00' : '#9ca3af'} />
-          </Animated.View>
+          <View style={{ marginRight: 6 }}>
+            <AnimatedChevron
+              expanded={isExpanded}
+              size={16}
+              color={isExpanded ? '#d4ff00' : '#9ca3af'}
+            />
+          </View>
           <View style={{ flex: 1 }}>
             <Text
               style={[
@@ -152,19 +116,9 @@ const GreetingAccordionItem: React.FC<GreetingAccordionItemProps> = ({
         </TouchableOpacity>
       </TouchableOpacity>
 
-      {isExpanded && (
-        <Animated.View
-          style={[
-            styles.accordionBody,
-            {
-              opacity: bodyFadeAnim,
-              transform: [{ translateY: bodySlideAnim }],
-            },
-          ]}
-        >
-          <RichHtmlRenderer content={greet} baseColor="#f1f5f9" />
-        </Animated.View>
-      )}
+      <AnimatedCollapsible expanded={isExpanded} style={styles.accordionBody} slideOffset={-6}>
+        <RichHtmlRenderer content={greet} baseColor="#f1f5f9" />
+      </AnimatedCollapsible>
     </View>
   );
 };
@@ -192,6 +146,7 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
   onCreatorClick,
   onFollowChange,
 }) => {
+  const insets = useSafeAreaInsets();
   const [detail, setDetail] = useState<CommunityCharacterDetail | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'scenario' | 'greeting' | 'gallery'>('overview');
   const [expandedGreetingIdx, setExpandedGreetingIdx] = useState<number | null>(0);
@@ -657,7 +612,7 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
             })()}
 
             {activeTab === 'gallery' && (() => {
-              const galleryItems: Array<{ url: string; label: string }> = [];
+              const galleryItems: { url: string; label: string }[] = [];
               const seen = new Set<string>();
               const addGalleryUrl = (rawUrl?: string, label?: string) => {
                 const cleaned = (rawUrl || '').trim().replace(/&amp;/g, '&');
@@ -709,7 +664,7 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* 4. STICKY BOTTOM ACTION FOOTER (Matches Gambar 3)                   */}
           {/* ══════════════════════════════════════════════════════════════════ */}
-          <View style={styles.footerBar}>
+          <View style={[styles.footerBar, { paddingBottom: Math.max(20, insets.bottom + 12) }]}>
             <View style={styles.footerLeftGroup}>
               {/* Heart Favorite Button */}
               <TouchableOpacity
@@ -827,7 +782,7 @@ const styles = StyleSheet.create({
   heroBanner: {
     width: '100%',
     height: 190,
-    backgroundColor: '#0c0e14',
+    backgroundColor: '#121214',
     position: 'relative',
     overflow: 'hidden',
   },
@@ -1091,7 +1046,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     overflow: 'hidden',
     marginBottom: 10,
-    backgroundColor: '#0c0e14',
+    backgroundColor: '#121214',
   },
   embeddedArtwork: {
     width: '100%',

@@ -22,7 +22,6 @@ import {
   ActivityIndicator,
   Platform,
   Animated,
-  Easing,
   Modal,
   RefreshControl,
   useWindowDimensions,
@@ -68,6 +67,8 @@ import {
 import { storageService } from '../services/storageService';
 import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
+import { getSurfaceBg } from '../theme/skins';
+import { AnimatedTabTransition } from '../components/SmoothTransition';
 import { useTranslation } from '../i18n/LanguageContext';
 import { ThemePalette } from '../theme/colors';
 
@@ -227,14 +228,14 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
     }
     const active = viewableItems[0]?.item as CommunityCharacter | undefined;
     if (!active) return;
-    matchAlgorithmService.recordInteraction(active, 'view').catch(() => {});
+    matchAlgorithmService.recordInteraction(active, 'view').catch(() => { });
     forYouDwellTimerRef.current = setTimeout(() => {
-      matchAlgorithmService.recordInteraction(active, 'dwell').catch(() => {});
+      matchAlgorithmService.recordInteraction(active, 'dwell').catch(() => { });
     }, 3500);
   }).current;
 
   const handleOpenForYouReadMore = async (item: CommunityCharacter) => {
-    matchAlgorithmService.recordInteraction(item, 'dwell').catch(() => {});
+    matchAlgorithmService.recordInteraction(item, 'dwell').catch(() => { });
     setForYouReadMoreChar(item);
     setForYouReadMoreDetail(null);
     setLoadingForYouDetail(true);
@@ -244,7 +245,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         source: item.source,
       });
       if (detail) setForYouReadMoreDetail(detail);
-    } catch {}
+    } catch { }
     setLoadingForYouDetail(false);
   };
 
@@ -342,7 +343,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       setFollowedCreators(follows);
       const favs = await storageService.getCommunityFavorites();
       setFavoriteCharacters(favs as any);
-    } catch {}
+    } catch { }
   };
 
   // Fetch live characters for all followed creators when "Following" scope is active
@@ -557,7 +558,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         });
         setCurrentPage(nextPage);
       }
-    } catch {} finally {
+    } catch { } finally {
       setIsLoadingMore(false);
     }
   };
@@ -686,9 +687,9 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         const followedSource = followingCharacters.length > 0
           ? followingCharacters
           : communityCharacters.filter(c => {
-              const handle = (c.creatorName || '').replace(/^@+/, '').toLowerCase();
-              return followedCreators.some(f => f.replace(/^@+/, '').toLowerCase() === handle);
-            });
+            const handle = (c.creatorName || '').replace(/^@+/, '').toLowerCase();
+            return followedCreators.some(f => f.replace(/^@+/, '').toLowerCase() === handle);
+          });
         for (const fc of followedSource) {
           if (!seen.has(fc.id)) {
             seen.add(fc.id);
@@ -787,12 +788,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             minHeight: 44,
             borderRadius: skin.inputRadius,
             borderWidth: skin.id === 'material' ? 0 : Math.max(0.75, skin.cardBorderWidth),
-            backgroundColor:
-              skin.surfaceMode === 'tonal'
-                ? palette.bgSurfaceSubtle
-                : skin.surfaceMode === 'frosted'
-                  ? 'rgba(28, 28, 30, 0.85)'
-                  : palette.bgSurface,
+            backgroundColor: getSurfaceBg(palette, skin),
           },
         ]}
       >
@@ -857,119 +853,119 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   );
 
   const renderTopPrimarySwitcher = () => (
-        <View style={{ zIndex: 40 }}>
-        <View
+    <View style={{ zIndex: 40 }}>
+      <View
+        style={[
+          styles.topPrimaryBar,
+          {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: 14,
+            gap: 8,
+          },
+        ]}
+      >
+        {/* Left: Mode Dropdown (Catalog Grid / For You / Match Mode) */}
+        <TouchableOpacity
           style={[
-            styles.topPrimaryBar,
+            styles.topPrimaryBtn,
+            styles.topPrimaryBtnActive,
             {
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
+              backgroundColor: palette.accent,
+              minHeight: 40,
               paddingHorizontal: 14,
-              gap: 8,
+              borderRadius: 999,
             },
           ]}
+          onPress={() => setShowCatalogDropdown(prev => !prev)}
+          activeOpacity={0.8}
         >
-          {/* Left: Mode Dropdown (Catalog Grid / For You / Match Mode) */}
+          {topMode === 'foryou' ? (
+            <Sparkles size={14} color="#000000" style={{ marginRight: 6 }} />
+          ) : topMode === 'match' ? (
+            <Flame size={14} color="#000000" style={{ marginRight: 6 }} />
+          ) : (
+            <LayoutGrid size={14} color="#000000" style={{ marginRight: 6 }} />
+          )}
+          <Text style={[styles.topPrimaryBtnText, styles.topPrimaryBtnTextActive]}>
+            {topMode === 'foryou'
+              ? t('discover.forYou')
+              : topMode === 'match'
+                ? t('discover.matchMode')
+                : t('discover.catalogGrid')}
+          </Text>
+          <ChevronDown
+            size={14}
+            color="#000000"
+            style={{
+              marginLeft: 5,
+              transform: [{ rotate: showCatalogDropdown ? '180deg' : '0deg' }],
+            }}
+          />
+        </TouchableOpacity>
+
+        {/* Right: JanitorAI | Chub.ai + Refresh */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          {activeTab === 'community' && enableExternalCatalogs && (
+            <View style={[styles.sourcePillSwitch, { minHeight: 40 }]}>
+              <TouchableOpacity
+                style={[
+                  styles.sourcePillBtn,
+                  { paddingHorizontal: 11, paddingVertical: 8 },
+                  catalogSource === 'janitor' && styles.sourcePillBtnActive,
+                ]}
+                onPress={() => {
+                  setCatalogSource('janitor');
+                  setCurrentPage(1);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.sourcePillText,
+                    catalogSource === 'janitor' && styles.sourcePillTextActive,
+                  ]}
+                >
+                  JanitorAI
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.sourcePillBtn,
+                  { paddingHorizontal: 11, paddingVertical: 8 },
+                  catalogSource === 'chub' && styles.sourcePillBtnActive,
+                ]}
+                onPress={() => {
+                  setCatalogSource('chub');
+                  setCurrentPage(1);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.sourcePillText,
+                    catalogSource === 'chub' && styles.sourcePillTextActive,
+                  ]}
+                >
+                  Chub.ai
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           <TouchableOpacity
-            style={[
-              styles.topPrimaryBtn,
-              styles.topPrimaryBtnActive,
-              {
-                backgroundColor: palette.accent,
-                minHeight: 40,
-                paddingHorizontal: 14,
-                borderRadius: 999,
-              },
-            ]}
-            onPress={() => setShowCatalogDropdown(prev => !prev)}
-            activeOpacity={0.8}
+            style={[styles.iconBtn, { width: 40, height: 40, borderRadius: 20 }]}
+            onPress={() => fetchCharactersInitial(1)}
+            activeOpacity={0.7}
+            accessibilityLabel="Refresh Catalog Feed"
           >
-            {topMode === 'foryou' ? (
-              <Sparkles size={14} color="#000000" style={{ marginRight: 6 }} />
-            ) : topMode === 'match' ? (
-              <Flame size={14} color="#000000" style={{ marginRight: 6 }} />
-            ) : (
-              <LayoutGrid size={14} color="#000000" style={{ marginRight: 6 }} />
-            )}
-            <Text style={[styles.topPrimaryBtnText, styles.topPrimaryBtnTextActive]}>
-              {topMode === 'foryou'
-                ? t('discover.forYou')
-                : topMode === 'match'
-                  ? t('discover.matchMode')
-                  : t('discover.catalogGrid')}
-            </Text>
-            <ChevronDown
-              size={14}
-              color="#000000"
-              style={{
-                marginLeft: 5,
-                transform: [{ rotate: showCatalogDropdown ? '180deg' : '0deg' }],
-              }}
-            />
+            <RefreshCw size={15} color="#cbd5e1" />
           </TouchableOpacity>
-
-          {/* Right: JanitorAI | Chub.ai + Refresh */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            {activeTab === 'community' && enableExternalCatalogs && (
-              <View style={[styles.sourcePillSwitch, { minHeight: 40 }]}>
-                <TouchableOpacity
-                  style={[
-                    styles.sourcePillBtn,
-                    { paddingHorizontal: 11, paddingVertical: 8 },
-                    catalogSource === 'janitor' && styles.sourcePillBtnActive,
-                  ]}
-                  onPress={() => {
-                    setCatalogSource('janitor');
-                    setCurrentPage(1);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    style={[
-                      styles.sourcePillText,
-                      catalogSource === 'janitor' && styles.sourcePillTextActive,
-                    ]}
-                  >
-                    JanitorAI
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.sourcePillBtn,
-                    { paddingHorizontal: 11, paddingVertical: 8 },
-                    catalogSource === 'chub' && styles.sourcePillBtnActive,
-                  ]}
-                  onPress={() => {
-                    setCatalogSource('chub');
-                    setCurrentPage(1);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    style={[
-                      styles.sourcePillText,
-                      catalogSource === 'chub' && styles.sourcePillTextActive,
-                    ]}
-                  >
-                    Chub.ai
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            <TouchableOpacity
-              style={[styles.iconBtn, { width: 40, height: 40, borderRadius: 20 }]}
-              onPress={() => fetchCharactersInitial(1)}
-              activeOpacity={0.7}
-              accessibilityLabel="Refresh Catalog Feed"
-            >
-              <RefreshCw size={15} color="#cbd5e1" />
-            </TouchableOpacity>
-          </View>
         </View>
-        </View>
+      </View>
+    </View>
   );
 
   const renderCatalogControls = (omitSearchBar: boolean = false) => {
@@ -1161,7 +1157,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: palette.bgDark }]}>
+    <View style={[styles.container, { backgroundColor: skin.screenBg || palette.bgDark }]}>
       {/* ── Toast Notification ── */}
       {toastMessage && (
         <View style={styles.toastBox}>
@@ -1176,7 +1172,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       {topMode !== 'catalog' && renderTopPrimarySwitcher()}
 
       {topMode === 'match' ? (
-        <View style={{ flex: 1, paddingBottom: Math.max(8, insets.bottom) }}>
+        <AnimatedTabTransition transitionKey={topMode} style={{ flex: 1, paddingBottom: Math.max(8, insets.bottom) }}>
           <TinderDeck
             characters={communityCharacters.length > 0 ? communityCharacters : (characters as any)}
             activePersona={activePersona}
@@ -1188,7 +1184,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             onToggleFavorite={handleToggleCommunityFavorite}
             favoriteIds={new Set(favoriteCharacters.map(f => f.id))}
           />
-        </View>
+        </AnimatedTabTransition>
       ) : topMode === 'foryou' ? (
         <View
           style={{ flex: 1, overflow: 'hidden' }}
@@ -1250,7 +1246,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                       });
                     }
                   })
-                  .catch(() => {})
+                  .catch(() => { })
                   .finally(() => {
                     forYouLoadingMoreRef.current = false;
                   });
@@ -1375,7 +1371,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                               }}
                               onPress={() => {
                                 handleToggleCommunityFavorite(item);
-                                matchAlgorithmService.recordUserLike(item, !isLiked).catch(() => {});
+                                matchAlgorithmService.recordUserLike(item, !isLiked).catch(() => { });
                               }}
                               activeOpacity={0.8}
                             >
@@ -1402,7 +1398,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                                 borderColor: 'rgba(255,255,255,0.18)',
                               }}
                               onPress={() => {
-                                matchAlgorithmService.recordInteraction(item, 'chat').catch(() => {});
+                                matchAlgorithmService.recordInteraction(item, 'chat').catch(() => { });
                                 onStartChat(item);
                               }}
                               activeOpacity={0.8}
@@ -1481,7 +1477,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                             marginTop: 2,
                           }}
                           onPress={() => {
-                            matchAlgorithmService.recordInteraction(item, 'chat').catch(() => {});
+                            matchAlgorithmService.recordInteraction(item, 'chat').catch(() => { });
                             onStartChat(item);
                           }}
                           activeOpacity={0.85}
@@ -1498,398 +1494,408 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
         </View>
       ) : (
         <>
-      <Modal
-        visible={scopeDropdownOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setScopeDropdownOpen(false)}
-      >
-        <TouchableOpacity
-          style={styles.scopeDropdownOverlay}
-          activeOpacity={1}
-          onPress={() => setScopeDropdownOpen(false)}
-        >
-          <View
-            style={[styles.scopeMenuCard, { top: scopeMenuPos.top, left: scopeMenuPos.left }]}
-            onStartShouldSetResponder={() => true}
+          <Modal
+            visible={scopeDropdownOpen}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setScopeDropdownOpen(false)}
           >
-            {([
-              { key: 'all' as ScopeMode, label: 'All Companions', icon: Globe },
-              { key: 'following' as ScopeMode, label: 'Following Creators', icon: Users, count: followedCreators.length },
-              { key: 'favorites' as ScopeMode, label: 'Favorites', icon: Heart, count: favoriteCharacters.length },
-            ]).map(opt => {
-              const Icon = opt.icon;
-              const isSelected = scopeMode === opt.key;
-              return (
-                <TouchableOpacity
-                  key={opt.key}
-                  style={[styles.scopeMenuItem, isSelected && styles.scopeMenuItemActive]}
-                  onPress={() => {
-                    setScopeMode(opt.key);
-                    setScopeDropdownOpen(false);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.scopeMenuIconWrap, isSelected && styles.scopeMenuIconWrapActive]}>
-                    <Icon size={13} color={isSelected ? '#000000' : palette.accent} />
-                  </View>
-                  <Text style={[styles.scopeMenuText, isSelected && styles.scopeMenuTextActive]}>
-                    {opt.label}
-                  </Text>
-                  {typeof opt.count === 'number' && opt.count > 0 && (
-                    <View style={[styles.scopeCountBadge, isSelected && styles.scopeCountBadgeActive]}>
-                      <Text style={[styles.scopeCountBadgeText, isSelected && styles.scopeCountBadgeTextActive]}>
-                        {opt.count}
-                      </Text>
-                    </View>
-                  )}
-                  {isSelected && <Check size={13} color="#000000" style={{ marginLeft: 6 }} />}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* ── Floating Collapsible Header (Transparent Frosted Blur) ── */}
-      {catalogScrollMode !== 'top' && (
-        <Animated.View
-          style={[
-            {
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              zIndex: 45,
-              overflow: showCatalogDropdown ? 'visible' : 'hidden',
-              backgroundColor: 'rgba(12, 14, 20, 0.72)',
-              borderBottomWidth: 1,
-              borderBottomColor: 'rgba(255, 255, 255, 0.08)',
-              transform: [
-                {
-                  translateY: floatingHeaderAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [-28, 0],
-                  }),
-                },
-              ],
-            },
-            Platform.OS === 'web'
-              ? ({
-                  backdropFilter: 'blur(20px) saturate(160%)',
-                  WebkitBackdropFilter: 'blur(20px) saturate(160%)',
-                } as any)
-              : {},
-          ]}
-        >
-          {Platform.OS === 'ios' && (
-            <BlurView
-              intensity={52}
-              tint="dark"
-              blurMethod="dimezisBlurView"
-              blurTarget={discoverContentRef}
-              style={StyleSheet.absoluteFill}
-              pointerEvents="none"
-            />
-          )}
-          {/* Row 1 (slides in smoothly on first upward scroll): Top Mode + Source Bar */}
-          <Animated.View
-            style={{
-              zIndex: 50,
-              overflow: showCatalogDropdown ? 'visible' : 'hidden',
-              maxHeight: midRowAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, 68],
-              }),
-            }}
-          >
-            {renderTopPrimarySwitcher()}
-          </Animated.View>
-
-          {/* Row 2 (always in floating/compact): Search + Filter */}
-          {renderSearchBarOnly(true)}
-
-          {/* Row 3 (slides in smoothly on deeper upward scroll): Single Horizontal Strip */}
-          <Animated.View
-            style={{
-              overflow: 'hidden',
-              maxHeight: fullRowAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, 56],
-              }),
-            }}
-          >
-            {renderCatalogControls(true)}
-          </Animated.View>
-        </Animated.View>
-      )}
-
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* 6. MAIN CONTENT: 2-COLUMN BENTO GRID WITH TRUE INFINITE SCROLL     */}
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      <BlurTargetView ref={discoverContentRef} style={{ flex: 1 }}>
-      {(communityLoading || (scopeMode === 'following' && followingLoading && displayedCharacters.length === 0)) ? (
-        <View style={{ flex: 1 }}>
-          {renderTopPrimarySwitcher()}
-          {renderCatalogControls()}
-          <View style={styles.loaderBox}>
-            <NekoPulseLoader
-              size={46}
-              label={
-                scopeMode === 'following'
-                  ? 'Loading companions from followed creators...'
-                  : 'Loading NekoChat companions...'
-              }
-            />
-          </View>
-        </View>
-      ) : entityMode === 'creators' ? (
-        <FlatList
-          key="creators-list"
-          data={
-            activeTab === 'library'
-              ? creatorProfiles.filter(cr =>
-                  followedCreators.some(f => f.toLowerCase() === cr.creatorName.toLowerCase())
-                )
-              : creatorProfiles
-          }
-          keyExtractor={item => item.creatorName}
-          contentContainerStyle={styles.creatorsList}
-          ListHeaderComponent={
-            <View style={{ marginHorizontal: -12 }}>
-              {renderTopPrimarySwitcher()}
-              {renderCatalogControls()}
-            </View>
-          }
-          onScroll={handleCatalogScroll}
-          scrollEventThrottle={16}
-          onEndReached={activeTab === 'community' ? handleLoadMore : undefined}
-          onEndReachedThreshold={0.5}
-          renderItem={({ item: creator }) => {
-            const isFollowing = followedCreators.some(
-              f => f.toLowerCase() === creator.creatorName.toLowerCase()
-            );
-            return (
-              <View style={styles.creatorCard}>
-                <View style={styles.creatorCardTop}>
-                  {creator.avatarUrl ? (
-                    <Image source={{ uri: creator.avatarUrl }} style={styles.creatorAvatar} />
-                  ) : (
-                    <View style={[styles.creatorAvatar, { alignItems: 'center', justifyContent: 'center' }]}>
-                      <Text style={{ fontSize: 16, fontWeight: '800', color: palette.accent }}>
-                        {creator.creatorName.charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
-                  )}
-                  <View style={styles.creatorInfoCol}>
-                    <View style={styles.creatorNameRow}>
-                      <Text style={styles.creatorCardName}>@{creator.creatorName}</Text>
-                      <CheckCircle2 size={13} color={palette.accent} style={{ marginLeft: 3 }} />
-                    </View>
-                    <Text style={styles.creatorBotCount}>{creator.botCount} public companions</Text>
-                  </View>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.creatorFollowBtn,
-                      isFollowing && [styles.creatorFollowBtnActive, { backgroundColor: palette.accent, borderColor: palette.accent }],
-                    ]}
-                    onPress={() => handleToggleFollowCreator(creator.creatorName)}
-                    activeOpacity={0.8}
-                  >
-                    <Text
-                      style={[
-                        styles.creatorFollowBtnText,
-                        isFollowing && styles.creatorFollowBtnTextActive,
-                      ]}
-                    >
-                      {isFollowing ? 'Following' : '+ Follow'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {creator.sampleBots.length > 0 && (
-                  <Text style={styles.creatorSampleText} numberOfLines={1}>
-                    Notable bots: <Text style={{ color: '#e2e8f0' }}>{creator.sampleBots.join(', ')}</Text>
-                  </Text>
-                )}
-
-                <TouchableOpacity
-                  style={styles.viewBotsBtn}
-                  onPress={() => {
-                    setSelectedCreator({
-                      name: creator.creatorName,
-                      avatarUrl: creator.avatarUrl,
-                    });
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.viewBotsBtnText, { color: palette.accent }]}>
-                    View Creator Profile & Companions →
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            );
-          }}
-          ListFooterComponent={
-            isLoadingMore && activeTab === 'community' ? (
-              <View style={styles.footerLoader}>
-                <NekoPulseLoader size={26} label="Loading more creators..." />
-              </View>
-            ) : undefined
-          }
-        />
-      ) : (
-        <FlatList
-          key="characters-grid"
-          data={displayedCharacters}
-          keyExtractor={item => item.id}
-          numColumns={2}
-          initialNumToRender={6}
-          maxToRenderPerBatch={6}
-          windowSize={5}
-          updateCellsBatchingPeriod={50}
-          removeClippedSubviews={Platform.OS === 'android'}
-          columnWrapperStyle={styles.twoColumnWrapper}
-          contentContainerStyle={styles.cardsContainer}
-          ListHeaderComponent={
-            <View style={{ marginHorizontal: -12 }}>
-              {renderTopPrimarySwitcher()}
-              {renderCatalogControls()}
-            </View>
-          }
-          onScroll={handleCatalogScroll}
-          scrollEventThrottle={16}
-          onEndReached={handleLoadMore}
-          onEndReachedThreshold={0.5}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={handleRefreshCatalog}
-              tintColor={palette.accent}
-              colors={[palette.accent]}
-            />
-          }
-          renderItem={({ item }) => (
-            <CommunityCharacterCard
-              character={item}
-              onSelect={c => {
-                matchAlgorithmService.recordInteraction(c, 'dwell').catch(() => {});
-                setSelectedCommunityChar(c);
-              }}
-              onStartChat={c => {
-                matchAlgorithmService.recordInteraction(c, 'chat').catch(() => {});
-                onStartChat(c);
-              }}
-              onImport={c => {
-                matchAlgorithmService.recordInteraction(c, 'chat').catch(() => {});
-                onImportCard?.(c);
-                showToast(`✨ Imported "${c.name}" into My Library!`);
-              }}
-              isBookmarked={favoriteIdSet.has(item.id)}
-              onToggleBookmark={() => handleToggleCommunityFavorite(item)}
-              isFollowingCreator={followedCreatorSet.has(
-                (item.creatorName || '').replace(/^@+/, '').toLowerCase()
-              )}
-              onToggleFollowCreator={creatorName =>
-                handleToggleFollowCreator(creatorName)
-              }
-              onCreatorClick={cName => {
-                setSelectedCreator({
-                  name: cName,
-                  id: item.creatorId,
-                });
-              }}
-              onTagClick={(tagId, tagName) => {
-                const matchedCat = POPULAR_COMMUNITY_CATEGORIES.find(c => c.tagId === tagId);
-                if (matchedCat) {
-                  handleToggleCategory(matchedCat.value);
-                } else {
-                  setCommunitySearchInput(tagName);
-                  setCommunitySearch(tagName);
-                }
-              }}
-            />
-          )}
-          ListFooterComponent={
-            isLoadingMore && scopeMode === 'all' ? (
-              <View style={styles.footerLoader}>
-                <NekoPulseLoader size={26} label="Streaming more characters..." />
-              </View>
-            ) : undefined
-          }
-          ListEmptyComponent={
-            communityError ? (
-              <View style={styles.errorContainer}>
-                <View style={styles.errorIconCircle}>
-                  <Sparkles size={24} color="#f43f5e" />
-                </View>
-                <Text style={styles.errorTitle}>
-                  {catalogSource === 'local_db'
-                    ? 'MySQL Backend Offline'
-                    : catalogSource === 'janitor'
-                      ? 'JanitorAI Gateway Offline (Port 3001)'
-                      : 'Chub.ai Feed Unavailable'}
-                </Text>
-                <Text style={styles.errorDesc}>
-                  {catalogSource === 'local_db'
-                    ? `${communityError}\n\nStart MySQL in XAMPP, run "npm run proxy", and set your Backend URL in Settings → Account & MySQL.`
-                    : catalogSource === 'janitor'
-                      ? 'Buka terminal baru di folder NekoChat dan jalankan "npm run proxy" untuk mengaktifkan proxy JanitorAI tanpa mock data.'
-                      : communityError}
-                </Text>
-                <View style={styles.errorActionsRow}>
-                  <TouchableOpacity
-                    style={styles.errorRetryBtn}
-                    onPress={() => fetchCharactersInitial(1)}
-                    activeOpacity={0.8}
-                  >
-                    <RefreshCw size={13} color="#000000" style={{ marginRight: 6 }} />
-                    <Text style={styles.errorRetryBtnText}>Retry Connection</Text>
-                  </TouchableOpacity>
-
-                  {catalogSource === 'janitor' && (
+            <TouchableOpacity
+              style={styles.scopeDropdownOverlay}
+              activeOpacity={1}
+              onPress={() => setScopeDropdownOpen(false)}
+            >
+              <View
+                style={[styles.scopeMenuCard, { top: scopeMenuPos.top, left: scopeMenuPos.left }]}
+                onStartShouldSetResponder={() => true}
+              >
+                {([
+                  { key: 'all' as ScopeMode, label: 'All Companions', icon: Globe },
+                  { key: 'following' as ScopeMode, label: 'Following Creators', icon: Users, count: followedCreators.length },
+                  { key: 'favorites' as ScopeMode, label: 'Favorites', icon: Heart, count: favoriteCharacters.length },
+                ]).map(opt => {
+                  const Icon = opt.icon;
+                  const isSelected = scopeMode === opt.key;
+                  return (
                     <TouchableOpacity
-                      style={styles.errorSwitchBtn}
+                      key={opt.key}
+                      style={[styles.scopeMenuItem, isSelected && styles.scopeMenuItemActive]}
                       onPress={() => {
-                        setCatalogSource('chub');
-                        setCurrentPage(1);
+                        setScopeMode(opt.key);
+                        setScopeDropdownOpen(false);
                       }}
                       activeOpacity={0.8}
                     >
-                      <Text style={styles.errorSwitchBtnText}>Switch to Chub.ai</Text>
+                      <View style={[styles.scopeMenuIconWrap, isSelected && styles.scopeMenuIconWrapActive]}>
+                        <Icon size={13} color={isSelected ? '#000000' : palette.accent} />
+                      </View>
+                      <Text style={[styles.scopeMenuText, isSelected && styles.scopeMenuTextActive]}>
+                        {opt.label}
+                      </Text>
+                      {typeof opt.count === 'number' && opt.count > 0 && (
+                        <View style={[styles.scopeCountBadge, isSelected && styles.scopeCountBadgeActive]}>
+                          <Text style={[styles.scopeCountBadgeText, isSelected && styles.scopeCountBadgeTextActive]}>
+                            {opt.count}
+                          </Text>
+                        </View>
+                      )}
+                      {isSelected && <Check size={13} color="#000000" style={{ marginLeft: 6 }} />}
                     </TouchableOpacity>
-                  )}
+                  );
+                })}
+              </View>
+            </TouchableOpacity>
+          </Modal>
+
+          {/* ── Floating Collapsible Header (Transparent Frosted Blur) ── */}
+          {catalogScrollMode !== 'top' && (
+            <Animated.View
+              style={[
+                {
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  zIndex: 45,
+                  overflow: showCatalogDropdown ? 'visible' : 'hidden',
+                  backgroundColor: 'rgba(12, 14, 20, 0.92)',
+                  borderBottomWidth: 1,
+                  borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+                  transform: [
+                    {
+                      translateY: floatingHeaderAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [-28, 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              {Platform.OS === 'ios' && (
+                <BlurView
+                  intensity={52}
+                  tint="dark"
+                  blurMethod="dimezisBlurView"
+                  blurTarget={discoverContentRef}
+                  style={StyleSheet.absoluteFill}
+                  pointerEvents="none"
+                />
+              )}
+              {/* Row 1 (slides in smoothly on first upward scroll): Top Mode + Source Bar */}
+              <Animated.View
+                style={{
+                  zIndex: 50,
+                  overflow: showCatalogDropdown ? 'visible' : 'hidden',
+                  maxHeight: midRowAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, 68],
+                  }),
+                }}
+              >
+                {renderTopPrimarySwitcher()}
+              </Animated.View>
+
+              {/* Row 2 (always in floating/compact): Search + Filter */}
+              {renderSearchBarOnly(true)}
+
+              {/* Row 3 (slides in smoothly on deeper upward scroll): Single Horizontal Strip */}
+              <Animated.View
+                style={{
+                  overflow: 'hidden',
+                  maxHeight: fullRowAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, 56],
+                  }),
+                }}
+              >
+                {renderCatalogControls(true)}
+              </Animated.View>
+            </Animated.View>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════════════ */}
+          {/* 6. MAIN CONTENT: 2-COLUMN BENTO GRID WITH TRUE INFINITE SCROLL     */}
+          {/* ══════════════════════════════════════════════════════════════════ */}
+          {(() => {
+            const listContent = (
+              <AnimatedTabTransition
+                transitionKey={`${topMode}_${librarySubTab}_${entityMode}_${scopeMode}`}
+                style={{ flex: 1 }}
+              >
+                {(communityLoading || (scopeMode === 'following' && followingLoading && displayedCharacters.length === 0)) ? (
+              <View style={{ flex: 1 }}>
+                {renderTopPrimarySwitcher()}
+                {renderCatalogControls()}
+                <View style={styles.loaderBox}>
+                  <NekoPulseLoader
+                    size={46}
+                    label={
+                      scopeMode === 'following'
+                        ? 'Loading companions from followed creators...'
+                        : 'Loading NekoChat companions...'
+                    }
+                  />
                 </View>
               </View>
+            ) : entityMode === 'creators' ? (
+              <FlatList
+                key="creators-list"
+                data={
+                  activeTab === 'library'
+                    ? creatorProfiles.filter(cr =>
+                      followedCreators.some(f => f.toLowerCase() === cr.creatorName.toLowerCase())
+                    )
+                    : creatorProfiles
+                }
+                keyExtractor={item => item.creatorName}
+                contentContainerStyle={styles.creatorsList}
+                ListHeaderComponent={
+                  <View style={{ marginHorizontal: -12 }}>
+                    {renderTopPrimarySwitcher()}
+                    {renderCatalogControls()}
+                  </View>
+                }
+                onScroll={handleCatalogScroll}
+                scrollEventThrottle={16}
+                onEndReached={activeTab === 'community' ? handleLoadMore : undefined}
+                onEndReachedThreshold={0.5}
+                renderItem={({ item: creator }) => {
+                  const isFollowing = followedCreators.some(
+                    f => f.toLowerCase() === creator.creatorName.toLowerCase()
+                  );
+                  return (
+                    <View style={styles.creatorCard}>
+                      <View style={styles.creatorCardTop}>
+                        {creator.avatarUrl ? (
+                          <Image source={{ uri: creator.avatarUrl }} style={styles.creatorAvatar} />
+                        ) : (
+                          <View style={[styles.creatorAvatar, { alignItems: 'center', justifyContent: 'center' }]}>
+                            <Text style={{ fontSize: 16, fontWeight: '800', color: palette.accent }}>
+                              {creator.creatorName.charAt(0).toUpperCase()}
+                            </Text>
+                          </View>
+                        )}
+                        <View style={styles.creatorInfoCol}>
+                          <View style={styles.creatorNameRow}>
+                            <Text style={styles.creatorCardName}>@{creator.creatorName}</Text>
+                            <CheckCircle2 size={13} color={palette.accent} style={{ marginLeft: 3 }} />
+                          </View>
+                          <Text style={styles.creatorBotCount}>{creator.botCount} public companions</Text>
+                        </View>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.creatorFollowBtn,
+                            isFollowing && [styles.creatorFollowBtnActive, { backgroundColor: palette.accent, borderColor: palette.accent }],
+                          ]}
+                          onPress={() => handleToggleFollowCreator(creator.creatorName)}
+                          activeOpacity={0.8}
+                        >
+                          <Text
+                            style={[
+                              styles.creatorFollowBtnText,
+                              isFollowing && styles.creatorFollowBtnTextActive,
+                            ]}
+                          >
+                            {isFollowing ? 'Following' : '+ Follow'}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {creator.sampleBots.length > 0 && (
+                        <Text style={styles.creatorSampleText} numberOfLines={1}>
+                          Notable bots: <Text style={{ color: '#e2e8f0' }}>{creator.sampleBots.join(', ')}</Text>
+                        </Text>
+                      )}
+
+                      <TouchableOpacity
+                        style={styles.viewBotsBtn}
+                        onPress={() => {
+                          setSelectedCreator({
+                            name: creator.creatorName,
+                            avatarUrl: creator.avatarUrl,
+                          });
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.viewBotsBtnText, { color: palette.accent }]}>
+                          View Creator Profile & Companions →
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                }}
+                ListFooterComponent={
+                  isLoadingMore && activeTab === 'community' ? (
+                    <View style={styles.footerLoader}>
+                      <NekoPulseLoader size={26} label="Loading more creators..." />
+                    </View>
+                  ) : undefined
+                }
+              />
             ) : (
-              <View style={styles.emptyContainer}>
-                <Sparkles size={28} color="#9ca3af" style={{ marginBottom: 10 }} />
-                <Text style={styles.emptyTitle}>
-                  {scopeMode === 'following'
-                    ? followedCreators.length === 0
-                      ? 'No Followed Creators Yet'
-                      : 'No Companions Found'
-                    : scopeMode === 'favorites'
-                    ? 'No Saved Favorites'
-                    : 'No Characters Found'}
-                </Text>
-                <Text style={styles.emptyDesc}>
-                  {scopeMode === 'following'
-                    ? followedCreators.length === 0
-                      ? 'Tap "+ Follow" on any character card to see companions from your favorite creators here.'
-                      : `Following ${followedCreators.map(f => '@' + f.replace(/^@+/, '')).join(', ')}, but no matching public companions were found in ${catalogSource === 'janitor' ? 'JanitorAI' : 'Chub.ai'}.`
-                    : scopeMode === 'favorites'
-                    ? 'Tap the Bookmark icon on any card to save it here for fast access.'
-                    : 'Try adjusting your search terms or selecting another tag.'}
-                </Text>
+              <FlatList
+                key="characters-grid"
+                data={displayedCharacters}
+                keyExtractor={item => item.id}
+                numColumns={2}
+                initialNumToRender={6}
+                maxToRenderPerBatch={6}
+                windowSize={5}
+                updateCellsBatchingPeriod={50}
+                removeClippedSubviews={Platform.OS === 'android'}
+                columnWrapperStyle={styles.twoColumnWrapper}
+                contentContainerStyle={styles.cardsContainer}
+                ListHeaderComponent={
+                  <View style={{ marginHorizontal: -12 }}>
+                    {renderTopPrimarySwitcher()}
+                    {renderCatalogControls()}
+                  </View>
+                }
+                onScroll={handleCatalogScroll}
+                scrollEventThrottle={16}
+                onEndReached={handleLoadMore}
+                onEndReachedThreshold={0.5}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={isRefreshing}
+                    onRefresh={handleRefreshCatalog}
+                    tintColor={palette.accent}
+                    colors={[palette.accent]}
+                  />
+                }
+                renderItem={({ item }) => (
+                  <CommunityCharacterCard
+                    character={item}
+                    onSelect={c => {
+                      matchAlgorithmService.recordInteraction(c, 'dwell').catch(() => { });
+                      setSelectedCommunityChar(c);
+                    }}
+                    onStartChat={c => {
+                      matchAlgorithmService.recordInteraction(c, 'chat').catch(() => { });
+                      onStartChat(c);
+                    }}
+                    onImport={c => {
+                      matchAlgorithmService.recordInteraction(c, 'chat').catch(() => { });
+                      onImportCard?.(c);
+                      showToast(`✨ Imported "${c.name}" into My Library!`);
+                    }}
+                    isBookmarked={favoriteIdSet.has(item.id)}
+                    onToggleBookmark={() => handleToggleCommunityFavorite(item)}
+                    isFollowingCreator={followedCreatorSet.has(
+                      (item.creatorName || '').replace(/^@+/, '').toLowerCase()
+                    )}
+                    onToggleFollowCreator={creatorName =>
+                      handleToggleFollowCreator(creatorName)
+                    }
+                    onCreatorClick={cName => {
+                      setSelectedCreator({
+                        name: cName,
+                        id: item.creatorId,
+                      });
+                    }}
+                    onTagClick={(tagId, tagName) => {
+                      const matchedCat = POPULAR_COMMUNITY_CATEGORIES.find(c => c.tagId === tagId);
+                      if (matchedCat) {
+                        handleToggleCategory(matchedCat.value);
+                      } else {
+                        setCommunitySearchInput(tagName);
+                        setCommunitySearch(tagName);
+                      }
+                    }}
+                  />
+                )}
+                ListFooterComponent={
+                  isLoadingMore && scopeMode === 'all' ? (
+                    <View style={styles.footerLoader}>
+                      <NekoPulseLoader size={26} label="Streaming more characters..." />
+                    </View>
+                  ) : undefined
+                }
+                ListEmptyComponent={
+                  communityError ? (
+                    <View style={styles.errorContainer}>
+                      <View style={styles.errorIconCircle}>
+                        <Sparkles size={24} color="#f43f5e" />
+                      </View>
+                      <Text style={styles.errorTitle}>
+                        {catalogSource === 'local_db'
+                          ? 'MySQL Backend Offline'
+                          : catalogSource === 'janitor'
+                            ? 'JanitorAI Gateway Offline (Port 3001)'
+                            : 'Chub.ai Feed Unavailable'}
+                      </Text>
+                      <Text style={styles.errorDesc}>
+                        {catalogSource === 'local_db'
+                          ? `${communityError}\n\nStart MySQL in XAMPP, run "npm run proxy", and set your Backend URL in Settings → Account & MySQL.`
+                          : catalogSource === 'janitor'
+                            ? 'Buka terminal baru di folder NekoChat dan jalankan "npm run proxy" untuk mengaktifkan proxy JanitorAI tanpa mock data.'
+                            : communityError}
+                      </Text>
+                      <View style={styles.errorActionsRow}>
+                        <TouchableOpacity
+                          style={styles.errorRetryBtn}
+                          onPress={() => fetchCharactersInitial(1)}
+                          activeOpacity={0.8}
+                        >
+                          <RefreshCw size={13} color="#000000" style={{ marginRight: 6 }} />
+                          <Text style={styles.errorRetryBtnText}>Retry Connection</Text>
+                        </TouchableOpacity>
+
+                        {catalogSource === 'janitor' && (
+                          <TouchableOpacity
+                            style={styles.errorSwitchBtn}
+                            onPress={() => {
+                              setCatalogSource('chub');
+                              setCurrentPage(1);
+                            }}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={styles.errorSwitchBtnText}>Switch to Chub.ai</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.emptyContainer}>
+                      <Sparkles size={28} color="#9ca3af" style={{ marginBottom: 10 }} />
+                      <Text style={styles.emptyTitle}>
+                        {scopeMode === 'following'
+                          ? followedCreators.length === 0
+                            ? 'No Followed Creators Yet'
+                            : 'No Companions Found'
+                          : scopeMode === 'favorites'
+                            ? 'No Saved Favorites'
+                            : 'No Characters Found'}
+                      </Text>
+                      <Text style={styles.emptyDesc}>
+                        {scopeMode === 'following'
+                          ? followedCreators.length === 0
+                            ? 'Tap "+ Follow" on any character card to see companions from your favorite creators here.'
+                            : `Following ${followedCreators.map(f => '@' + f.replace(/^@+/, '')).join(', ')}, but no matching public companions were found in ${catalogSource === 'janitor' ? 'JanitorAI' : 'Chub.ai'}.`
+                          : scopeMode === 'favorites'
+                            ? 'Tap the Bookmark icon on any card to save it here for fast access.'
+                            : 'Try adjusting your search terms or selecting another tag.'}
+                      </Text>
+                    </View>
+                  )
+                }
+              />
+            )}
+              </AnimatedTabTransition>
+            );
+            return Platform.OS === 'ios' ? (
+              <BlurTargetView ref={discoverContentRef} style={{ flex: 1 }}>
+                {listContent}
+              </BlurTargetView>
+            ) : (
+              <View style={{ flex: 1 }}>
+                {listContent}
               </View>
-            )
-          }
-        />
-      )}
-      </BlurTargetView>
-      </>
+            );
+          })()}
+        </>
       )}
 
       {/* ══════════════════════════════════════════════════════════════════ */}
@@ -2034,74 +2040,74 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
             style={StyleSheet.absoluteFill}
           >
             <Animated.View
-            style={{
-              position: 'absolute',
-              top: 56,
-              left: 14,
-              width: 220,
-              borderRadius: 16,
-              backgroundColor: 'rgba(14, 17, 26, 0.98)',
-              borderWidth: 1,
-              borderColor: `rgba(${palette.accentRgb}, 0.35)`,
-              padding: 6,
-              zIndex: 1000,
-              shadowColor: '#000',
-              shadowOpacity: 0.55,
-              shadowRadius: 16,
-              elevation: 31,
-              opacity: catalogDropdownAnim,
-              transform: [
-                {
-                  translateY: catalogDropdownAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [-10, 0],
-                  }),
-                },
-                {
-                  scale: catalogDropdownAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.95, 1],
-                  }),
-                },
-              ],
-            }}
-          >
-            {[
-              { id: 'catalog' as const, label: 'Catalog Grid', sub: 'Browse & filter all', Icon: LayoutGrid },
-              { id: 'foryou' as const, label: 'For You', sub: 'Algorithmic snap feed', Icon: Sparkles },
-              { id: 'match' as const, label: 'Match Mode', sub: 'Swipe character deck', Icon: Flame },
-            ].map(opt => {
-              const active = topMode === opt.id;
-              return (
-                <TouchableOpacity
-                  key={opt.id}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 10,
-                    paddingHorizontal: 10,
-                    paddingVertical: 10,
-                    borderRadius: 11,
-                    backgroundColor: active ? `rgba(${palette.accentRgb}, 0.14)` : 'transparent',
-                  }}
-                  onPress={() => {
-                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                    setTopMode(opt.id);
-                    setShowCatalogDropdown(false);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <opt.Icon size={15} color={active ? palette.accent : '#94a3b8'} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: active ? palette.accent : '#f8fafc', fontSize: 13, fontWeight: '700' }}>
-                      {opt.label}
-                    </Text>
-                    <Text style={{ color: '#94a3b8', fontSize: 10.5 }}>{opt.sub}</Text>
-                  </View>
-                  {active && <Check size={14} color={palette.accent} />}
-                </TouchableOpacity>
-              );
-            })}
+              style={{
+                position: 'absolute',
+                top: 56,
+                left: 14,
+                width: 220,
+                borderRadius: 16,
+                backgroundColor: 'rgba(14, 17, 26, 0.98)',
+                borderWidth: 1,
+                borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+                padding: 6,
+                zIndex: 1000,
+                shadowColor: '#000',
+                shadowOpacity: 0.55,
+                shadowRadius: 16,
+                elevation: 31,
+                opacity: catalogDropdownAnim,
+                transform: [
+                  {
+                    translateY: catalogDropdownAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-10, 0],
+                    }),
+                  },
+                  {
+                    scale: catalogDropdownAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.95, 1],
+                    }),
+                  },
+                ],
+              }}
+            >
+              {[
+                { id: 'catalog' as const, label: 'Catalog Grid', sub: 'Browse & filter all', Icon: LayoutGrid },
+                { id: 'foryou' as const, label: 'For You', sub: 'Algorithmic snap feed', Icon: Sparkles },
+                { id: 'match' as const, label: 'Match Mode', sub: 'Swipe character deck', Icon: Flame },
+              ].map(opt => {
+                const active = topMode === opt.id;
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 10,
+                      paddingHorizontal: 10,
+                      paddingVertical: 10,
+                      borderRadius: 11,
+                      backgroundColor: active ? `rgba(${palette.accentRgb}, 0.14)` : 'transparent',
+                    }}
+                    onPress={() => {
+                      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                      setTopMode(opt.id);
+                      setShowCatalogDropdown(false);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <opt.Icon size={15} color={active ? palette.accent : '#94a3b8'} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: active ? palette.accent : '#f8fafc', fontSize: 13, fontWeight: '700' }}>
+                        {opt.label}
+                      </Text>
+                      <Text style={{ color: '#94a3b8', fontSize: 10.5 }}>{opt.sub}</Text>
+                    </View>
+                    {active && <Check size={14} color={palette.accent} />}
+                  </TouchableOpacity>
+                );
+              })}
             </Animated.View>
           </TouchableOpacity>
         </View>
@@ -2241,7 +2247,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#0f121d',
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
@@ -2305,7 +2311,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     backgroundColor: '#0f121d',
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     padding: 3,
   },
   topPrimaryBtn: {
@@ -2347,7 +2353,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     backgroundColor: '#0f121d',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     padding: 2.5,
     gap: 4,
   },
@@ -2399,7 +2405,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     backgroundColor: '#0f121d',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     padding: 2,
   },
   sourcePillBtn: {
@@ -2424,7 +2430,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     borderRadius: 7,
     backgroundColor: '#0f121d',
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2550,7 +2556,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     borderRadius: 7,
     backgroundColor: '#0f121d',
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2784,7 +2790,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     backgroundColor: '#0f121d',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#1e2436',
+    borderColor: 'rgba(255, 255, 255, 0.1)',
     marginTop: 10,
   },
   errorContainer: {

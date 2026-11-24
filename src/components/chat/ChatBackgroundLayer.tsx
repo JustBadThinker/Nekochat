@@ -102,25 +102,38 @@ export const ChatBackgroundLayer: React.FC<ChatBackgroundLayerProps> = ({
       ? Math.max(baseOverlay, autoDarkness ?? 0.52)
       : baseOverlay;
 
+  const wallpaperImage = (
+    <Image
+      source={{ uri }}
+      blurRadius={
+        Platform.OS === 'android' && appearance.blurRadius > 0
+          ? Math.max(1, Math.round(appearance.blurRadius * 0.8))
+          : 0
+      }
+      style={[
+        StyleSheet.absoluteFill,
+        Platform.OS === 'web' && appearance.blurRadius > 0
+          ? ({
+              filter: `blur(${appearance.blurRadius}px)`,
+              transform: [{ scale: 1.08 }],
+            } as any)
+          : {},
+      ]}
+      resizeMode="cover"
+    />
+  );
+
   return (
     <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]} pointerEvents="none">
-      <BlurTargetView ref={wallpaperTargetRef} style={StyleSheet.absoluteFill}>
-        <Image
-          source={{ uri }}
-          style={[
-            StyleSheet.absoluteFill,
-            Platform.OS === 'web' && appearance.blurRadius > 0
-              ? ({
-                  filter: `blur(${appearance.blurRadius}px)`,
-                  transform: [{ scale: 1.08 }],
-                } as any)
-              : {},
-          ]}
-          resizeMode="cover"
-        />
-      </BlurTargetView>
+      {Platform.OS === 'ios' && appearance.blurRadius > 0 ? (
+        <BlurTargetView ref={wallpaperTargetRef} style={StyleSheet.absoluteFill}>
+          {wallpaperImage}
+        </BlurTargetView>
+      ) : (
+        wallpaperImage
+      )}
 
-      {Platform.OS !== 'web' && appearance.blurRadius > 0 && (
+      {Platform.OS === 'ios' && appearance.blurRadius > 0 && (
         <BlurView
           intensity={Math.min(100, Math.max(8, Math.round(appearance.blurRadius * 4)))}
           tint="dark"
@@ -132,9 +145,9 @@ export const ChatBackgroundLayer: React.FC<ChatBackgroundLayerProps> = ({
 
       <LinearGradient
         colors={[
-          `rgba(12, 14, 20, ${Math.max(0.28, effectiveOverlay * 0.85)})`,
-          `rgba(12, 14, 20, ${Math.max(0.22, effectiveOverlay * 0.72)})`,
-          `rgba(12, 14, 20, ${Math.max(0.48, effectiveOverlay)})`,
+          `rgba(0, 0, 0, ${Math.max(0.28, effectiveOverlay * 0.85)})`,
+          `rgba(0, 0, 0, ${Math.max(0.22, effectiveOverlay * 0.72)})`,
+          `rgba(0, 0, 0, ${Math.max(0.48, effectiveOverlay)})`,
         ]}
         locations={[0, 0.45, 1]}
         style={StyleSheet.absoluteFill}
