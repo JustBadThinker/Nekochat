@@ -516,10 +516,105 @@ function AppContent() {
             importantForAccessibility={activeChatCharacter ? 'no-hide-descendants' : 'auto'}
           >
             {/* Horizontal Swipeable Pager across Chats, Discover, Studio, Settings */}
-            <BlurTargetView
-              ref={mainPagerBlurTargetRef}
-              style={styles.screenArea}
-              onLayout={e => {
+            {(() => {
+              const pagerScroll = (
+                <ScrollView
+                  ref={pagerRef}
+                  horizontal
+                  pagingEnabled
+                  scrollEnabled={!(activeTab === 'discover' && isDiscoverMatchMode)}
+                  showsHorizontalScrollIndicator={false}
+                  bounces={false}
+                  nestedScrollEnabled
+                  scrollEventThrottle={16}
+                  onMomentumScrollEnd={e => syncTabFromOffset(e.nativeEvent.contentOffset.x)}
+                  onScroll={e => {
+                    const x = e.nativeEvent.contentOffset.x;
+                    if (pagerWidth > 0) {
+                      const lo = Math.max(0, Math.min(TABS.length - 1, Math.floor(x / pagerWidth)));
+                      const hi = Math.max(0, Math.min(TABS.length - 1, Math.ceil(x / pagerWidth)));
+                      markTabVisited(TABS[lo]);
+                      markTabVisited(TABS[hi]);
+                    }
+                    if (scrollSettleTimer.current) clearTimeout(scrollSettleTimer.current);
+                    scrollSettleTimer.current = setTimeout(() => {
+                      syncTabFromOffset(x);
+                    }, 90);
+                  }}
+                  style={{ flex: 1 }}
+                >
+                  <View style={{ width: pagerWidth, height: '100%' }}>
+                    <ChatsScreen
+                      characters={characters}
+                      trendingCharacters={trendingCharacters}
+                      userPersona={activePersona}
+                      onSelectCharacter={handleStartChat}
+                      onToggleFavorite={handleToggleFavorite}
+                      onDeleteCharacter={handleDeleteCharacter}
+                      onNavigateDiscover={() => handleTabChange('discover')}
+                      onNavigateStudio={() => handleTabChange('studio')}
+                      onScrollDirectionChange={setIsDockVisible}
+                      unreadDropsCount={dropsInbox.filter(d => !d.read).length}
+                      onOpenInbox={async () => {
+                        const [list, followed] = await Promise.all([
+                          getDropsInbox(),
+                          storageService.getFollowedCreators(),
+                        ]);
+                        setDropsInbox(list);
+                        setFollowedCount(followed.length);
+                        setInboxVisible(true);
+                      }}
+                    />
+                  </View>
+
+                  <View style={{ width: pagerWidth, height: '100%' }}>
+                    {visitedTabs.discover ? (
+                      <DiscoverScreen
+                        characters={characters}
+                        activePersona={activePersona}
+                        onStartChat={handleStartChat}
+                        onToggleFavorite={handleToggleFavorite}
+                        onMatchModeChange={setIsDiscoverMatchMode}
+                        onScrollDirectionChange={setIsDockVisible}
+                      />
+                    ) : (
+                      <View style={{ flex: 1, backgroundColor: themeBg }} />
+                    )}
+                  </View>
+
+                  <View style={{ width: pagerWidth, height: '100%' }}>
+                    {visitedTabs.studio ? (
+                      <UserStudioScreen
+                        onStartChat={handleStartChat}
+                        activePersona={activePersona}
+                        onUpdateActivePersona={setActivePersona}
+                        onScrollDirectionChange={setIsDockVisible}
+                      />
+                    ) : (
+                      <View style={{ flex: 1, backgroundColor: themeBg }} />
+                    )}
+                  </View>
+
+                  <View style={{ width: pagerWidth, height: '100%' }}>
+                    {visitedTabs.settings ? (
+                      <SettingsScreen
+                        config={config}
+                        onUpdateConfig={setConfig}
+                        settings={settings}
+                        onUpdateSettings={setSettings}
+                        onReplayOnboarding={() => setForceShowOnboarding(true)}
+                        onScrollDirectionChange={setIsDockVisible}
+                        openNotificationsSignal={openNotifSignal}
+                        onRefreshDropsInbox={refreshInboxState}
+                      />
+                    ) : (
+                      <View style={{ flex: 1, backgroundColor: themeBg }} />
+                    )}
+                  </View>
+                </ScrollView>
+              );
+
+              const handlePagerLayout = (e: any) => {
                 const w = e.nativeEvent.layout.width;
                 if (w > 0 && Math.abs(w - pagerWidth) > 1) {
                   setPagerWidth(w);
@@ -528,103 +623,22 @@ function AppContent() {
                     pagerRef.current?.scrollTo({ x: idx * w, animated: false });
                   }, 0);
                 }
-              }}
-            >
-              <ScrollView
-                ref={pagerRef}
-                horizontal
-                pagingEnabled
-                scrollEnabled={!(activeTab === 'discover' && isDiscoverMatchMode)}
-                showsHorizontalScrollIndicator={false}
-                bounces={false}
-                nestedScrollEnabled
-                scrollEventThrottle={16}
-                onMomentumScrollEnd={e => syncTabFromOffset(e.nativeEvent.contentOffset.x)}
-                onScroll={e => {
-                  const x = e.nativeEvent.contentOffset.x;
-                  if (pagerWidth > 0) {
-                    const lo = Math.max(0, Math.min(TABS.length - 1, Math.floor(x / pagerWidth)));
-                    const hi = Math.max(0, Math.min(TABS.length - 1, Math.ceil(x / pagerWidth)));
-                    markTabVisited(TABS[lo]);
-                    markTabVisited(TABS[hi]);
-                  }
-                  if (scrollSettleTimer.current) clearTimeout(scrollSettleTimer.current);
-                  scrollSettleTimer.current = setTimeout(() => {
-                    syncTabFromOffset(x);
-                  }, 90);
-                }}
-                style={{ flex: 1 }}
-              >
-                <View style={{ width: pagerWidth, height: '100%' }}>
-                  <ChatsScreen
-                    characters={characters}
-                    trendingCharacters={trendingCharacters}
-                    userPersona={activePersona}
-                    onSelectCharacter={handleStartChat}
-                    onToggleFavorite={handleToggleFavorite}
-                    onDeleteCharacter={handleDeleteCharacter}
-                    onNavigateDiscover={() => handleTabChange('discover')}
-                    onNavigateStudio={() => handleTabChange('studio')}
-                    onScrollDirectionChange={setIsDockVisible}
-                    unreadDropsCount={dropsInbox.filter(d => !d.read).length}
-                    onOpenInbox={async () => {
-                      const [list, followed] = await Promise.all([
-                        getDropsInbox(),
-                        storageService.getFollowedCreators(),
-                      ]);
-                      setDropsInbox(list);
-                      setFollowedCount(followed.length);
-                      setInboxVisible(true);
-                    }}
-                  />
-                </View>
+              };
 
-                <View style={{ width: pagerWidth, height: '100%' }}>
-                  {visitedTabs.discover ? (
-                    <DiscoverScreen
-                      characters={characters}
-                      activePersona={activePersona}
-                      onStartChat={handleStartChat}
-                      onToggleFavorite={handleToggleFavorite}
-                      onMatchModeChange={setIsDiscoverMatchMode}
-                      onScrollDirectionChange={setIsDockVisible}
-                    />
-                  ) : (
-                    <View style={{ flex: 1, backgroundColor: themeBg }} />
-                  )}
+              return activeSkinTokens.id === 'ios' ? (
+                <BlurTargetView
+                  ref={mainPagerBlurTargetRef}
+                  style={styles.screenArea}
+                  onLayout={handlePagerLayout}
+                >
+                  {pagerScroll}
+                </BlurTargetView>
+              ) : (
+                <View style={styles.screenArea} onLayout={handlePagerLayout}>
+                  {pagerScroll}
                 </View>
-
-                <View style={{ width: pagerWidth, height: '100%' }}>
-                  {visitedTabs.studio ? (
-                    <UserStudioScreen
-                      onStartChat={handleStartChat}
-                      activePersona={activePersona}
-                      onUpdateActivePersona={setActivePersona}
-                      onScrollDirectionChange={setIsDockVisible}
-                    />
-                  ) : (
-                    <View style={{ flex: 1, backgroundColor: themeBg }} />
-                  )}
-                </View>
-
-                <View style={{ width: pagerWidth, height: '100%' }}>
-                  {visitedTabs.settings ? (
-                    <SettingsScreen
-                      config={config}
-                      onUpdateConfig={setConfig}
-                      settings={settings}
-                      onUpdateSettings={setSettings}
-                      onReplayOnboarding={() => setForceShowOnboarding(true)}
-                      onScrollDirectionChange={setIsDockVisible}
-                      openNotificationsSignal={openNotifSignal}
-                      onRefreshDropsInbox={refreshInboxState}
-                    />
-                  ) : (
-                    <View style={{ flex: 1, backgroundColor: themeBg }} />
-                  )}
-                </View>
-              </ScrollView>
-            </BlurTargetView>
+              );
+            })()}
 
             {/* Minimalist Floating Capsule Dock (hidden in Discover Match/For You modes) */}
             {!(activeTab === 'discover' && isDiscoverMatchMode) && (

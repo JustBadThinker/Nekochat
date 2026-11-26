@@ -35,7 +35,8 @@
         {
           "android": {
             "enableMinifyInReleaseBuilds": true,
-            "enableShrinkResourcesInReleaseBuilds": true
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "extraProguardRules": "-keep class * extends androidx.room.RoomDatabase { <init>(); }\n-keep class androidx.work.impl.WorkDatabase* { *; }\n-keep class * extends androidx.work.ListenableWorker { <init>(android.content.Context, androidx.work.WorkerParameters); }\n-keep class * extends androidx.work.InputMerger { <init>(); }\n-keep class * extends androidx.startup.Initializer { <init>(); }\n-keep class expo.modules.blur.** { *; }\n-keep class eightbitlab.com.blurview.** { *; }\n-keep class expo.modules.notifications.** { *; }\n-keep class expo.modules.backgroundtask.** { *; }\n-keep class expo.modules.taskmanager.** { *; }"
           }
         }
       ],
