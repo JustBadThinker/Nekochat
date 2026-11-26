@@ -86,11 +86,23 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Clean existing release for re-tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.apk.outputs.tag }}
+        run: |
+          RELEASE_IDS=$(gh api "repos/${{ github.repository }}/releases" --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+          for id in $RELEASE_IDS; do
+            echo "Deleting previous release $id for tag $TAG"
+            gh api -X DELETE "repos/${{ github.repository }}/releases/$id" || true
+          done
+
       - name: Create GitHub Release with APK
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.apk.outputs.tag }}
           name: NekoChat ${{ steps.apk.outputs.tag }}
+          overwrite_files: true
           body: |
             ## 🐾 NekoChat ${{ steps.apk.outputs.tag }}
 
