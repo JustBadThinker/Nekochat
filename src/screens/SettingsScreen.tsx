@@ -3109,6 +3109,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                       desc: 'Cross-platform mobile native runtime, gesture responders, and high-performance native drivers.',
                       badge: 'Framework',
                     },
+                    {
+                      title: 'Open-Source Libraries & Fonts',
+                      desc: 'Lucide Icons, React Native SVG, AsyncStorage, Google GenAI SDK, CryptoJS, Pollinations.ai, and Inter / Merriweather / JetBrains Mono fonts.',
+                      badge: 'Libraries',
+                    },
                   ].map((credit, i) => (
                     <View
                       key={i}

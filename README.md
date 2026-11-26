@@ -152,12 +152,15 @@ node --test tests/*.test.mjs
 
 ## 🙏 Credits & Acknowledgements
 
-NekoChat wouldn't exist without these open-source tools and community specs:
-- **[Expo](https://expo.dev/) & [React Native](https://reactnative.dev/)** (`expo-sqlite`, `expo-secure-store`, `expo-blur`, `expo-linear-gradient`, `expo-speech`, `expo-file-system`, `expo-image-picker`, `expo-document-picker`)
-- **[Lucide Icons (`lucide-react-native`)](https://lucide.dev/)** for crisp icons across every screen
-- **[CryptoJS](https://github.com/brix/crypto-js)** for client-side Data Vault encryption helpers
-- **Community Character Card Specs:** SillyTavern Character Card V1 / V2 / V3 (`chara` / `ccv3` PNG metadata & JSON) and Lorebook V2 format
-- **Community Catalogs:** [Chub.ai](https://chub.ai/) and Datacat / JanitorAI public character ecosystems
+NekoChat wouldn't exist without these open-source tools, libraries, and community specs:
+- **[SillyTavern](https://github.com/SillyTavern/SillyTavern):** Character Card V1 / V2 / V3 (`chara` / `ccv3` PNG metadata & JSON) and World Info / Lorebook V2 specifications
+- **[Expo](https://github.com/expo/expo) & [React Native](https://github.com/facebook/react-native):** Core mobile runtime and native modules (`expo-sqlite`, `expo-secure-store`, `expo-blur`, `expo-linear-gradient`, `expo-notifications`, `expo-background-task`, `expo-speech`, `expo-file-system`, `expo-image-picker`, `expo-document-picker`, `expo-clipboard`, `expo-sharing`, `expo-system-ui`, `expo-font`)
+- **React Native Community Libraries:** [`@react-native-async-storage/async-storage`](https://github.com/react-native-async-storage/async-storage), [`react-native-svg`](https://github.com/software-mansion/react-native-svg), [`react-native-safe-area-context`](https://github.com/AppAndFlow/react-native-safe-area-context), and [`react-native-web`](https://github.com/necolas/react-native-web)
+- **[Google GenAI SDK (`@google/genai`)](https://github.com/googleapis/js-genai):** Official Gemini API client library
+- **[Lucide Icons (`lucide-react-native`)](https://github.com/lucide-icons/lucide):** Crisp open-source icon set used across every screen
+- **[Expo Google Fonts](https://github.com/expo/google-fonts):** Open-source typefaces (**Inter**, **Merriweather**, and **JetBrains Mono**)
+- **[CryptoJS](https://github.com/brix/crypto-js):** Client-side Data Vault encryption helpers
+- **Community Catalogs & Media:** [Chub.ai](https://chub.ai/), [Datacat](https://datacat.run/) / JanitorAI public character ecosystems, and [Pollinations.ai](https://pollinations.ai/) for optional zero-key scene art generation
 
 ---
 
