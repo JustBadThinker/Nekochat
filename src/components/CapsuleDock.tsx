@@ -7,9 +7,11 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MessageSquare, Compass, User, Settings } from 'lucide-react-native';
 import { useTheme } from '../theme/ThemeContext';
+import { getM3TonalContainer } from '../theme/skins';
 import { runDockIconScale, runDockSlideAnimation } from '../theme/animations';
 import { useTranslation } from '../i18n/LanguageContext';
 import { TranslationKey } from '../i18n/translations';
@@ -37,6 +39,7 @@ interface CapsuleDockProps {
 export const CapsuleDock: React.FC<CapsuleDockProps> = ({
   activeTab,
   onTabChange,
+  blurTargetRef,
   visible = true,
 }) => {
   const insets = useSafeAreaInsets();
@@ -45,6 +48,7 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({
   const activeIdx = Math.max(0, TAB_ITEMS.findIndex(t => t.key === activeTab));
   const [slideAnim] = useState(() => new Animated.Value(activeIdx * STEP_WIDTH));
   const [scaleAnims] = useState(() => TAB_ITEMS.map((_, i) => new Animated.Value(i === activeIdx ? 1.08 : 1)));
+  const [m3PillAnims] = useState(() => TAB_ITEMS.map((_, i) => new Animated.Value(i === activeIdx ? 1 : 0)));
   const [dockVisibilityAnim] = useState(() => new Animated.Value(visible ? 1 : 0));
 
   useEffect(() => {
@@ -76,8 +80,14 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({
 
     TAB_ITEMS.forEach((_, idx) => {
       runDockIconScale(scaleAnims[idx], idx === activeIdx, skin.animation);
+      Animated.spring(m3PillAnims[idx], {
+        toValue: idx === activeIdx ? 1 : 0,
+        useNativeDriver: true,
+        friction: 6.5,
+        tension: 150,
+      }).start();
     });
-  }, [activeIdx, skin.animation]);
+  }, [activeIdx, skin.animation, slideAnim, scaleAnims, m3PillAnims]);
 
   if (skin.navBarStyle === 'm3_nav_bar') {
     return (
@@ -87,9 +97,9 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({
           styles.dockedBarContainer,
           dockAnimatedStyle,
           {
-            backgroundColor: skin.surfaceBg || palette.bgSurfaceSubtle,
+            backgroundColor: getM3TonalContainer(palette, 'container'),
             borderTopWidth: 0,
-            paddingBottom: Math.max(8, insets.bottom),
+            paddingBottom: Math.max(10, insets.bottom),
             paddingTop: 10,
           },
         ]}
@@ -104,22 +114,41 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({
               activeOpacity={0.85}
             >
               <Animated.View style={{ transform: [{ scale: scaleAnims[idx] }], alignItems: 'center' }}>
-                <View
-                  style={[
-                    styles.m3ActivePill,
-                    isActive && { backgroundColor: `rgba(${palette.accentRgb}, 0.24)` },
-                  ]}
-                >
+                <View style={styles.m3ActivePill}>
+                  <Animated.View
+                    pointerEvents="none"
+                    style={[
+                      StyleSheet.absoluteFill,
+                      {
+                        borderRadius: 16,
+                        backgroundColor: `rgba(${palette.accentRgb}, 0.24)`,
+                        opacity: m3PillAnims[idx],
+                        transform: [
+                          {
+                            scaleX: m3PillAnims[idx].interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [0.35, 1],
+                            }),
+                          },
+                        ],
+                      },
+                    ]}
+                  />
                   <Icon
                     size={20}
                     color={isActive ? palette.accent : '#cbd5e1'}
-                    style={{ opacity: isActive ? 1 : 0.7 }}
+                    style={{ opacity: isActive ? 1 : 0.72 }}
                   />
                 </View>
                 <Text
                   style={[
                     styles.m3Label,
-                    { color: isActive ? palette.accent : '#94a3b8', fontWeight: isActive ? '700' : '500' },
+                    {
+                      fontSize: 11.5,
+                      letterSpacing: 0.2,
+                      color: isActive ? '#FFFFFF' : '#94a3b8',
+                      fontWeight: isActive ? '700' : '500',
+                    },
                   ]}
                 >
                   {t(labelKey)}
@@ -191,45 +220,122 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({
   if (skin.navBarStyle === 'ios_tab_bar') {
     return (
       <Animated.View
-        pointerEvents={visible ? 'auto' : 'none'}
         style={[
-          styles.dockedBarContainer,
+          styles.dockContainer,
           dockAnimatedStyle,
-          {
-            backgroundColor: '#141416',
-            borderTopWidth: 0.5,
-            borderTopColor: 'rgba(255, 255, 255, 0.14)',
-            paddingBottom: Math.max(6, insets.bottom),
-            paddingTop: 7,
-          },
+          { bottom: Math.max(Platform.OS === 'ios' ? 20 : 14, insets.bottom + 8) },
         ]}
+        pointerEvents={visible ? 'box-none' : 'none'}
       >
-        {TAB_ITEMS.map(({ key, labelKey, Icon }, idx) => {
-          const isActive = activeTab === key;
-          return (
-            <TouchableOpacity
-              key={key}
-              style={styles.dockedTabItem}
-              onPress={() => onTabChange(key)}
-              activeOpacity={0.7}
-            >
-              <Animated.View style={{ transform: [{ scale: scaleAnims[idx] }], alignItems: 'center' }}>
-                <Icon
-                  size={22}
-                  color={isActive ? palette.accent : 'rgba(255, 255, 255, 0.52)'}
-                />
-                <Text
-                  style={[
-                    styles.iosLabel,
-                    { color: isActive ? palette.accent : 'rgba(255, 255, 255, 0.52)', fontWeight: isActive ? '600' : '500' },
-                  ]}
+        <View
+          style={{
+            padding: 1,
+            borderRadius: 35,
+            backgroundColor: 'rgba(0, 0, 0, 0.44)',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 14 },
+            shadowOpacity: 0.65,
+            shadowRadius: 26,
+            elevation: 18,
+          }}
+        >
+          <View
+            style={[
+              styles.dockCapsule,
+              {
+                borderRadius: 34,
+                backgroundColor:
+                  Platform.OS === 'web' ? 'rgba(18, 20, 30, 0.38)' : 'rgba(18, 20, 30, 0.28)',
+                borderWidth: 1,
+                borderColor: 'rgba(255, 255, 255, 0.28)',
+                borderTopColor: 'rgba(255, 255, 255, 0.62)',
+                borderBottomColor: 'rgba(255, 255, 255, 0.14)',
+                elevation: 0,
+                shadowOpacity: 0,
+                ...(Platform.OS === 'web'
+                  ? ({ backdropFilter: 'blur(26px) saturate(190%)' } as any)
+                  : null),
+              },
+            ]}
+          >
+            {Platform.OS !== 'web' && (
+              <BlurView
+                intensity={Platform.OS === 'android' ? 75 : 60}
+                blurReductionFactor={3}
+                tint="dark"
+                blurMethod="dimezisBlurViewSdk31Plus"
+                blurTarget={blurTargetRef}
+                style={[StyleSheet.absoluteFill, { borderRadius: 34 }]}
+                pointerEvents="none"
+              />
+            )}
+
+            <LinearGradient
+              pointerEvents="none"
+              colors={[
+                'rgba(255, 255, 255, 0.22)',
+                'rgba(255, 255, 255, 0.02)',
+                'rgba(255, 255, 255, 0.10)',
+              ]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            <View
+              pointerEvents="none"
+              style={[
+                styles.topSpecularRim,
+                { height: 1.5, backgroundColor: 'rgba(255, 255, 255, 0.50)' },
+              ]}
+            />
+
+            {/* Sliding Liquid Glass Lens Indicator */}
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.slidingPill,
+                {
+                  borderRadius: 26,
+                  backgroundColor: 'rgba(255, 255, 255, 0.20)',
+                  borderColor: 'rgba(255, 255, 255, 0.28)',
+                  borderTopColor: 'rgba(255, 255, 255, 0.68)',
+                  borderBottomColor: 'rgba(0, 0, 0, 0.22)',
+                  transform: [{ translateX: slideAnim }],
+                },
+              ]}
+            />
+
+            {TAB_ITEMS.map(({ key, labelKey, Icon }, idx) => {
+              const isActive = activeTab === key;
+              return (
+                <TouchableOpacity
+                  key={key}
+                  style={styles.dockItem}
+                  onPress={() => onTabChange(key)}
+                  activeOpacity={0.75}
                 >
-                  {t(labelKey)}
-                </Text>
-              </Animated.View>
-            </TouchableOpacity>
-          );
-        })}
+                  <Animated.View style={{ transform: [{ scale: scaleAnims[idx] }], alignItems: 'center' }}>
+                    <Icon
+                      size={21}
+                      color={isActive ? palette.accent : 'rgba(255, 255, 255, 0.65)'}
+                    />
+                    <Text
+                      style={[
+                        styles.iosLabel,
+                        {
+                          color: isActive ? palette.accent : 'rgba(255, 255, 255, 0.65)',
+                          fontWeight: isActive ? '600' : '500',
+                        },
+                      ]}
+                    >
+                      {t(labelKey)}
+                    </Text>
+                  </Animated.View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
       </Animated.View>
     );
   }
@@ -251,6 +357,13 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({
             borderColor: `rgba(${palette.accentRgb}, 0.25)`,
             borderRadius: skin.dockRadius,
             borderWidth: skin.dockBorderWidth,
+          },
+          skin.id === 'bento' && {
+            backgroundColor: palette.bgSurface,
+            borderWidth: 1.25,
+            borderColor: `rgba(${palette.accentRgb}, 0.30)`,
+            borderBottomWidth: 3.5,
+            borderBottomColor: 'rgba(0, 0, 0, 0.65)',
           },
         ]}
       >
@@ -277,6 +390,11 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({
               backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
               borderColor: `rgba(${palette.accentRgb}, 0.40)`,
               transform: [{ translateX: slideAnim }],
+            },
+            skin.id === 'bento' && {
+              borderRadius: 22,
+              borderBottomWidth: 2.5,
+              borderBottomColor: `rgba(${palette.accentRgb}, 0.55)`,
             },
           ]}
         />

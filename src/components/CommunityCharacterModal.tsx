@@ -5,7 +5,7 @@
  * Warning: reading too many 20-paragraph backstories may cause spontaneous "one more chat" syndrome.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,11 +15,11 @@ import {
   StyleSheet,
   Modal,
   Platform,
-  Linking,
   Animated,
-  Easing,
   LayoutAnimation,
+  PanResponder,
   UIManager,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -39,6 +39,11 @@ import { communityCatalogService } from '../services/communityCatalogService';
 import { storageService } from '../services/storageService';
 import { RichHtmlRenderer } from './RichHtmlRenderer';
 import { GLASS } from '../theme/glassTheme';
+import { ThemePalette } from '../theme/colors';
+import { useTheme } from '../theme/ThemeContext';
+import { getM3TonalContainer } from '../theme/skins';
+import { runSheetCloseAnimation, runSheetOpenAnimation } from '../theme/animations';
+import { openSafeExternalUrl } from '../utils/safeExternalUrl';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AnimatedChevron, AnimatedCollapsible } from './SmoothTransition';
 
@@ -52,6 +57,8 @@ interface GreetingAccordionItemProps {
   isExpanded: boolean;
   onToggle: () => void;
   onStartWithGreeting: () => void;
+  palette: ThemePalette;
+  styles: ReturnType<typeof createStyles>;
 }
 
 const GreetingAccordionItem: React.FC<GreetingAccordionItemProps> = ({
@@ -60,6 +67,8 @@ const GreetingAccordionItem: React.FC<GreetingAccordionItemProps> = ({
   isExpanded,
   onToggle,
   onStartWithGreeting,
+  palette,
+  styles,
 }) => {
   const preview = greet
     .replace(/<[^>]*>/g, ' ')
@@ -72,7 +81,7 @@ const GreetingAccordionItem: React.FC<GreetingAccordionItemProps> = ({
         styles.descCard,
         {
           marginBottom: 10,
-          borderColor: isExpanded ? 'rgba(212, 255, 0, 0.35)' : 'rgba(255, 255, 255, 0.1)',
+          borderColor: isExpanded ? `rgba(${palette.accentRgb}, 0.35)` : 'rgba(255, 255, 255, 0.1)',
         },
       ]}
     >
@@ -86,14 +95,14 @@ const GreetingAccordionItem: React.FC<GreetingAccordionItemProps> = ({
             <AnimatedChevron
               expanded={isExpanded}
               size={16}
-              color={isExpanded ? '#d4ff00' : '#9ca3af'}
+              color={isExpanded ? palette.accent : '#9ca3af'}
             />
           </View>
           <View style={{ flex: 1 }}>
             <Text
               style={[
                 styles.altGreetTitle,
-                { color: isExpanded ? '#d4ff00' : '#f1f5f9' },
+                { color: isExpanded ? palette.accent : '#f1f5f9' },
               ]}
             >
               {title}
@@ -111,8 +120,8 @@ const GreetingAccordionItem: React.FC<GreetingAccordionItemProps> = ({
           onPress={onStartWithGreeting}
           activeOpacity={0.8}
         >
-          <Play size={10} color="#000000" fill="#000000" style={{ marginRight: 3 }} />
-          <Text style={[styles.altChatBtnText, { color: '#000000' }]}>Chat</Text>
+          <Play size={10} color={palette.accent} fill={palette.accent} style={{ marginRight: 3 }} />
+          <Text style={styles.altChatBtnText}>Chat</Text>
         </TouchableOpacity>
       </TouchableOpacity>
 
@@ -146,7 +155,10 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
   onCreatorClick,
   onFollowChange,
 }) => {
+  const { palette, skin } = useTheme();
+  const styles = useMemo(() => createStyles(palette), [palette]);
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const [detail, setDetail] = useState<CommunityCharacterDetail | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'scenario' | 'greeting' | 'gallery'>('overview');
   const [expandedGreetingIdx, setExpandedGreetingIdx] = useState<number | null>(0);
@@ -155,43 +167,118 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
   const [imgError, setImgError] = useState(false);
   const [galleryLightboxUrl, setGalleryLightboxUrl] = useState<string | null>(null);
   const tabFadeAnim = useRef(new Animated.Value(1)).current;
-  const modalAnim = useRef(new Animated.Value(0)).current;
+  const [internalVisible, setInternalVisible] = useState(visible);
+  const [sheetTranslateY] = useState(() => new Animated.Value(480));
+  const [backdropOpacity] = useState(() => new Animated.Value(0));
+  const onCloseRef = useRef(onClose);
   const isClosingRef = useRef(false);
 
   useEffect(() => {
-    if (visible) {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    if (visible && character) {
       isClosingRef.current = false;
-      modalAnim.setValue(0);
-      Animated.timing(modalAnim, {
-        toValue: 1,
-        duration: 260,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start();
+      setInternalVisible(true);
+      runSheetOpenAnimation(sheetTranslateY, backdropOpacity, skin.animation);
+    } else if (internalVisible && !isClosingRef.current) {
+      isClosingRef.current = true;
+      runSheetCloseAnimation(sheetTranslateY, backdropOpacity, skin.animation, () => {
+        isClosingRef.current = false;
+        setInternalVisible(false);
+      });
     }
-  }, [visible, modalAnim]);
+  }, [visible, character, internalVisible, sheetTranslateY, backdropOpacity, skin.animation]);
 
   const animateClose = (after?: () => void) => {
     if (isClosingRef.current) return;
     isClosingRef.current = true;
-    Animated.timing(modalAnim, {
-      toValue: 0,
-      duration: 210,
-      easing: Easing.in(Easing.cubic),
-      useNativeDriver: true,
-    }).start(() => {
+    runSheetCloseAnimation(sheetTranslateY, backdropOpacity, skin.animation, () => {
       isClosingRef.current = false;
-      onClose();
+      setInternalVisible(false);
+      onCloseRef.current();
       after?.();
     });
   };
+
+  const animateCloseRef = useRef(animateClose);
+  useEffect(() => {
+    animateCloseRef.current = animateClose;
+  });
+
+  const [dragHandlePanResponder] = useState(() =>
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 4,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderMove: (_, gesture) => {
+        if (gesture.dy > 0) {
+          sheetTranslateY.setValue(gesture.dy);
+        }
+      },
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dy > 100 || (gesture.dy > 45 && gesture.vy > 0.6)) {
+          animateCloseRef.current();
+        } else {
+          Animated.spring(sheetTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            friction: 8,
+            tension: 120,
+          }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(sheetTranslateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          friction: 8,
+          tension: 120,
+        }).start();
+      },
+    })
+  );
+
+  const [heroPanResponder] = useState(() =>
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        gesture.dy > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.3,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderMove: (_, gesture) => {
+        if (gesture.dy > 0) {
+          sheetTranslateY.setValue(gesture.dy);
+        }
+      },
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dy > 100 || (gesture.dy > 45 && gesture.vy > 0.6)) {
+          animateCloseRef.current();
+        } else {
+          Animated.spring(sheetTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            friction: 8,
+            tension: 120,
+          }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(sheetTranslateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          friction: 8,
+          tension: 120,
+        }).start();
+      },
+    })
+  );
 
   useEffect(() => {
     tabFadeAnim.setValue(0);
     Animated.timing(tabFadeAnim, {
       toValue: 1,
       duration: 180,
-      easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
   }, [activeTab, tabFadeAnim]);
@@ -225,12 +312,12 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
           setDetail(d);
         });
       }
-    } else {
+    } else if (!internalVisible) {
       setDetail(null);
     }
-  }, [character?.id, visible]);
+  }, [character?.id, visible, internalVisible]);
 
-  if (!character || !visible) return null;
+  if (!character || !internalVisible) return null;
 
   const handleToggleFollow = async () => {
     const next = await storageService.toggleFollowCreator(creatorName);
@@ -257,8 +344,8 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
   const chats = ('chatCount' in character && character.chatCount)
     ? character.chatCount
     : ('totalChats' in character && character.totalChats)
-    ? character.totalChats
-    : 10;
+      ? character.totalChats
+      : 10;
 
   const tags = character.tags || [];
   const alternateGreetings = detail?.alternateGreetings || [];
@@ -273,35 +360,63 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
     'JanitorAI-compatible character ready to roleplay.';
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={() => animateClose()}>
-      <Animated.View style={[styles.overlay, { opacity: modalAnim }]}>
+    <Modal visible={internalVisible} transparent animationType="none" onRequestClose={() => animateClose()}>
+      <Animated.View style={[styles.overlay, { opacity: backdropOpacity }]}>
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => animateClose()} />
         <Animated.View
           style={[
             styles.modalCard,
             {
-              opacity: modalAnim,
-              transform: [
-                {
-                  translateY: modalAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [48, 0],
-                  }),
-                },
-                {
-                  scale: modalAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.96, 1],
-                  }),
-                },
-              ],
+              width: skin.id === 'ios' ? '96%' : '100%',
+              height: Math.min(windowHeight - insets.top - 14, Math.round(windowHeight * 0.91)),
+              borderTopLeftRadius: skin.sheetRadius,
+              borderTopRightRadius: skin.sheetRadius,
+              borderBottomLeftRadius: skin.id === 'ios' ? 32 : 0,
+              borderBottomRightRadius: skin.id === 'ios' ? 32 : 0,
+              ...(skin.id === 'ios'
+                ? {
+                  marginBottom: Math.max(8, insets.bottom),
+                  borderColor: 'rgba(255, 255, 255, 0.24)',
+                  borderTopColor: 'rgba(255, 255, 255, 0.50)',
+                }
+                : null),
+              ...(skin.id === 'material'
+                ? {
+                  borderWidth: 0,
+                  backgroundColor: getM3TonalContainer(palette, 'low'),
+                }
+                : null),
+              transform: [{ translateY: sheetTranslateY }],
             },
           ]}
         >
           {/* ══════════════════════════════════════════════════════════════════ */}
-          {/* 1. TOP HERO ARTWORK BANNER (Matches Gambar 3)                       */}
+          {/* 1. TOP HERO ARTWORK BANNER (Swipe-down zone; leaves body ScrollView free) */}
           {/* ══════════════════════════════════════════════════════════════════ */}
-          <View style={styles.heroBanner}>
+          <View style={styles.heroBanner} {...heroPanResponder.panHandlers}>
+            {/* Top Swipe-Down Grabber Pill */}
+            <View
+              {...dragHandlePanResponder.panHandlers}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 24,
+                zIndex: 20,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <View
+                style={{
+                  width: skin.grabberWidth || 38,
+                  height: skin.grabberHeight || 4,
+                  borderRadius: 99,
+                  backgroundColor: 'rgba(255, 255, 255, 0.62)',
+                }}
+              />
+            </View>
             {!imgError && avatarUrl ? (
               <Image
                 source={{ uri: avatarUrl }}
@@ -361,7 +476,9 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
               <TouchableOpacity
                 style={styles.heroCircleBtn}
                 onPress={() => {
-                  if (avatarUrl) Linking.openURL(avatarUrl).catch(() => {});
+                  if (avatarUrl) {
+                    void openSafeExternalUrl(avatarUrl);
+                  }
                 }}
                 activeOpacity={0.7}
                 accessibilityLabel="Download Card Artwork"
@@ -401,7 +518,7 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
                   <Text style={[styles.subTextCreator, onCreatorClick && { textDecorationLine: 'underline' }]}>
                     @{cleanHandle}
                   </Text>
-                  <CheckCircle2 size={13} color="#d4ff00" style={{ marginLeft: 3 }} />
+                  <CheckCircle2 size={13} color={palette.accent} style={{ marginLeft: 3 }} />
                 </TouchableOpacity>
 
                 {/* Follow @creator button */}
@@ -501,14 +618,14 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
                 <TouchableOpacity
                   style={styles.datacatLink}
                   onPress={() => {
-                    Linking.openURL(sourceUrl).catch(() => {});
+                    void openSafeExternalUrl(sourceUrl);
                   }}
                   activeOpacity={0.7}
                 >
                   <Text style={styles.datacatLinkText}>
                     {isChubSource ? 'Chub.ai Source' : 'Datacat Source'}
                   </Text>
-                  <ExternalLink size={11} color="#d4ff00" style={{ marginLeft: 3 }} />
+                  <ExternalLink size={11} color={palette.accent} style={{ marginLeft: 3 }} />
                 </TouchableOpacity>
               );
             })()}
@@ -526,138 +643,140 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
             showsVerticalScrollIndicator
           >
             <Animated.View style={{ opacity: tabFadeAnim }}>
-            {activeTab === 'overview' && (
-              <View style={styles.overviewSection}>
-                {/* Tag Chips Strip */}
-                <View style={styles.tagChipsWrap}>
-                  {tags.map((t: any, i: number) => {
-                    const name = typeof t === 'string' ? t : t.name;
-                    const clean = name.replace(/^[^\w\s]+/, '').trim();
-                    return (
-                      <TouchableOpacity
-                        key={i}
-                        style={styles.overviewTagChip}
-                        onPress={() => onTagClick?.(clean)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.overviewTagText}>#{clean}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                {/* Section Header: DESCRIPTION */}
-                <Text style={styles.sectionHeading}>DESCRIPTION</Text>
-
-                {/* Inner Card with Rich HTML/Markdown Description (left/center/right text & inline images) */}
-                <View style={styles.descCard}>
-                  <RichHtmlRenderer content={overviewHtml} />
-                </View>
-              </View>
-            )}
-
-            {activeTab === 'scenario' && (
-              <View style={styles.overviewSection}>
-                <Text style={styles.sectionHeading}>ROLEPLAY SCENARIO & CONTEXT</Text>
-                <View style={styles.descCard}>
-                  <RichHtmlRenderer content={scenarioText} />
-                </View>
-              </View>
-            )}
-
-            {activeTab === 'greeting' && (() => {
-              const defaultGreet =
-                detail?.firstMessage ||
-                ('firstMessage' in character ? character.firstMessage : '') ||
-                `*${character.name} looks over at you quietly.* "Hello there. What brings you here?"`;
-              const allGreetings = [defaultGreet, ...alternateGreetings];
-
-              return (
+              {activeTab === 'overview' && (
                 <View style={styles.overviewSection}>
-                  <Text style={styles.sectionHeading}>
-                    GREETING MESSAGES ({allGreetings.length})
-                  </Text>
-                  {allGreetings.map((greet, idx) => (
-                    <GreetingAccordionItem
-                      key={idx}
-                      title={idx === 0 ? 'Greeting #1 (Default)' : `Alternate Greeting #${idx}`}
-                      greet={greet}
-                      isExpanded={expandedGreetingIdx === idx}
-                      onToggle={() => {
-                        LayoutAnimation.configureNext({
-                          duration: 220,
-                          update: { type: LayoutAnimation.Types.easeInEaseOut },
-                          create: {
-                            type: LayoutAnimation.Types.easeInEaseOut,
-                            property: LayoutAnimation.Properties.opacity,
-                          },
-                          delete: {
-                            type: LayoutAnimation.Types.easeInEaseOut,
-                            property: LayoutAnimation.Properties.opacity,
-                          },
-                        });
-                        setExpandedGreetingIdx(prev => (prev === idx ? null : idx));
-                      }}
-                      onStartWithGreeting={() => {
-                        const customDetail = {
-                          ...(detail || (character as any)),
-                          firstMessage: greet,
-                        };
-                        animateClose(() => onStartChat(character, customDetail));
-                      }}
-                    />
-                  ))}
-                </View>
-              );
-            })()}
+                  {/* Tag Chips Strip */}
+                  <View style={styles.tagChipsWrap}>
+                    {tags.map((t: any, i: number) => {
+                      const name = typeof t === 'string' ? t : t.name;
+                      const clean = name.replace(/^[^\w\s]+/, '').trim();
+                      return (
+                        <TouchableOpacity
+                          key={i}
+                          style={styles.overviewTagChip}
+                          onPress={() => onTagClick?.(clean)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.overviewTagText}>#{clean}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
 
-            {activeTab === 'gallery' && (() => {
-              const galleryItems: { url: string; label: string }[] = [];
-              const seen = new Set<string>();
-              const addGalleryUrl = (rawUrl?: string, label?: string) => {
-                const cleaned = (rawUrl || '').trim().replace(/&amp;/g, '&');
-                if (!cleaned || !/^https?:\/\//i.test(cleaned) || seen.has(cleaned)) return;
-                seen.add(cleaned);
-                galleryItems.push({ url: cleaned, label: label || `Description Media ${galleryItems.length}` });
-              };
+                  {/* Section Header: DESCRIPTION */}
+                  <Text style={styles.sectionHeading}>DESCRIPTION</Text>
 
-              addGalleryUrl(avatarUrl, 'Original Avatar HD');
-
-              const descHtml = detail?.descriptionHtml || '';
-              const htmlImgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
-              let m: RegExpExecArray | null;
-              while ((m = htmlImgRegex.exec(descHtml)) !== null) {
-                addGalleryUrl(m[1], `Artwork #${galleryItems.length}`);
-              }
-              const mdImgRegex = /!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/gi;
-              while ((m = mdImgRegex.exec(descHtml)) !== null) {
-                addGalleryUrl(m[2], m[1]?.trim() || `Artwork #${galleryItems.length}`);
-              }
-
-              return (
-                <View style={styles.overviewSection}>
-                  <Text style={styles.sectionHeading}>
-                    CHARACTER MEDIA GALLERY ({galleryItems.length})
-                  </Text>
-                  <View style={styles.galleryGrid}>
-                    {galleryItems.map((item, idx) => (
-                      <TouchableOpacity
-                        key={`${item.url}-${idx}`}
-                        style={styles.galleryCard}
-                        onPress={() => setGalleryLightboxUrl(item.url)}
-                        activeOpacity={0.8}
-                      >
-                        <Image source={{ uri: item.url }} style={styles.galleryImage} />
-                        <View style={styles.galleryOverlay}>
-                          <Text style={styles.galleryLabel} numberOfLines={1}>{item.label}</Text>
-                          <Download size={13} color="#d4ff00" />
-                        </View>
-                      </TouchableOpacity>
-                    ))}
+                  {/* Inner Card with Rich HTML/Markdown Description (left/center/right text & inline images) */}
+                  <View style={styles.descCard}>
+                    <RichHtmlRenderer content={overviewHtml} />
                   </View>
                 </View>
-              );
-            })()}
+              )}
+
+              {activeTab === 'scenario' && (
+                <View style={styles.overviewSection}>
+                  <Text style={styles.sectionHeading}>ROLEPLAY SCENARIO & CONTEXT</Text>
+                  <View style={styles.descCard}>
+                    <RichHtmlRenderer content={scenarioText} />
+                  </View>
+                </View>
+              )}
+
+              {activeTab === 'greeting' && (() => {
+                const defaultGreet =
+                  detail?.firstMessage ||
+                  ('firstMessage' in character ? character.firstMessage : '') ||
+                  `*${character.name} looks over at you quietly.* "Hello there. What brings you here?"`;
+                const allGreetings = [defaultGreet, ...alternateGreetings];
+
+                return (
+                  <View style={styles.overviewSection}>
+                    <Text style={styles.sectionHeading}>
+                      GREETING MESSAGES ({allGreetings.length})
+                    </Text>
+                    {allGreetings.map((greet, idx) => (
+                      <GreetingAccordionItem
+                        key={idx}
+                        title={idx === 0 ? 'Greeting #1 (Default)' : `Alternate Greeting #${idx}`}
+                        greet={greet}
+                        isExpanded={expandedGreetingIdx === idx}
+                        palette={palette}
+                        styles={styles}
+                        onToggle={() => {
+                          LayoutAnimation.configureNext({
+                            duration: 220,
+                            update: { type: LayoutAnimation.Types.easeInEaseOut },
+                            create: {
+                              type: LayoutAnimation.Types.easeInEaseOut,
+                              property: LayoutAnimation.Properties.opacity,
+                            },
+                            delete: {
+                              type: LayoutAnimation.Types.easeInEaseOut,
+                              property: LayoutAnimation.Properties.opacity,
+                            },
+                          });
+                          setExpandedGreetingIdx(prev => (prev === idx ? null : idx));
+                        }}
+                        onStartWithGreeting={() => {
+                          const customDetail = {
+                            ...(detail || (character as any)),
+                            firstMessage: greet,
+                          };
+                          animateClose(() => onStartChat(character, customDetail));
+                        }}
+                      />
+                    ))}
+                  </View>
+                );
+              })()}
+
+              {activeTab === 'gallery' && (() => {
+                const galleryItems: { url: string; label: string }[] = [];
+                const seen = new Set<string>();
+                const addGalleryUrl = (rawUrl?: string, label?: string) => {
+                  const cleaned = (rawUrl || '').trim().replace(/&amp;/g, '&');
+                  if (!cleaned || !/^https?:\/\//i.test(cleaned) || seen.has(cleaned)) return;
+                  seen.add(cleaned);
+                  galleryItems.push({ url: cleaned, label: label || `Description Media ${galleryItems.length}` });
+                };
+
+                addGalleryUrl(avatarUrl, 'Original Avatar HD');
+
+                const descHtml = detail?.descriptionHtml || '';
+                const htmlImgRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+                let m: RegExpExecArray | null;
+                while ((m = htmlImgRegex.exec(descHtml)) !== null) {
+                  addGalleryUrl(m[1], `Artwork #${galleryItems.length}`);
+                }
+                const mdImgRegex = /!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/gi;
+                while ((m = mdImgRegex.exec(descHtml)) !== null) {
+                  addGalleryUrl(m[2], m[1]?.trim() || `Artwork #${galleryItems.length}`);
+                }
+
+                return (
+                  <View style={styles.overviewSection}>
+                    <Text style={styles.sectionHeading}>
+                      CHARACTER MEDIA GALLERY ({galleryItems.length})
+                    </Text>
+                    <View style={styles.galleryGrid}>
+                      {galleryItems.map((item, idx) => (
+                        <TouchableOpacity
+                          key={`${item.url}-${idx}`}
+                          style={styles.galleryCard}
+                          onPress={() => setGalleryLightboxUrl(item.url)}
+                          activeOpacity={0.8}
+                        >
+                          <Image source={{ uri: item.url }} style={styles.galleryImage} />
+                          <View style={styles.galleryOverlay}>
+                            <Text style={styles.galleryLabel} numberOfLines={1}>{item.label}</Text>
+                            <Download size={13} color={palette.accent} />
+                          </View>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                );
+              })()}
             </Animated.View>
           </ScrollView>
 
@@ -687,7 +806,7 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
                 }}
                 activeOpacity={0.8}
               >
-                <Download size={14} color="#d4ff00" style={{ marginRight: 6 }} />
+                <Download size={14} color={palette.accent} style={{ marginRight: 6 }} />
                 <Text style={styles.footerImportBtnText}>Import Card</Text>
               </TouchableOpacity>
             </View>
@@ -756,26 +875,24 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (palette: ThemePalette) => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(6, 8, 14, 0.72)',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 14,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
     ...GLASS.backdrop,
   },
   modalCard: {
     width: '100%',
-    maxWidth: 520,
-    maxHeight: '94%',
+    maxWidth: 540,
     backgroundColor: GLASS.bgModal,
-    borderRadius: 22,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: GLASS.borderBright,
     overflow: 'hidden',
-    flex: 1,
     ...GLASS.backdropStrong,
     ...GLASS.shadow,
   },
@@ -801,7 +918,7 @@ const styles = StyleSheet.create({
   heroFallbackText: {
     fontSize: 48,
     fontWeight: '800',
-    color: '#d4ff00',
+    color: palette.accent,
   },
   heroTopScrim: {
     position: 'absolute',
@@ -819,7 +936,7 @@ const styles = StyleSheet.create({
   },
   heroTopLeftBadges: {
     position: 'absolute',
-    top: 12,
+    top: 22,
     left: 14,
     zIndex: 10,
     flexDirection: 'row',
@@ -855,7 +972,7 @@ const styles = StyleSheet.create({
   },
   heroTopRightButtons: {
     position: 'absolute',
-    top: 12,
+    top: 22,
     right: 14,
     zIndex: 10,
     flexDirection: 'row',
@@ -865,11 +982,11 @@ const styles = StyleSheet.create({
   heroChatBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     paddingHorizontal: 12,
     paddingVertical: 5.5,
     borderRadius: 20,
-    shadowColor: '#d4ff00',
+    shadowColor: palette.accent,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.5,
     shadowRadius: 4,
@@ -934,8 +1051,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   heroFollowBtnActive: {
-    backgroundColor: '#d4ff00',
-    borderColor: '#d4ff00',
+    backgroundColor: palette.accent,
+    borderColor: palette.accent,
   },
   heroFollowBtnText: {
     fontSize: 9.5,
@@ -976,7 +1093,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   tabBtnActive: {
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
   },
   tabBtnText: {
     fontSize: 11,
@@ -995,7 +1112,7 @@ const styles = StyleSheet.create({
   datacatLinkText: {
     fontSize: 10,
     fontWeight: '600',
-    color: '#d4ff00',
+    color: palette.accent,
   },
   modalContent: {
     flex: 1,
@@ -1098,14 +1215,14 @@ const styles = StyleSheet.create({
   altGreetTitle: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#d4ff00',
+    color: palette.accent,
   },
   altChatBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(212, 255, 0, 0.12)',
+    backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
     borderWidth: 1,
-    borderColor: 'rgba(212, 255, 0, 0.35)',
+    borderColor: `rgba(${palette.accentRgb}, 0.35)`,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
@@ -1113,7 +1230,7 @@ const styles = StyleSheet.create({
   altChatBtnText: {
     fontSize: 9.5,
     fontWeight: '700',
-    color: '#d4ff00',
+    color: palette.accent,
   },
   galleryGrid: {
     flexDirection: 'row',
@@ -1202,10 +1319,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#d4ff00',
+    backgroundColor: palette.accent,
     paddingVertical: 9.5,
     borderRadius: 10,
-    shadowColor: '#d4ff00',
+    shadowColor: palette.accent,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.5,
     shadowRadius: 5,

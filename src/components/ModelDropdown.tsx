@@ -13,7 +13,6 @@ import {
   Animated,
 } from 'react-native';
 import { ChevronDown, Check, Cpu } from 'lucide-react-native';
-import { colors } from '../theme/colors';
 import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
 import { runToggleAnimation } from '../theme/animations';
@@ -37,7 +36,7 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
   options,
   onSelect,
 }) => {
-  const { skin } = useTheme();
+  const { palette, skin } = useTheme();
   const [open, setOpen] = useState(false);
   const [anim] = useState(() => new Animated.Value(0));
 
@@ -62,12 +61,16 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
   return (
     <View style={styles.container}>
       <TouchableOpacity
-        style={[styles.trigger, open && styles.triggerOpen]}
+        style={[
+          styles.trigger,
+          open && styles.triggerOpen,
+          open && { borderColor: palette.accent },
+        ]}
         onPress={() => setOpen(prev => !prev)}
         activeOpacity={0.85}
       >
         <View style={styles.triggerLeft}>
-          <Cpu size={14} color={colors.lime} style={{ marginRight: 8 }} />
+          <Cpu size={14} color={palette.accent} style={{ marginRight: 8 }} />
           <Text style={styles.triggerText} numberOfLines={1}>
             {activeLabel}
           </Text>
@@ -107,7 +110,7 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
               >
                 Default Engine Model ({defaultModelLabel})
               </Text>
-              {!selectedModel && <Check size={14} color={colors.lime} />}
+              {!selectedModel && <Check size={14} color={palette.accent} />}
             </TouchableOpacity>
 
             {options.map(opt => {
@@ -128,7 +131,7 @@ export const ModelDropdown: React.FC<ModelDropdownProps> = ({
                   >
                     {opt.label}
                   </Text>
-                  {isSelected && <Check size={14} color={colors.lime} />}
+                  {isSelected && <Check size={14} color={palette.accent} />}
                 </TouchableOpacity>
               );
             })}
@@ -158,7 +161,6 @@ const styles = StyleSheet.create({
     ...GLASS.backdrop,
   },
   triggerOpen: {
-    borderColor: colors.lime,
     backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   triggerLeft: {

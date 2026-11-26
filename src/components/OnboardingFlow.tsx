@@ -25,6 +25,7 @@ import {
   RefreshCw,
   Zap,
   Check,
+  Bell,
   MessageSquare,
   Compass,
   User,
@@ -41,6 +42,7 @@ import { NekoLogoSvg } from './NekoLogoSvg';
 import { NekoSwitch } from './NekoSwitch';
 import { storageService } from '../services/storageService';
 import { aiProviderService } from '../services/aiProviderService';
+import { requestNotificationPermissionsAsync } from '../services/notificationService';
 
 interface OnboardingFlowProps {
   settings: AppSettings;
@@ -112,11 +114,15 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
   const [testingPing, setTestingPing] = useState(false);
   const [pingStatus, setPingStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
-  // Step 4: Passcode State (Optional)
+  // Step 4: Passcode & Smart Notifications State (Optional)
   const [enablePasscode, setEnablePasscode] = useState<boolean>(!!settings.passcodeEnabled);
   const [pinInput, setPinInput] = useState<string>(settings.passcodePin || '');
   const [pinConfirm, setPinConfirm] = useState<string>(settings.passcodePin || '');
   const [pinError, setPinError] = useState<string>('');
+  const [notifyMissYou, setNotifyMissYou] = useState<boolean>(!!settings.notifyMissYou);
+  const [notifyAlgorithmPicks, setNotifyAlgorithmPicks] = useState<boolean>(!!settings.notifyAlgorithmPicks);
+  const [notifyFollowedCreators, setNotifyFollowedCreators] = useState<boolean>(!!settings.notifyFollowedCreators);
+  const [notifyDiscreetMode, setNotifyDiscreetMode] = useState<boolean>(settings.notifyDiscreetMode !== false);
 
   // Step 5: Tour Slide State
   const [tourIdx, setTourIdx] = useState<number>(0);
@@ -330,6 +336,10 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       }
     }
     setPinError('');
+    const wantsNotifs = !skip && (notifyMissYou || notifyAlgorithmPicks || notifyFollowedCreators);
+    if (wantsNotifs) {
+      await requestNotificationPermissionsAsync();
+    }
     const updated: AppSettings = {
       ...settings,
       uiLanguage: selectedLang,
@@ -337,9 +347,14 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
       languageCustomPrompt: langPromptText.trim() || getDefaultLanguagePrompt(selectedLang),
       passcodeEnabled: skip ? false : enablePasscode,
       passcodePin: skip || !enablePasscode ? '' : pinInput,
+      notifyMissYou: skip ? false : notifyMissYou,
+      notifyAlgorithmPicks: skip ? false : notifyAlgorithmPicks,
+      notifyFollowedCreators: skip ? false : notifyFollowedCreators,
+      notifyDiscreetMode,
+      notifyQuietHours: settings.notifyQuietHours !== false,
     };
-    await storageService.saveSettings(updated);
-    onUpdateSettings(updated);
+    const saved = await storageService.saveSettings(updated);
+    onUpdateSettings(saved);
     animateToStep(4, 1);
   };
 
@@ -928,6 +943,65 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                     ) : null}
                   </View>
                 )}
+              </View>
+
+              <View style={[styles.cardBox, { marginTop: 12, gap: 12 }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Bell size={16} color={palette.accent} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cardBoxTitle}>Smart Notifications (Optional)</Text>
+                    <Text style={styles.cardBoxSub}>
+                      Local-only reminders — zero background battery drain
+                    </Text>
+                  </View>
+                </View>
+
+                {[
+                  {
+                    label: 'Companion Check-ins',
+                    sub: '"Hey, I miss you" from your active characters',
+                    val: notifyMissYou,
+                    set: setNotifyMissYou,
+                  },
+                  {
+                    label: 'Algorithm Picks',
+                    sub: 'New companions matched to your favorite vibes',
+                    val: notifyAlgorithmPicks,
+                    set: setNotifyAlgorithmPicks,
+                  },
+                  {
+                    label: 'Followed Creator Drops',
+                    sub: 'Alerts when creators you follow post a new card',
+                    val: notifyFollowedCreators,
+                    set: setNotifyFollowedCreators,
+                  },
+                  {
+                    label: 'Discreet Lock-Screen Mode',
+                    sub: 'Hides character names & skips NSFW previews',
+                    val: notifyDiscreetMode,
+                    set: setNotifyDiscreetMode,
+                  },
+                ].map(item => (
+                  <View
+                    key={item.label}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: '#e2e8f0', fontSize: 12.5, fontWeight: '700' }}>
+                        {item.label}
+                      </Text>
+                      <Text style={{ color: '#94a3b8', fontSize: 11, marginTop: 1 }}>
+                        {item.sub}
+                      </Text>
+                    </View>
+                    <NekoSwitch value={item.val} onValueChange={item.set} />
+                  </View>
+                ))}
               </View>
 
               <View style={styles.btnPairRow}>

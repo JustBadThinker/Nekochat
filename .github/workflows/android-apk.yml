@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release tag (e.g. v0.2.3)'
+        description: 'Release tag (e.g. v0.2.4)'
         required: false
-        default: 'v0.2.3'
+        default: 'v0.2.4'
 
 permissions:
   contents: write
@@ -100,23 +100,20 @@ jobs:
             - **`arm64-v8a` (Recommended):** Stripped build for modern 64-bit Android phones — much smaller download and faster install.
             - **`universal`:** Larger fallback build if `arm64-v8a` doesn't install (older 32-bit devices or emulators).
 
-            ### ✨ What's New in v0.2.3
-            - **Redesigned UI Theme Packs (Classic, Material You & HIG)**:
-              - **Classic**: Removed the `(Janitor)` suffix and rebuilt the skin with neutral charcoal surfaces (`#141414` / `#1E1E1E` / `#262626`), docked bottom navigation (`classic_bar`), and stacked roleplay message blocks without neon glow clutter.
-              - **Material You (M3)** & **HIG (iPhone)**: Added authentic dark tonal surfaces (`#111318` / `#1D2026` for M3; true `#000000` / `#1C1C1E` / `#2C2C2E` with `0.5px` hairlines for HIG) wired consistently across all screens, cards, modals, and scrims.
-              - Removed leftover hardcoded dark-navy hexes and `modalFooter` backgrounds so every sheet blends seamlessly with the active skin.
-            - **Smooth Native-Driver UI Transitions**:
-              - Added reusable `SmoothTransition` primitives (`AnimatedCollapsible`, `AnimatedChevron`, `AnimatedTabTransition`, `AnimatedEnterRow`) driven by `skin.animation` on the native UI thread.
-              - Wired smooth transitions into My Chats date-group chevrons & Grid/Accordion switches, ChatRoom Thinking Inspector / Advanced controls / Syntax color pickers, Settings Advanced Sampling accordion, User Studio tabs, Discover mode/tab switches, and Character Modal greeting accordions.
-            - **Smoother Chat Opening, Scrolling & Keyboard Ergonomics**:
-              - Switched initial chat rendering to the **last 6 messages** with a WhatsApp-style fade-in at the bottom, anchored `maintainVisibleContentPosition` for `Tap to see earlier messages`, and a smoother down-arrow scroll-to-bottom action.
-              - Fixed Android keyboard auto-scroll bounce and added dynamic bottom safe-area inset padding across modals (`CapabilityMatrixModal`, `CreatorProfileModal`, `StoryViewerModal`, and bottom docks) so controls never hide behind Android's native navigation bar.
-            - **Android GPU Performance, Web Parity & Smaller APK Footprint**:
-              - Removed live native `BlurView` / `BlurTargetView` passes on Android across the navigation dock, Discover feed, root app wrapper, and chat wallpapers (switching Android wallpaper blur to lightweight static `<Image blurRadius>`), and aligned Chrome/Edge web preview opacities 1:1 with Android native.
-              - Added Android ABI-split release builds (`arm64-v8a` + `universal`), uninstalled unused `mysql2`, removed ~9.5 MB of unreferenced sprite assets, and installed `expo-system-ui` to keep root dark backgrounds clean on launch.
-            - **Beginner-Friendly Chat Controls & Verification**:
-              - Added plain-English helper hints in Chat Controls, grouped power-user options (`Prefill`, `Forbidden words`, `Attached Lorebooks`) under a collapsible **Advanced controls** toggle, and refined the `Easy` Token Optimizer description.
-              - Updated Expo SDK 58 patch versions (`expo` `~58.0.26`, `expo-file-system` `~58.0.14`) to pass `expo-doctor` (`20/20`), with `0` TypeScript/ESLint errors and all `62/62` unit tests passing.
+            ### ✨ What's New in v0.2.4
+            - **4 Overhauled UI Skins**:
+              - **Neko Bento**: Tactile `3.5px` keycap lips, asymmetric Bento Settings grid, balanced contrast bubbles, and a **2×2 Bento Macro-Pad Composer** with a detached Send/Expand stack.
+              - **HIG Liquid Glass**: Live Android 12+ GPU blur (`BlurTargetView` + `dimezisBlurViewSdk31Plus`), specular rims, and feathered SVG radial backdrop glows.
+              - **Material 3 Expressive**: Dynamic accent-tinted tonal surfaces (`getM3TonalContainer`), Android 16 segmented list geometry, thick expressive sliders, morphing switches, and floating pill composer.
+              - **Classic**: Floating frosted glass pills (`+` · `Message here...` · `Send`) that smoothly liquid-merge on focus with frosted chat chrome & bubbles.
+            - **100% On-Device Taste Engine (`Settings → For You & Taste`)**:
+              - Split local recommendation brain (`tasteEngineLogic.ts` & `tasteEngineService.ts`) with 14-day exponential decay, real Datacat tag-ID catalog fetching, neutral RPG gender-bias fix, Character Focus overrides (`Auto` / `Female` / `Male` / `All`), pinned & muted tags, RP token-depth matching, quick-skip tracking, pause toggle, and reset controls.
+            - **One-Tap In-Chat Persona Switcher**:
+              - Compact `[Avatar] [Name + Preview] [Check]` persona list inside Chat Room styled faithfully for all 4 skins.
+            - **Direct GitHub Releases Update Checker**:
+              - Check for new releases and `.apk` assets directly from **Settings → About NekoChat**.
+            - **Sheet Ergonomics, Notifications & Security Hardening**:
+              - Fixed native Android/iOS scroll hijacking in `BottomSheetModal`, converted `CommunityCharacterModal` & `CreatorProfileModal` into slide-up sheets, added Smart Notifications & Creator Drops inbox, migrated Image Gen API keys into `expo-secure-store`, enforced `http(s)` URL allowlisting, and verified `85/85` passing unit tests.
           generate_release_notes: true
           files: ${{ steps.apk.outputs.files }}
           draft: false

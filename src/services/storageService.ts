@@ -21,6 +21,10 @@ import {
   stripAndPersistProviderSecrets,
 } from './secureKeyStore';
 import {
+  hydratePasscodeFromSettings,
+  preparePasscodeSettingsForSave,
+} from './passcodeService';
+import {
   Character,
   ChatMessage,
   Conversation,
@@ -102,9 +106,16 @@ const DEFAULT_SETTINGS: AppSettings = {
   hasCompletedOnboarding: false,
   passcodeEnabled: false,
   passcodePin: '',
+  passcodeHash: '',
+  passcodeAutoLockSec: 60,
   backendUrl: '',
   enableExternalCatalogs: true,
   autoMemoryEnabled: false,
+  notifyMissYou: false,
+  notifyAlgorithmPicks: false,
+  notifyFollowedCreators: false,
+  notifyDiscreetMode: true,
+  notifyQuietHours: true,
 };
 
 const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {
@@ -936,7 +947,16 @@ export const storageService = {
   async getSettings(): Promise<AppSettings> {
     try {
       const data = await AsyncStorage.getItem(KEYS.APP_SETTINGS);
-      return data ? { ...DEFAULT_SETTINGS, ...JSON.parse(data) } : DEFAULT_SETTINGS;
+      const merged: AppSettings = data ? { ...DEFAULT_SETTINGS, ...JSON.parse(data) } : DEFAULT_SETTINGS;
+      const driver = await getDefaultSecureStoreDriver();
+      const { hydrated, asyncStorageCopy, needsPersist } = await hydratePasscodeFromSettings(
+        merged,
+        driver
+      );
+      if (needsPersist) {
+        await AsyncStorage.setItem(KEYS.APP_SETTINGS, JSON.stringify(asyncStorageCopy)).catch(() => {});
+      }
+      return hydrated;
     } catch {
       return DEFAULT_SETTINGS;
     }
@@ -944,9 +964,11 @@ export const storageService = {
 
   async saveSettings(settings: Partial<AppSettings>): Promise<AppSettings> {
     const current = await this.getSettings();
-    const updated = { ...current, ...settings };
-    await AsyncStorage.setItem(KEYS.APP_SETTINGS, JSON.stringify(updated));
-    return updated;
+    const merged: AppSettings = { ...current, ...settings };
+    const driver = await getDefaultSecureStoreDriver();
+    const { hydrated, asyncStorageCopy } = await preparePasscodeSettingsForSave(merged, driver);
+    await AsyncStorage.setItem(KEYS.APP_SETTINGS, JSON.stringify(asyncStorageCopy));
+    return hydrated;
   },
 
   async getProviderConfig(): Promise<ProviderConfig> {

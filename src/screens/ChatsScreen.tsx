@@ -37,10 +37,16 @@ import {
   Square,
   ArrowUpDown,
   Eye,
+  Bell,
 } from 'lucide-react-native';
 import { Character, Persona, Conversation } from '../types';
 import { useTheme } from '../theme/ThemeContext';
-import { getCardSurfaceStyle } from '../theme/skins';
+import {
+  UiSkinTokens,
+  getCardSurfaceStyle,
+  getScreenBg,
+  getSubtleSurfaceBg,
+} from '../theme/skins';
 import { runToggleAnimation } from '../theme/animations';
 import { useTranslation } from '../i18n/LanguageContext';
 import { NekoLogoSvg } from '../components/NekoLogoSvg';
@@ -105,7 +111,7 @@ const AccordionAnimatedBody: React.FC<{ isExpanded: boolean; children: React.Rea
         if (finished) setRendered(false);
       });
     }
-  }, [isExpanded, skin.animation]);
+  }, [isExpanded, skin.animation, anim, rendered]);
 
   if (!rendered) return null;
 
@@ -137,7 +143,7 @@ const AccordionAnimatedChevron: React.FC<{ isExpanded: boolean; activeColor: str
 
   useEffect(() => {
     runToggleAnimation(rot, isExpanded, skin.animation);
-  }, [isExpanded, skin.animation]);
+  }, [isExpanded, skin.animation, rot]);
 
   return (
     <Animated.View
@@ -167,6 +173,8 @@ interface ChatsScreenProps {
   onNavigateDiscover: () => void;
   onNavigateStudio?: () => void;
   onScrollDirectionChange?: (visible: boolean) => void;
+  unreadDropsCount?: number;
+  onOpenInbox?: () => void;
 }
 
 let cachedChatsViewMode: 'grid' | 'accordion' | null = null;
@@ -181,6 +189,8 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
   onNavigateDiscover,
   onNavigateStudio,
   onScrollDirectionChange,
+  unreadDropsCount = 0,
+  onOpenInbox,
 }) => {
   const lastScrollYRef = useRef(0);
   const [viewMode, setViewMode] = useState<'grid' | 'accordion'>(cachedChatsViewMode || 'grid');
@@ -216,18 +226,29 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
   }, []);
 
   useEffect(() => {
+    if (trendingCharacters && trendingCharacters.length > 0) {
+      setTrendingList(trendingCharacters);
+    }
+  }, [trendingCharacters]);
+
+  useEffect(() => {
     loadAllConversations();
+  }, [characters]);
+
+  useEffect(() => {
     loadTrayFeed();
-  }, [userPersona, characters]);
+  }, [userPersona?.id]);
 
   const loadTrayFeed = async () => {
-    // 1. Always fetch genuine community 24h trending companions
-    try {
-      const live = await characterService.getTrending24h();
-      if (live && live.length > 0) {
-        setTrendingList(live);
-      }
-    } catch {}
+    // 1. Reuse trendingCharacters passed from App.tsx when available, otherwise fetch live
+    if (!trendingCharacters || trendingCharacters.length === 0) {
+      try {
+        const live = await characterService.getTrending24h();
+        if (live && live.length > 0) {
+          setTrendingList(live);
+        }
+      } catch {}
+    }
 
     // 2. Query algorithmic recommendation engine: if affinity pattern detected (>= 50%), compute Top 3 For You
     try {
@@ -475,10 +496,10 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
 
   const { palette, skin } = useTheme();
   const { t } = useTranslation();
-  const styles = useMemo(() => createStyles(palette), [palette]);
+  const styles = useMemo(() => createStyles(palette, skin), [palette, skin]);
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: skin.screenBg || palette.bgDark }]}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: getScreenBg(palette, skin) }]}>
       <StatusBar style="light" />
 
       {/* Screen Header */}
@@ -491,14 +512,51 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
           </View>
         </View>
 
-        <TouchableOpacity
-          style={styles.discoverBtn}
-          onPress={onNavigateDiscover}
-          activeOpacity={0.8}
-        >
-          <Compass size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
-          <Text style={styles.discoverBtnText}>{t('chats.explore')}</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          {onOpenInbox && (
+            <TouchableOpacity
+              onPress={onOpenInbox}
+              activeOpacity={0.8}
+              accessibilityLabel="Activity and creator drops"
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 18,
+                backgroundColor: GLASS.bgPill,
+                borderWidth: 1,
+                borderColor: unreadDropsCount > 0 ? `rgba(${palette.accentRgb}, 0.5)` : GLASS.border,
+                alignItems: 'center',
+                justifyContent: 'center',
+                position: 'relative',
+              }}
+            >
+              <Bell size={16} color={unreadDropsCount > 0 ? palette.accent : '#FFFFFF'} />
+              {unreadDropsCount > 0 && (
+                <View
+                  style={{
+                    position: 'absolute',
+                    top: 6,
+                    right: 7,
+                    width: 8,
+                    height: 8,
+                    borderRadius: 4,
+                    backgroundColor: palette.accent,
+                    borderWidth: 1.5,
+                    borderColor: getScreenBg(palette, skin),
+                  }}
+                />
+              )}
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.discoverBtn}
+            onPress={onNavigateDiscover}
+            activeOpacity={0.8}
+          >
+            <Compass size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
+            <Text style={styles.discoverBtnText}>{t('chats.explore')}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Main Scroll Content — wait for persisted viewMode on cold start to avoid Grid->Accordion flash */}
@@ -1090,10 +1148,13 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
   );
 };
 
-const createStyles = (palette: ThemePalette) => StyleSheet.create({
+const createStyles = (palette: ThemePalette, skin: UiSkinTokens) => {
+  const screenBg = getScreenBg(palette, skin);
+  const subtleSurfaceBg = getSubtleSurfaceBg(palette, skin);
+  return StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: palette.bgDark,
+    backgroundColor: screenBg,
   },
   header: {
     flexDirection: 'row',
@@ -1239,7 +1300,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 14,
-    backgroundColor: '#161922',
+    backgroundColor: subtleSurfaceBg,
     marginRight: 14,
   },
   groupInfo: {
@@ -1627,3 +1688,4 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
   },
 });
+};

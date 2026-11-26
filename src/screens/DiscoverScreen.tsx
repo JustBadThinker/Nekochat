@@ -49,6 +49,7 @@ import {
   MessageCircle,
 } from 'lucide-react-native';
 import { matchAlgorithmService } from '../services/matchAlgorithmService';
+import { tasteEngineService } from '../services/tasteEngineService';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView, BlurTargetView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -67,7 +68,7 @@ import {
 import { storageService } from '../services/storageService';
 import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
-import { getSurfaceBg } from '../theme/skins';
+import { UiSkinTokens, getScreenBg, getSubtleSurfaceBg, getSurfaceBg } from '../theme/skins';
 import { AnimatedTabTransition } from '../components/SmoothTransition';
 import { useTranslation } from '../i18n/LanguageContext';
 import { ThemePalette } from '../theme/colors';
@@ -104,7 +105,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
 }) => {
   const { palette, skin } = useTheme();
   const { t } = useTranslation();
-  const styles = useMemo(() => createStyles(palette), [palette]);
+  const styles = useMemo(() => createStyles(palette, skin), [palette, skin]);
   const insets = useSafeAreaInsets();
   // Top Primary Switcher: Catalog Grid / For You / Match Mode
   const [topMode, setTopMode] = useState<TopMode>('catalog');
@@ -220,6 +221,8 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   const [forYouReadMoreDetail, setForYouReadMoreDetail] = useState<CommunityCharacterDetail | null>(null);
   const [loadingForYouDetail, setLoadingForYouDetail] = useState(false);
   const forYouDwellTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const forYouActiveCardRef = useRef<{ item: CommunityCharacter; shownAt: number } | null>(null);
+  const forYouEngagedIdsRef = useRef<Set<string>>(new Set());
   const forYouViewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
   const onForYouViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
     if (forYouDwellTimerRef.current) {
@@ -227,14 +230,29 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       forYouDwellTimerRef.current = null;
     }
     const active = viewableItems[0]?.item as CommunityCharacter | undefined;
-    if (!active) return;
+    const prev = forYouActiveCardRef.current;
+    if (
+      prev &&
+      (!active || active.id !== prev.item.id) &&
+      Date.now() - prev.shownAt < 1500 &&
+      !forYouEngagedIdsRef.current.has(prev.item.id)
+    ) {
+      matchAlgorithmService.recordInteraction(prev.item, 'quick_skip').catch(() => { });
+    }
+    if (!active) {
+      forYouActiveCardRef.current = null;
+      return;
+    }
+    forYouActiveCardRef.current = { item: active, shownAt: Date.now() };
     matchAlgorithmService.recordInteraction(active, 'view').catch(() => { });
     forYouDwellTimerRef.current = setTimeout(() => {
+      forYouEngagedIdsRef.current.add(active.id);
       matchAlgorithmService.recordInteraction(active, 'dwell').catch(() => { });
     }, 3500);
   }).current;
 
   const handleOpenForYouReadMore = async (item: CommunityCharacter) => {
+    forYouEngagedIdsRef.current.add(item.id);
     matchAlgorithmService.recordInteraction(item, 'dwell').catch(() => { });
     setForYouReadMoreChar(item);
     setForYouReadMoreDetail(null);
@@ -269,8 +287,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
     }
   }, [topMode, onMatchModeChange]);
 
-  // Sub-tabs in Catalog Grid (MySQL DB pill hidden while testing memory with JanitorAI & Chub.ai)
-  const showMysqlSource = false;
+  // Sub-tabs in Catalog Grid
   const [activeTab, setActiveTab] = useState<DiscoverTab>('community');
   const [enableExternalCatalogs] = useState<boolean>(true);
   const [catalogSource, setCatalogSource] = useState<CatalogSource>('janitor');
@@ -289,7 +306,6 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   const [communitySort, setCommunitySort] = useState<CatalogSort>('trending');
   const [librarySubTab, setLibrarySubTab] = useState<'latest' | 'liked' | 'creators'>('latest');
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [tagsExpanded, setTagsExpanded] = useState<boolean>(false);
 
   // Search & Filter State
   const [communitySearchInput, setCommunitySearchInput] = useState<string>('');
@@ -305,8 +321,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
     avatarUrl?: string;
   } | null>(null);
   const [scopeDropdownOpen, setScopeDropdownOpen] = useState<boolean>(false);
-  const [scopeMenuPos, setScopeMenuPos] = useState<{ top: number; left: number }>({ top: 220, left: 12 });
-  const scopeBtnRef = useRef<any>(null);
+  const [scopeMenuPos] = useState<{ top: number; left: number }>({ top: 220, left: 12 });
 
   // Social State
   const [followedCreators, setFollowedCreators] = useState<string[]>([]);
@@ -568,6 +583,10 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
       setSelectedCategoryValues(['all']);
       return;
     }
+    const wasSelected = selectedCategoryValues.includes(val);
+    if (!wasSelected) {
+      tasteEngineService.recordTagInterest(val).catch(() => { });
+    }
     setSelectedCategoryValues(prev => {
       const withoutAll = prev.filter(c => c !== 'all');
       if (withoutAll.includes(val)) {
@@ -580,7 +599,11 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   };
 
   const handleSearchSubmit = () => {
-    setCommunitySearch(communitySearchInput.trim());
+    const trimmed = communitySearchInput.trim();
+    if (trimmed) {
+      tasteEngineService.recordSearchQuery(trimmed).catch(() => { });
+    }
+    setCommunitySearch(trimmed);
   };
 
   const handleToggleFollowCreator = async (creatorName: string) => {
@@ -1157,7 +1180,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: skin.screenBg || palette.bgDark }]}>
+    <View style={[styles.container, { backgroundColor: getScreenBg(palette, skin) }]}>
       {/* ── Toast Notification ── */}
       {toastMessage && (
         <View style={styles.toastBox}>
@@ -1370,6 +1393,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                                 borderColor: isLiked ? palette.accent : 'rgba(255,255,255,0.18)',
                               }}
                               onPress={() => {
+                                forYouEngagedIdsRef.current.add(item.id);
                                 handleToggleCommunityFavorite(item);
                                 matchAlgorithmService.recordUserLike(item, !isLiked).catch(() => { });
                               }}
@@ -1398,6 +1422,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                                 borderColor: 'rgba(255,255,255,0.18)',
                               }}
                               onPress={() => {
+                                forYouEngagedIdsRef.current.add(item.id);
                                 matchAlgorithmService.recordInteraction(item, 'chat').catch(() => { });
                                 onStartChat(item);
                               }}
@@ -1558,7 +1583,7 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
                   right: 0,
                   zIndex: 45,
                   overflow: showCatalogDropdown ? 'visible' : 'hidden',
-                  backgroundColor: 'rgba(12, 14, 20, 0.92)',
+                  backgroundColor: getScreenBg(palette, skin),
                   borderBottomWidth: 1,
                   borderBottomColor: 'rgba(255, 255, 255, 0.08)',
                   transform: [
@@ -2195,10 +2220,14 @@ export const DiscoverScreen: React.FC<DiscoverScreenProps> = ({
   );
 };
 
-const createStyles = (palette: ThemePalette) => StyleSheet.create({
+const createStyles = (palette: ThemePalette, skin: UiSkinTokens) => {
+  const screenBg = getScreenBg(palette, skin);
+  const surfaceBg = getSurfaceBg(palette, skin);
+  const subtleSurfaceBg = getSubtleSurfaceBg(palette, skin);
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: screenBg,
   },
   toastBox: {
     position: 'absolute',
@@ -2232,7 +2261,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: Platform.OS === 'ios' ? 44 : 10,
     paddingBottom: 8,
-    backgroundColor: '#000000',
+    backgroundColor: screenBg,
     borderBottomWidth: 1,
     borderBottomColor: '#121622',
   },
@@ -2245,7 +2274,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#0f121d',
+    backgroundColor: surfaceBg,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
     alignItems: 'center',
@@ -2308,7 +2337,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   topPrimaryPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0f121d',
+    backgroundColor: surfaceBg,
     borderRadius: 22,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -2350,7 +2379,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   viewSwitcher: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0f121d',
+    backgroundColor: surfaceBg,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -2402,7 +2431,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   sourcePillSwitch: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0f121d',
+    backgroundColor: surfaceBg,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -2428,7 +2457,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 7,
-    backgroundColor: '#0f121d',
+    backgroundColor: surfaceBg,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
     alignItems: 'center',
@@ -2444,7 +2473,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     paddingVertical: 8,
-    backgroundColor: palette.bgDark,
+    backgroundColor: screenBg,
     borderBottomWidth: 1,
     borderBottomColor: '#161a26',
     zIndex: 20,
@@ -2452,7 +2481,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   stickyFilterToggleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0f121d',
+    backgroundColor: surfaceBg,
     paddingHorizontal: 10,
     height: 36,
     borderRadius: 12,
@@ -2489,7 +2518,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     padding: 3,
   },
   enterBadge: {
-    backgroundColor: '#161a26',
+    backgroundColor: subtleSurfaceBg,
     borderWidth: 1,
     borderColor: '#22293d',
     paddingHorizontal: 5,
@@ -2554,7 +2583,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 7,
-    backgroundColor: '#0f121d',
+    backgroundColor: surfaceBg,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
     alignItems: 'center',
@@ -2787,7 +2816,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 40,
     paddingHorizontal: 20,
-    backgroundColor: '#0f121d',
+    backgroundColor: surfaceBg,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -2896,7 +2925,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#161a26',
+    backgroundColor: subtleSurfaceBg,
     borderWidth: 1,
     borderColor: `rgba(${palette.accentRgb}, 0.3)`,
     marginRight: 10,
@@ -2922,7 +2951,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 10,
-    backgroundColor: '#161a26',
+    backgroundColor: subtleSurfaceBg,
     borderWidth: 1,
     borderColor: '#22293d',
   },
@@ -2944,7 +2973,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     marginTop: 8,
   },
   viewBotsBtn: {
-    backgroundColor: '#161a26',
+    backgroundColor: subtleSurfaceBg,
     borderRadius: 10,
     paddingVertical: 7,
     alignItems: 'center',
@@ -2956,3 +2985,4 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     color: palette.accent,
   },
 });
+};

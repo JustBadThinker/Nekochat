@@ -130,3 +130,33 @@ test('12 & 13 & 14. Exported reports exclude API keys and all 22 categories are 
   const exported = exportSafeCapabilityReport(data);
   assert.ok(!exported.includes('sk-secret-do-not-leak'));
 });
+
+test('15. Soft refusals, multilingual refusals, empty meta-acks, and <think> tags are classified accurately', () => {
+  const softPivot = classifyTestOutcome({
+    httpStatus: 200,
+    responseText: "Let's keep this PG and appropriate — instead, I can write a softer scene holding hands.",
+  });
+  assert.equal(softPivot.outcome, 'model_refusal');
+  assert.equal(softPivot.modelStatus, 'unsupported');
+
+  const idRefusal = classifyTestOutcome({
+    httpStatus: 200,
+    responseText: 'Maaf, saya tidak bisa memenuhi permintaan konten tersebut.',
+  });
+  assert.equal(idRefusal.outcome, 'model_refusal');
+  assert.equal(idRefusal.modelStatus, 'unsupported');
+
+  const emptyMeta = classifyTestOutcome({
+    httpStatus: 200,
+    responseText: 'Sure, I can do that!',
+  });
+  assert.equal(emptyMeta.outcome, 'inconclusive');
+  assert.equal(emptyMeta.modelStatus, 'unknown');
+
+  const withThinkRefusal = classifyTestOutcome({
+    httpStatus: 200,
+    responseText: '<think>Let me check policy carefully.</think>I have to decline that scenario.',
+  });
+  assert.equal(withThinkRefusal.outcome, 'model_refusal');
+  assert.equal(withThinkRefusal.modelStatus, 'unsupported');
+});

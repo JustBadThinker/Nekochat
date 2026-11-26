@@ -13,9 +13,10 @@ import {
   TextInput,
   StyleSheet,
   ActivityIndicator,
-  Linking,
   Animated,
   Easing,
+  PanResponder,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -40,13 +41,16 @@ import { storageService } from '../services/storageService';
 import { RichHtmlRenderer } from './RichHtmlRenderer';
 import { CommunityCharacterCard } from './CommunityCharacterCard';
 import { GLASS } from '../theme/glassTheme';
+import { useTheme } from '../theme/ThemeContext';
+import { getM3TonalContainer } from '../theme/skins';
+import { runSheetCloseAnimation, runSheetOpenAnimation } from '../theme/animations';
+import { openSafeExternalUrl } from '../utils/safeExternalUrl';
 
 const NEKO_THEME = {
   bg: '#0B0D14',
   surface: GLASS.bg,
   surfaceElevated: GLASS.bgSubtle,
   border: GLASS.border,
-  accent: '#d4ff00',
   text: '#F9FAFB',
   textSecondary: '#D1D5DB',
   textMuted: '#9CA3AF',
@@ -93,8 +97,17 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
   onImport,
   onFollowChange,
 }) => {
-  const colors = NEKO_THEME;
+  const { palette, skin } = useTheme();
+  const colors = useMemo(
+    () => ({
+      ...NEKO_THEME,
+      bg: palette.bgDark,
+      accent: palette.accent,
+    }),
+    [palette]
+  );
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const [profile, setProfile] = useState<CommunityCreatorProfile | null>(null);
   const [characters, setCharacters] = useState<CommunityCharacter[]>([]);
   const [loadingProfile, setLoadingProfile] = useState(false);
@@ -131,7 +144,7 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
           follows.some(f => f.replace(/^@+/, '').toLowerCase() === cleanHandle.toLowerCase())
         );
         setFavoriteIds(favs.map(f => f.id));
-      } catch {}
+      } catch { }
 
       try {
         const effectiveSource: 'janitor' | 'chub' = catalogSource === 'chub' ? 'chub' : 'janitor';
@@ -202,37 +215,113 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
 
   const [bioExpanded, setBioExpanded] = useState(false);
   const bioExpandAnim = useRef(new Animated.Value(0)).current;
-  const pageAnim = useRef(new Animated.Value(0)).current;
+  const [internalVisible, setInternalVisible] = useState(visible);
+  const [sheetTranslateY] = useState(() => new Animated.Value(480));
+  const [backdropOpacity] = useState(() => new Animated.Value(0));
+  const onCloseRef = useRef(onClose);
   const isClosingRef = useRef(false);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     setBioExpanded(false);
     bioExpandAnim.setValue(0);
-    if (visible) {
+    if (visible && cleanHandle) {
       isClosingRef.current = false;
-      pageAnim.setValue(0);
-      Animated.timing(pageAnim, {
-        toValue: 1,
-        duration: 260,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start();
+      setInternalVisible(true);
+      runSheetOpenAnimation(sheetTranslateY, backdropOpacity, skin.animation);
+    } else if (internalVisible && !isClosingRef.current) {
+      isClosingRef.current = true;
+      runSheetCloseAnimation(sheetTranslateY, backdropOpacity, skin.animation, () => {
+        isClosingRef.current = false;
+        setInternalVisible(false);
+      });
     }
-  }, [cleanHandle, visible, bioExpandAnim, pageAnim]);
+  }, [cleanHandle, visible, internalVisible, bioExpandAnim, sheetTranslateY, backdropOpacity, skin.animation]);
 
   const animateClose = () => {
     if (isClosingRef.current) return;
     isClosingRef.current = true;
-    Animated.timing(pageAnim, {
-      toValue: 0,
-      duration: 210,
-      easing: Easing.in(Easing.cubic),
-      useNativeDriver: true,
-    }).start(() => {
+    runSheetCloseAnimation(sheetTranslateY, backdropOpacity, skin.animation, () => {
       isClosingRef.current = false;
-      onClose();
+      setInternalVisible(false);
+      onCloseRef.current();
     });
   };
+
+  const animateCloseRef = useRef(animateClose);
+  useEffect(() => {
+    animateCloseRef.current = animateClose;
+  });
+
+  const [dragHandlePanResponder] = useState(() =>
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 4,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderMove: (_, gesture) => {
+        if (gesture.dy > 0) {
+          sheetTranslateY.setValue(gesture.dy);
+        }
+      },
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dy > 100 || (gesture.dy > 45 && gesture.vy > 0.6)) {
+          animateCloseRef.current();
+        } else {
+          Animated.spring(sheetTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            friction: 8,
+            tension: 120,
+          }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(sheetTranslateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          friction: 8,
+          tension: 120,
+        }).start();
+      },
+    })
+  );
+
+  const [topBarPanResponder] = useState(() =>
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        gesture.dy > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.3,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderMove: (_, gesture) => {
+        if (gesture.dy > 0) {
+          sheetTranslateY.setValue(gesture.dy);
+        }
+      },
+      onPanResponderRelease: (_, gesture) => {
+        if (gesture.dy > 100 || (gesture.dy > 45 && gesture.vy > 0.6)) {
+          animateCloseRef.current();
+        } else {
+          Animated.spring(sheetTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            friction: 8,
+            tension: 120,
+          }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(sheetTranslateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          friction: 8,
+          tension: 120,
+        }).start();
+      },
+    })
+  );
 
   const toggleBioExpanded = () => {
     const next = !bioExpanded;
@@ -245,7 +334,7 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
     }).start();
   };
 
-  if (!visible || !cleanHandle) return null;
+  if (!internalVisible || !cleanHandle) return null;
 
   const avatarUri = profile?.avatarUrl || initialAvatarUrl || characters[0]?.avatarUrl;
   const memberSince = formatMemberSince(profile?.profileCreatedAt);
@@ -259,396 +348,449 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
 
   return (
     <Modal
-      visible={visible}
+      visible={internalVisible}
       animationType="none"
       transparent
       onRequestClose={animateClose}
     >
-      <Animated.View
-        style={[
-          styles.container,
-          {
-            backgroundColor: colors.bg,
-            opacity: pageAnim,
-            transform: [
-              {
-                translateX: pageAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [340, 0],
-                }),
-              },
-            ],
-          },
-        ]}
-      >
-        {/* Top Bar (NekoChat Theme) */}
-        <View
+      <Animated.View style={[styles.overlay, { opacity: backdropOpacity }]}>
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={animateClose}
+        />
+        <Animated.View
           style={[
-            styles.topBar,
-            { backgroundColor: colors.surface, borderBottomColor: colors.border },
+            styles.container,
+            {
+              width: skin.id === 'ios' ? '96%' : '100%',
+              maxWidth: 620,
+              height: Math.min(windowHeight - insets.top - 12, Math.round(windowHeight * 0.92)),
+              borderTopLeftRadius: skin.sheetRadius,
+              borderTopRightRadius: skin.sheetRadius,
+              borderBottomLeftRadius: skin.id === 'ios' ? 32 : 0,
+              borderBottomRightRadius: skin.id === 'ios' ? 32 : 0,
+              overflow: 'hidden',
+              backgroundColor:
+                skin.id === 'material' ? getM3TonalContainer(palette, 'canvas') : colors.bg,
+              ...(skin.id === 'ios'
+                ? {
+                  marginBottom: Math.max(8, insets.bottom),
+                  borderWidth: 1,
+                  borderColor: 'rgba(255, 255, 255, 0.24)',
+                  borderTopColor: 'rgba(255, 255, 255, 0.50)',
+                }
+                : null),
+              transform: [{ translateY: sheetTranslateY }],
+            },
           ]}
         >
-          <TouchableOpacity
-            onPress={animateClose}
-            style={[styles.iconBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
-            activeOpacity={0.75}
-          >
-            <ArrowLeft size={18} color={colors.text} />
-          </TouchableOpacity>
-
-          <View style={styles.topTitleWrap}>
-            <View style={styles.topTitleRow}>
-              <Text style={[styles.topTitle, { color: colors.text }]} numberOfLines={1}>
-                @{profile?.userName || cleanHandle}
-              </Text>
-              {profile?.creatorVerified && (
-                <BadgeCheck size={16} color={colors.accent} style={{ marginLeft: 5 }} />
-              )}
+          {/* Swipe-Down Top Grabber + Header Zone */}
+          <View {...topBarPanResponder.panHandlers}>
+            <View {...dragHandlePanResponder.panHandlers} style={styles.dragZone}>
+              <View
+                style={[
+                  styles.dragPill,
+                  {
+                    width: skin.grabberWidth || 38,
+                    height: skin.grabberHeight || 4,
+                    borderRadius: (skin.grabberHeight || 4) / 2,
+                  },
+                ]}
+              />
             </View>
-            <Text style={[styles.topSubtitle, { color: colors.textMuted }]}>
-              {catalogSource === 'janitor' ? 'JanitorAI Creator' : 'Chub.ai Creator'}
-            </Text>
-          </View>
-
-          <TouchableOpacity
-            onPress={handleToggleFollow}
-            style={[
-              styles.followBtn,
-              {
-                backgroundColor: isFollowing ? colors.accent : colors.surfaceElevated,
-                borderColor: isFollowing ? colors.accent : colors.border,
-              },
-            ]}
-            activeOpacity={0.8}
-          >
-            {isFollowing ? (
-              <UserCheck size={14} color={colors.bg} />
-            ) : (
-              <UserPlus size={14} color={colors.text} />
-            )}
-            <Text
+            <View
               style={[
-                styles.followBtnText,
-                { color: isFollowing ? colors.bg : colors.text },
+                styles.topBar,
+                {
+                  backgroundColor:
+                    skin.id === 'material' ? getM3TonalContainer(palette, 'low') : colors.surface,
+                  borderBottomColor: colors.border,
+                  borderBottomWidth: skin.id === 'material' ? 0 : 1,
+                },
               ]}
             >
-              {isFollowing ? 'Following' : 'Follow'}
-            </Text>
-          </TouchableOpacity>
+              <TouchableOpacity
+                onPress={animateClose}
+                style={[styles.iconBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
+                activeOpacity={0.75}
+              >
+                <ArrowLeft size={18} color={colors.text} />
+              </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={onClose}
-            style={[styles.iconBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, marginLeft: 8 }]}
-            activeOpacity={0.75}
-          >
-            <X size={18} color={colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(36, insets.bottom + 24) }]}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Profile Hero Card (Default NekoChat Theme) */}
-          <View
-            style={[
-              styles.profileCard,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
-          >
-            <View style={styles.profileHeaderRow}>
-              {avatarUri ? (
-                <Image
-                  source={{ uri: avatarUri }}
-                  style={[styles.avatar, { borderColor: colors.accent }]}
-                />
-              ) : (
-                <View
-                  style={[
-                    styles.avatar,
-                    styles.avatarFallback,
-                    { backgroundColor: colors.surfaceElevated, borderColor: colors.accent },
-                  ]}
-                >
-                  <Text style={[styles.avatarInitial, { color: colors.accent }]}>
-                    {cleanHandle.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-              )}
-
-              <View style={styles.profileMetaCol}>
-                <View style={styles.handleRow}>
-                  <Text style={[styles.handleText, { color: colors.text }]} numberOfLines={1}>
+              <View style={styles.topTitleWrap}>
+                <View style={styles.topTitleRow}>
+                  <Text style={[styles.topTitle, { color: colors.text }]} numberOfLines={1}>
                     @{profile?.userName || cleanHandle}
                   </Text>
                   {profile?.creatorVerified && (
-                    <BadgeCheck size={16} color={colors.accent} style={{ marginLeft: 6 }} />
+                    <BadgeCheck size={16} color={colors.accent} style={{ marginLeft: 5 }} />
                   )}
                 </View>
+                <Text style={[styles.topSubtitle, { color: colors.textMuted }]}>
+                  {catalogSource === 'janitor' ? 'JanitorAI Creator' : 'Chub.ai Creator'}
+                </Text>
+              </View>
 
-                {memberSince ? (
-                  <View style={styles.memberRow}>
-                    <Calendar size={12} color={colors.textMuted} style={{ marginRight: 5 }} />
-                    <Text style={[styles.memberText, { color: colors.textMuted }]}>
-                      Member since {memberSince}
+              <TouchableOpacity
+                onPress={handleToggleFollow}
+                style={[
+                  styles.followBtn,
+                  {
+                    backgroundColor: isFollowing ? colors.accent : colors.surfaceElevated,
+                    borderColor: isFollowing ? colors.accent : colors.border,
+                  },
+                ]}
+                activeOpacity={0.8}
+              >
+                {isFollowing ? (
+                  <UserCheck size={14} color={colors.bg} />
+                ) : (
+                  <UserPlus size={14} color={colors.text} />
+                )}
+                <Text
+                  style={[
+                    styles.followBtnText,
+                    { color: isFollowing ? colors.bg : colors.text },
+                  ]}
+                >
+                  {isFollowing ? 'Following' : 'Follow'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={animateClose}
+                style={[styles.iconBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border, marginLeft: 8 }]}
+                activeOpacity={0.75}
+              >
+                <X size={18} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(36, insets.bottom + 24) }]}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Profile Hero Card (Default NekoChat Theme) */}
+            <View
+              style={[
+                styles.profileCard,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+            >
+              <View style={styles.profileHeaderRow}>
+                {avatarUri ? (
+                  <Image
+                    source={{ uri: avatarUri }}
+                    style={[styles.avatar, { borderColor: colors.accent }]}
+                  />
+                ) : (
+                  <View
+                    style={[
+                      styles.avatar,
+                      styles.avatarFallback,
+                      { backgroundColor: colors.surfaceElevated, borderColor: colors.accent },
+                    ]}
+                  >
+                    <Text style={[styles.avatarInitial, { color: colors.accent }]}>
+                      {cleanHandle.charAt(0).toUpperCase()}
                     </Text>
                   </View>
-                ) : null}
+                )}
 
-                <View style={styles.statsRow}>
-                  <View style={[styles.statPill, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
-                    <Users size={12} color={colors.accent} style={{ marginRight: 4 }} />
-                    <Text style={[styles.statText, { color: colors.text }]}>
-                      {formatCompactNumber(profile?.followersCount)} followers
+                <View style={styles.profileMetaCol}>
+                  <View style={styles.handleRow}>
+                    <Text style={[styles.handleText, { color: colors.text }]} numberOfLines={1}>
+                      @{profile?.userName || cleanHandle}
                     </Text>
+                    {profile?.creatorVerified && (
+                      <BadgeCheck size={16} color={colors.accent} style={{ marginLeft: 6 }} />
+                    )}
                   </View>
 
-                  <View style={[styles.statPill, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
-                    <Sparkles size={12} color={colors.accent} style={{ marginRight: 4 }} />
-                    <Text style={[styles.statText, { color: colors.text }]}>
-                      {botCountDisplay} bots
-                    </Text>
-                  </View>
-
-                  {Number(profile?.totalChats || 0) > 0 && (
-                    <View style={[styles.statPill, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
-                      <MessageSquare size={12} color={colors.accent} style={{ marginRight: 4 }} />
-                      <Text style={[styles.statText, { color: colors.text }]}>
-                        {formatCompactNumber(profile?.totalChats)} chats
+                  {memberSince ? (
+                    <View style={styles.memberRow}>
+                      <Calendar size={12} color={colors.textMuted} style={{ marginRight: 5 }} />
+                      <Text style={[styles.memberText, { color: colors.textMuted }]}>
+                        Member since {memberSince}
                       </Text>
                     </View>
-                  )}
+                  ) : null}
+
+                  <View style={styles.statsRow}>
+                    <View style={[styles.statPill, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
+                      <Users size={12} color={colors.accent} style={{ marginRight: 4 }} />
+                      <Text style={[styles.statText, { color: colors.text }]}>
+                        {formatCompactNumber(profile?.followersCount)} followers
+                      </Text>
+                    </View>
+
+                    <View style={[styles.statPill, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
+                      <Sparkles size={12} color={colors.accent} style={{ marginRight: 4 }} />
+                      <Text style={[styles.statText, { color: colors.text }]}>
+                        {botCountDisplay} bots
+                      </Text>
+                    </View>
+
+                    {Number(profile?.totalChats || 0) > 0 && (
+                      <View style={[styles.statPill, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
+                        <MessageSquare size={12} color={colors.accent} style={{ marginRight: 4 }} />
+                        <Text style={[styles.statText, { color: colors.text }]}>
+                          {formatCompactNumber(profile?.totalChats)} chats
+                        </Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
               </View>
+
+              {/* Top Tags */}
+              {Array.isArray(profile?.topTags) && profile!.topTags!.length > 0 && (
+                <View style={styles.topTagsRow}>
+                  {profile!.topTags!.slice(0, 8).map((t, idx) => {
+                    const label = typeof t === 'string' ? t : t?.name || t?.slug || '';
+                    if (!label) return null;
+                    return (
+                      <View
+                        key={`${label}-${idx}`}
+                        style={[
+                          styles.tagBadge,
+                          { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                        ]}
+                      >
+                        <Text style={[styles.tagText, { color: colors.textSecondary }]}>
+                          #{label.replace(/^#/, '')}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              {profile?.profileUrl ? (
+                <TouchableOpacity
+                  style={styles.externalLinkRow}
+                  onPress={() => {
+                    void openSafeExternalUrl(profile.profileUrl);
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <ExternalLink size={12} color={colors.accent} style={{ marginRight: 5 }} />
+                  <Text style={[styles.externalLinkText, { color: colors.accent }]}>
+                    Open Original Profile
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
 
-            {/* Top Tags */}
-            {Array.isArray(profile?.topTags) && profile!.topTags!.length > 0 && (
-              <View style={styles.topTagsRow}>
-                {profile!.topTags!.slice(0, 8).map((t, idx) => {
-                  const label = typeof t === 'string' ? t : t?.name || t?.slug || '';
-                  if (!label) return null;
-                  return (
-                    <View
-                      key={`${label}-${idx}`}
-                      style={[
-                        styles.tagBadge,
-                        { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-                      ]}
+            {/* Creator HTML Profile / Bio Card (NekoChat Theme + RichHtmlRenderer) */}
+            {loadingProfile && !hasHtmlBio ? (
+              <View
+                style={[
+                  styles.bioCard,
+                  { backgroundColor: colors.surface, borderColor: colors.border, alignItems: 'center', paddingVertical: 18 },
+                ]}
+              >
+                <ActivityIndicator size="small" color={colors.accent} />
+                <Text style={[styles.loadingText, { color: colors.textMuted, marginTop: 8 }]}>
+                  Loading creator profile...
+                </Text>
+              </View>
+            ) : hasHtmlBio ? (
+              <View
+                style={[
+                  styles.bioCard,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}
+              >
+                <Text style={[styles.sectionLabel, { color: colors.accent }]}>
+                  CREATOR PROFILE
+                </Text>
+                {isBioLong ? (
+                  <>
+                    <Animated.View
+                      style={{
+                        overflow: 'hidden',
+                        maxHeight: bioExpandAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [96, 1200],
+                        }),
+                      }}
                     >
-                      <Text style={[styles.tagText, { color: colors.textSecondary }]}>
-                        #{label.replace(/^#/, '')}
+                      {bioExpanded ? (
+                        <RichHtmlRenderer
+                          content={profile!.aboutMeHtml!}
+                          baseColor={colors.textSecondary}
+                        />
+                      ) : (
+                        <Text style={{ color: colors.textSecondary, fontSize: 13.5, lineHeight: 20 }}>
+                          {plainBioText.slice(0, 200).trimEnd()}…
+                        </Text>
+                      )}
+                    </Animated.View>
+                    <TouchableOpacity
+                      onPress={toggleBioExpanded}
+                      activeOpacity={0.75}
+                      style={{ alignSelf: 'flex-start', marginTop: 8, paddingVertical: 4 }}
+                    >
+                      <Text style={{ color: colors.accent, fontSize: 12.5, fontWeight: '700' }}>
+                        {bioExpanded ? 'Show less ▲' : 'Read more ▼'}
                       </Text>
-                    </View>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <RichHtmlRenderer
+                    content={profile!.aboutMeHtml!}
+                    baseColor={colors.textSecondary}
+                  />
+                )}
+              </View>
+            ) : null}
+
+            {/* Creator Characters Section */}
+            <View style={styles.charsHeader}>
+              <Text style={[styles.sectionLabel, { color: colors.accent, marginBottom: 0 }]}>
+                CHARACTERS ({filteredCharacters.length})
+              </Text>
+
+              <View style={styles.sortRow}>
+                {(['latest', 'popular', 'trending'] as const).map(s => {
+                  const active = sortMode === s;
+                  return (
+                    <TouchableOpacity
+                      key={s}
+                      onPress={() => setSortMode(s)}
+                      style={[
+                        styles.sortChip,
+                        {
+                          backgroundColor: active ? colors.accent : colors.surface,
+                          borderColor: active ? colors.accent : colors.border,
+                        },
+                      ]}
+                      activeOpacity={0.75}
+                    >
+                      <Text
+                        style={[
+                          styles.sortChipText,
+                          { color: active ? colors.bg : colors.textSecondary },
+                        ]}
+                      >
+                        {s.charAt(0).toUpperCase() + s.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
                   );
                 })}
               </View>
-            )}
+            </View>
 
-            {profile?.profileUrl ? (
-              <TouchableOpacity
-                style={styles.externalLinkRow}
-                onPress={() => Linking.openURL(profile.profileUrl!)}
-                activeOpacity={0.75}
-              >
-                <ExternalLink size={12} color={colors.accent} style={{ marginRight: 5 }} />
-                <Text style={[styles.externalLinkText, { color: colors.accent }]}>
-                  Open Original Profile
+            {/* Search within creator's bots */}
+            <View
+              style={[
+                styles.searchBox,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+            >
+              <Search size={15} color={colors.textMuted} style={{ marginRight: 8 }} />
+              <TextInput
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder={`Search @${cleanHandle}'s characters...`}
+                placeholderTextColor={colors.textMuted}
+                style={[styles.searchInput, { color: colors.text }]}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <X size={15} color={colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {loadingChars ? (
+              <View style={styles.charsLoading}>
+                <ActivityIndicator size="small" color={colors.accent} />
+                <Text style={[styles.loadingText, { color: colors.textMuted, marginTop: 8 }]}>
+                  Loading companions by @{cleanHandle}...
                 </Text>
-              </TouchableOpacity>
-            ) : null}
-          </View>
-
-          {/* Creator HTML Profile / Bio Card (NekoChat Theme + RichHtmlRenderer) */}
-          {loadingProfile && !hasHtmlBio ? (
-            <View
-              style={[
-                styles.bioCard,
-                { backgroundColor: colors.surface, borderColor: colors.border, alignItems: 'center', paddingVertical: 18 },
-              ]}
-            >
-              <ActivityIndicator size="small" color={colors.accent} />
-              <Text style={[styles.loadingText, { color: colors.textMuted, marginTop: 8 }]}>
-                Loading creator profile...
-              </Text>
-            </View>
-          ) : hasHtmlBio ? (
-            <View
-              style={[
-                styles.bioCard,
-                { backgroundColor: colors.surface, borderColor: colors.border },
-              ]}
-            >
-              <Text style={[styles.sectionLabel, { color: colors.accent }]}>
-                CREATOR PROFILE
-              </Text>
-              {isBioLong ? (
-                <>
-                  <Animated.View
-                    style={{
-                      overflow: 'hidden',
-                      maxHeight: bioExpandAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [96, 1200],
-                      }),
-                    }}
-                  >
-                    {bioExpanded ? (
-                      <RichHtmlRenderer
-                        content={profile!.aboutMeHtml!}
-                        baseColor={colors.textSecondary}
-                      />
-                    ) : (
-                      <Text style={{ color: colors.textSecondary, fontSize: 13.5, lineHeight: 20 }}>
-                        {plainBioText.slice(0, 200).trimEnd()}…
-                      </Text>
-                    )}
-                  </Animated.View>
-                  <TouchableOpacity
-                    onPress={toggleBioExpanded}
-                    activeOpacity={0.75}
-                    style={{ alignSelf: 'flex-start', marginTop: 8, paddingVertical: 4 }}
-                  >
-                    <Text style={{ color: colors.accent, fontSize: 12.5, fontWeight: '700' }}>
-                      {bioExpanded ? 'Show less ▲' : 'Read more ▼'}
-                    </Text>
-                  </TouchableOpacity>
-                </>
-              ) : (
-                <RichHtmlRenderer
-                  content={profile!.aboutMeHtml!}
-                  baseColor={colors.textSecondary}
-                />
-              )}
-            </View>
-          ) : null}
-
-          {/* Creator Characters Section */}
-          <View style={styles.charsHeader}>
-            <Text style={[styles.sectionLabel, { color: colors.accent, marginBottom: 0 }]}>
-              CHARACTERS ({filteredCharacters.length})
-            </Text>
-
-            <View style={styles.sortRow}>
-              {(['latest', 'popular', 'trending'] as const).map(s => {
-                const active = sortMode === s;
-                return (
-                  <TouchableOpacity
-                    key={s}
-                    onPress={() => setSortMode(s)}
-                    style={[
-                      styles.sortChip,
-                      {
-                        backgroundColor: active ? colors.accent : colors.surface,
-                        borderColor: active ? colors.accent : colors.border,
-                      },
-                    ]}
-                    activeOpacity={0.75}
-                  >
-                    <Text
-                      style={[
-                        styles.sortChipText,
-                        { color: active ? colors.bg : colors.textSecondary },
-                      ]}
-                    >
-                      {s.charAt(0).toUpperCase() + s.slice(1)}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-
-          {/* Search within creator's bots */}
-          <View
-            style={[
-              styles.searchBox,
-              { backgroundColor: colors.surface, borderColor: colors.border },
-            ]}
-          >
-            <Search size={15} color={colors.textMuted} style={{ marginRight: 8 }} />
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder={`Search @${cleanHandle}'s characters...`}
-              placeholderTextColor={colors.textMuted}
-              style={[styles.searchInput, { color: colors.text }]}
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <X size={15} color={colors.textMuted} />
-              </TouchableOpacity>
+              </View>
+            ) : filteredCharacters.length === 0 ? (
+              <View
+                style={[
+                  styles.emptyCard,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}
+              >
+                <Sparkles size={24} color={colors.textMuted} style={{ marginBottom: 8 }} />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                  No Public Characters Found
+                </Text>
+                <Text style={[styles.emptyDesc, { color: colors.textMuted }]}>
+                  {searchQuery
+                    ? `No characters matching "${searchQuery}".`
+                    : `@${cleanHandle} has no matching public companions in this catalog.`}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.grid}>
+                {Array.from(
+                  { length: Math.ceil(filteredCharacters.length / 2) },
+                  (_, rowIdx) => {
+                    const pair = filteredCharacters.slice(rowIdx * 2, rowIdx * 2 + 2);
+                    return (
+                      <View key={`row-${rowIdx}`} style={styles.gridRow}>
+                        {pair.map(char => (
+                          <CommunityCharacterCard
+                            key={char.id}
+                            character={char}
+                            onSelect={c => onSelectCharacter(c)}
+                            onStartChat={c => onStartChat(c)}
+                            onImport={onImport}
+                            isBookmarked={favoriteIds.includes(char.id)}
+                            onToggleBookmark={() => handleToggleFavorite(char)}
+                            isFollowingCreator={isFollowing}
+                            onToggleFollowCreator={handleToggleFollow}
+                          />
+                        ))}
+                        {pair.length === 1 && <View style={styles.gridSpacer} />}
+                      </View>
+                    );
+                  }
+                )}
+              </View>
             )}
-          </View>
-
-          {loadingChars ? (
-            <View style={styles.charsLoading}>
-              <ActivityIndicator size="small" color={colors.accent} />
-              <Text style={[styles.loadingText, { color: colors.textMuted, marginTop: 8 }]}>
-                Loading companions by @{cleanHandle}...
-              </Text>
-            </View>
-          ) : filteredCharacters.length === 0 ? (
-            <View
-              style={[
-                styles.emptyCard,
-                { backgroundColor: colors.surface, borderColor: colors.border },
-              ]}
-            >
-              <Sparkles size={24} color={colors.textMuted} style={{ marginBottom: 8 }} />
-              <Text style={[styles.emptyTitle, { color: colors.text }]}>
-                No Public Characters Found
-              </Text>
-              <Text style={[styles.emptyDesc, { color: colors.textMuted }]}>
-                {searchQuery
-                  ? `No characters matching "${searchQuery}".`
-                  : `@${cleanHandle} has no matching public companions in this catalog.`}
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.grid}>
-              {Array.from(
-                { length: Math.ceil(filteredCharacters.length / 2) },
-                (_, rowIdx) => {
-                  const pair = filteredCharacters.slice(rowIdx * 2, rowIdx * 2 + 2);
-                  return (
-                    <View key={`row-${rowIdx}`} style={styles.gridRow}>
-                      {pair.map(char => (
-                        <CommunityCharacterCard
-                          key={char.id}
-                          character={char}
-                          onSelect={c => onSelectCharacter(c)}
-                          onStartChat={c => onStartChat(c)}
-                          onImport={onImport}
-                          isBookmarked={favoriteIds.includes(char.id)}
-                          onToggleBookmark={() => handleToggleFavorite(char)}
-                          isFollowingCreator={isFollowing}
-                          onToggleFollowCreator={handleToggleFollow}
-                        />
-                      ))}
-                      {pair.length === 1 && <View style={styles.gridSpacer} />}
-                    </View>
-                  );
-                }
-              )}
-            </View>
-          )}
-        </ScrollView>
+          </ScrollView>
+        </Animated.View>
       </Animated.View>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  overlay: {
     flex: 1,
+    backgroundColor: 'rgba(6, 8, 14, 0.72)',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  container: {
+    width: '100%',
+  },
+  dragZone: {
+    width: '100%',
+    paddingTop: 10,
+    paddingBottom: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dragPill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.32)',
   },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
-    paddingTop: 14,
+    paddingTop: 8,
     paddingBottom: 12,
     borderBottomWidth: 1,
     ...GLASS.backdrop,

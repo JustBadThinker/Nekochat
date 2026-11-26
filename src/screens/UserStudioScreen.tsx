@@ -25,7 +25,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
-import { getCardSurfaceStyle, getScreenBg } from '../theme/skins';
+import { UiSkinTokens, getCardSurfaceStyle, getScreenBg } from '../theme/skins';
 import { useTranslation } from '../i18n/LanguageContext';
 import { BottomSheetModal } from '../components/BottomSheetModal';
 import { AnimatedTabTransition } from '../components/SmoothTransition';
@@ -47,7 +47,7 @@ import {
   BookOpen,
   HelpCircle,
 } from 'lucide-react-native';
-import { Character, CharacterScenario, Persona, ContentRating, Lorebook, LorebookEntry } from '../types';
+import { Character, Persona, Lorebook, LorebookEntry } from '../types';
 import { storageService } from '../services/storageService';
 import { characterImportService } from '../services/characterImportService';
 import { parseJanitorLorebookJson } from '../services/lorebookService';
@@ -71,29 +71,17 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
 }) => {
   const lastScrollYRef = useRef(0);
   const { palette, skin } = useTheme();
-  const styles = useMemo(() => createStyles(palette), [palette]);
+  const styles = useMemo(() => createStyles(palette, skin), [palette, skin]);
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<'cards' | 'personas' | 'lorebooks'>('cards');
   const [userCharacters, setUserCharacters] = useState<Character[]>([]);
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [lorebooks, setLorebooks] = useState<Lorebook[]>([]);
   const [helpLorebookVisible, setHelpLorebookVisible] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
 
   // Character Modal State
   const [charModalVisible, setCharModalVisible] = useState(false);
   const [creatorDraftChar, setCreatorDraftChar] = useState<Character | null>(null);
-  const [editingCharId, setEditingCharId] = useState<string | null>(null);
-  const [charName, setCharName] = useState('');
-  const [charTagline, setCharTagline] = useState('');
-  const [charAvatar, setCharAvatar] = useState('');
-  const [charPersonality, setCharPersonality] = useState('');
-  const [charScenario, setCharScenario] = useState('');
-  const [charFirstMessage, setCharFirstMessage] = useState('');
-  const [charTags, setCharTags] = useState('Anime, Roleplay');
-  const [charRating, setCharRating] = useState<ContentRating>('SFW');
-  const [charScenarios, setCharScenarios] = useState<CharacterScenario[]>([]);
-  const [charAlternateGreetings, setCharAlternateGreetings] = useState<string[]>([]);
 
   // Persona Modal State
   const [personaModalVisible, setPersonaModalVisible] = useState(false);
@@ -123,8 +111,6 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
   const [lbEntries, setLbEntries] = useState<LorebookEntry[]>([]);
 
   // File Upload Helper
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [uploadTarget, setUploadTarget] = useState<'char' | 'persona'>('char');
   const [isUploading, setIsUploading] = useState(false);
 
   // Character Import Modal State
@@ -136,15 +122,6 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
   const [importError, setImportError] = useState<string | null>(null);
 
   const applyImportedCardData = (data: any) => {
-    setCharName(data.name);
-    setCharTagline(data.subtitle || data.shortDescription || 'Roleplay Companion');
-    setCharAvatar(data.avatarUrl || ANIME_DEFAULT_FALLBACK);
-    setCharPersonality(data.personality);
-    setCharScenario(data.background);
-    setCharFirstMessage(data.firstMessage);
-    setCharTags((data.tags || []).join(', '));
-    setCharRating(data.contentRating);
-    setEditingCharId(null);
     setCreatorDraftChar({
       id: '',
       name: data.name || '',
@@ -259,7 +236,6 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
   };
 
   const loadData = async () => {
-    setIsLoading(true);
     try {
       const chars = await storageService.getUserCharacters();
       setUserCharacters(chars);
@@ -267,9 +243,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
       setPersonas(pers);
       const lbs = await storageService.getLorebooks();
       setLorebooks(lbs);
-    } finally {
-      setIsLoading(false);
-    }
+    } catch {}
   };
 
   useEffect(() => {
@@ -277,8 +251,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
   }, []);
 
   // --- Image Upload Handler (Web File Input + Native Expo ImagePicker) ---
-  const handleTriggerUpload = async (target: 'char' | 'persona') => {
-    setUploadTarget(target);
+  const handleTriggerUpload = async (_target: 'char' | 'persona') => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       const input = document.createElement('input');
       input.type = 'file';
@@ -289,11 +262,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
           setIsUploading(true);
           try {
             const compressed = await compressImageFile(file, 320);
-            if (target === 'char') {
-              setCharAvatar(compressed);
-            } else {
-              setPersonaAvatar(compressed);
-            }
+            setPersonaAvatar(compressed);
           } catch {
             alert('Failed to process image');
           } finally {
@@ -322,11 +291,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
       if (!result.canceled && result.assets?.[0]) {
         const asset = result.assets[0];
         const uri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
-        if (target === 'char') {
-          setCharAvatar(uri);
-        } else {
-          setPersonaAvatar(uri);
-        }
+        setPersonaAvatar(uri);
       }
     } catch (err) {
       console.warn('Image picker error:', err);
@@ -338,111 +303,13 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
 
   // --- Character Modal Handlers ---
   const handleOpenCreateChar = () => {
-    setEditingCharId(null);
-    setCharName('');
-    setCharTagline('');
-    setCharAvatar(ANIME_DEFAULT_FALLBACK);
-    setCharPersonality('');
-    setCharScenario('');
-    setCharFirstMessage('');
-    setCharTags('Anime, Roleplay');
-    setCharRating('SFW');
-    setCharScenarios([]);
-    setCharAlternateGreetings([]);
     setCreatorDraftChar(null);
     setCharModalVisible(true);
   };
 
   const handleOpenEditChar = (char: Character) => {
     setCreatorDraftChar(char);
-    setEditingCharId(char.id);
-    setCharName(char.name);
-    setCharTagline(char.tagline);
-    setCharAvatar(char.avatar);
-    setCharPersonality(char.personality);
-    setCharScenario(char.scenario);
-    setCharFirstMessage(char.firstMessage);
-    setCharTags(char.tags.join(', '));
-    setCharRating(char.contentRating || 'SFW');
-    setCharScenarios(char.scenarios || []);
-    setCharAlternateGreetings(char.alternateGreetings || []);
     setCharModalVisible(true);
-  };
-
-  const handleAddCharScenario = () => {
-    const newScen: CharacterScenario = {
-      id: `scen_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-      characterId: editingCharId || 'user_char',
-      title: `Scenario #${charScenarios.length + 1}`,
-      description: '',
-      openingMessage: '',
-      scenarioInstructions: '',
-      displayOrder: charScenarios.length,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    setCharScenarios([...charScenarios, newScen]);
-  };
-
-  const handleUpdateCharScenario = (idx: number, field: keyof CharacterScenario, val: string) => {
-    const updated = [...charScenarios];
-    updated[idx] = { ...updated[idx], [field]: val };
-    setCharScenarios(updated);
-  };
-
-  const handleDeleteCharScenario = (idx: number) => {
-    setCharScenarios(charScenarios.filter((_, i) => i !== idx));
-  };
-
-  const handleAddCharGreeting = () => {
-    setCharAlternateGreetings([...charAlternateGreetings, '']);
-  };
-
-  const handleUpdateCharGreeting = (idx: number, val: string) => {
-    const updated = [...charAlternateGreetings];
-    updated[idx] = val;
-    setCharAlternateGreetings(updated);
-  };
-
-  const handleDeleteCharGreeting = (idx: number) => {
-    setCharAlternateGreetings(charAlternateGreetings.filter((_, i) => i !== idx));
-  };
-
-  const handleSaveCharacter = async () => {
-    if (!charName.trim()) {
-      alert('Please provide a character name.');
-      return;
-    }
-
-    const tagList = charTags
-      .split(',')
-      .map(t => t.trim())
-      .filter(Boolean);
-
-    const character: Character = {
-      id: editingCharId || `user_char_${Date.now()}`,
-      name: charName.trim(),
-      tagline: charTagline.trim() || 'Custom AI Companion',
-      description: charScenario.trim() || charPersonality.trim() || 'A user-created anime companion.',
-      avatar: charAvatar.trim() || ANIME_DEFAULT_FALLBACK,
-      personality: charPersonality.trim() || 'Warm, attentive, and responsive.',
-      scenario: charScenario.trim() || 'Meeting in a comfortable room.',
-      firstMessage: charFirstMessage.trim() || `*${charName} looks up and greets you.* "Hello."`,
-      tags: tagList.length > 0 ? tagList : ['Anime', 'Custom'],
-      creator: '@User',
-      isUserCreated: true,
-      contentRating: charRating,
-      scenarios: charScenarios.filter(s => s.title.trim()),
-      alternateGreetings: charAlternateGreetings.filter(g => g.trim()),
-      totalChats: 0,
-      lastActive: Date.now(),
-      isFavorite: false,
-    };
-
-    await storageService.upsertUserCharacter(character);
-    await storageService.upsertCharacter(character);
-    await loadData();
-    setCharModalVisible(false);
   };
 
   const handleDeleteCharacter = async (id: string) => {
@@ -1469,10 +1336,12 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
   );
 };
 
-const createStyles = (palette: ThemePalette) => StyleSheet.create({
+const createStyles = (palette: ThemePalette, skin: UiSkinTokens) => {
+  const screenBg = getScreenBg(palette, skin);
+  return StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: palette.bgDark,
+    backgroundColor: screenBg,
   },
   header: {
     paddingHorizontal: 20,
@@ -1496,7 +1365,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   segmentPill: {
     flexDirection: 'row',
     backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderRadius: 24,
+    borderRadius: skin.pillRadius + 8,
     padding: 3,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -1551,7 +1420,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: skin.buttonRadius,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.2)',
   },
@@ -2070,4 +1939,5 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     marginTop: 4,
   },
 });
+};
 

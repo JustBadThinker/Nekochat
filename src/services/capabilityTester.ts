@@ -14,6 +14,7 @@ import {
   classifyTestOutcome,
   createEmptyMatrixData,
   recordCapabilityResult,
+  stripThinkingForPreview,
 } from './capabilityMatrix';
 
 const STORAGE_KEY_MATRIX = '@nekochat:capability_matrix_v1';
@@ -173,9 +174,23 @@ export async function runCapabilityTests(params: {
     const rawOutcome = await params.transport(params.config, probe.prompt).catch((err: any) => ({
       networkError: true,
       errorMessage: String(err?.message || err || 'Network failure'),
+      responseText: undefined as string | undefined,
     }));
 
     const classified = classifyTestOutcome(rawOutcome);
+    const snippet = stripThinkingForPreview(rawOutcome.responseText).slice(0, 110);
+    const noteText = rawOutcome.errorMessage
+      ? rawOutcome.errorMessage.slice(0, 140)
+      : snippet
+        ? `${
+            classified.outcome === 'model_refusal'
+              ? 'Refused'
+              : classified.outcome === 'inconclusive'
+                ? 'Inconclusive'
+                : 'Reply'
+          }: "${snippet}"`
+        : undefined;
+
     matrix = recordCapabilityResult(matrix, {
       endpointIdentity,
       providerName,
@@ -185,7 +200,7 @@ export async function runCapabilityTests(params: {
       providerStatus: classified.providerStatus,
       evidenceSource: 'direct_test',
       outcome: classified.outcome,
-      notes: rawOutcome.errorMessage ? rawOutcome.errorMessage.slice(0, 140) : undefined,
+      notes: noteText,
       promptId: probe.promptId,
     });
   }

@@ -14,10 +14,10 @@ import {
   Text,
   Image,
   StyleSheet,
-  Linking,
   TextStyle,
 } from 'react-native';
-import { colors } from '../theme/colors';
+import { useTheme } from '../theme/ThemeContext';
+import { openSafeExternalUrl, sanitizeExternalHttpUrl } from '../utils/safeExternalUrl';
 
 export type TextAlignMode = 'left' | 'center' | 'right';
 
@@ -95,7 +95,11 @@ function extractColor(attrs: string): string | undefined {
   return undefined;
 }
 
-function parseInlineSpans(raw: string, inherited: Omit<InlineSpan, 'text'> = {}): InlineSpan[] {
+function parseInlineSpans(
+  raw: string,
+  accentColor: string,
+  inherited: Omit<InlineSpan, 'text'> = {}
+): InlineSpan[] {
   if (!raw) return [];
   const spans: InlineSpan[] = [];
 
@@ -133,9 +137,12 @@ function parseInlineSpans(raw: string, inherited: Omit<InlineSpan, 'text'> = {})
       else if (tag === 's' || tag === 'del' || tag === 'strike') next.strike = true;
       else if (tag === 'a') {
         const hrefMatch = attrs.match(/href\s*=\s*["']?([^"'\s>]+)["']?/i);
-        if (hrefMatch) next.href = hrefMatch[1];
-        next.underline = true;
-        next.color = colors.lime;
+        const safeHref = hrefMatch ? sanitizeExternalHttpUrl(hrefMatch[1]) : null;
+        if (safeHref) {
+          next.href = safeHref;
+          next.underline = true;
+          next.color = accentColor;
+        }
       }
       const col = extractColor(attrs);
       if (col) next.color = col;
@@ -151,12 +158,11 @@ function parseInlineSpans(raw: string, inherited: Omit<InlineSpan, 'text'> = {})
     } else if (tok.startsWith('[') && tok.includes('](')) {
       const mdLink = tok.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
       if (mdLink) {
+        const safeMdHref = sanitizeExternalHttpUrl(mdLink[2]);
         spans.push({
           text: decodeHtmlEntities(mdLink[1]),
           ...currentStyle(),
-          href: mdLink[2],
-          underline: true,
-          color: colors.lime,
+          ...(safeMdHref ? { href: safeMdHref, underline: true, color: accentColor } : null),
         });
       }
     }
@@ -172,7 +178,7 @@ function parseInlineSpans(raw: string, inherited: Omit<InlineSpan, 'text'> = {})
   return spans;
 }
 
-function parseRichContent(input: string): BlockNode[] {
+function parseRichContent(input: string, accentColor: string): BlockNode[] {
   if (!input || !input.trim()) return [];
 
   // Normalize line breaks and strip <script>/<style> tags safely
@@ -220,7 +226,7 @@ function parseRichContent(input: string): BlockNode[] {
           align: alignStack[alignStack.length - 1],
           heading: mdHeading[1].length,
           quote: inQuote,
-          spans: parseInlineSpans(mdHeading[2], { bold: true }),
+          spans: parseInlineSpans(mdHeading[2], accentColor, { bold: true }),
         });
         continue;
       }
@@ -231,12 +237,12 @@ function parseRichContent(input: string): BlockNode[] {
           type: 'text',
           align: alignStack[alignStack.length - 1],
           quote: true,
-          spans: parseInlineSpans(mdQuote[1]),
+          spans: parseInlineSpans(mdQuote[1], accentColor),
         });
         continue;
       }
 
-      const spans = parseInlineSpans(cleanLine, activeHeading ? { bold: true } : {});
+      const spans = parseInlineSpans(cleanLine, accentColor, activeHeading ? { bold: true } : {});
       if (spans.length > 0) {
         blocks.push({
           type: 'text',
@@ -386,7 +392,8 @@ export const RichHtmlRenderer: React.FC<RichHtmlRendererProps> = ({
   fontSize = 13.5,
   lineHeight = 20,
 }) => {
-  const blocks = parseRichContent(content);
+  const { palette } = useTheme();
+  const blocks = parseRichContent(content, palette.accent);
 
   if (blocks.length === 0) return null;
 
@@ -424,13 +431,22 @@ export const RichHtmlRenderer: React.FC<RichHtmlRendererProps> = ({
             key={idx}
             style={[
               styles.textBlock,
-              block.quote && styles.quoteBlock,
+              block.quote && [styles.quoteBlock, { borderLeftColor: palette.accent }],
               block.heading ? styles.headingBlock : null,
             ]}
           >
             <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
               {block.bullet ? (
-                <Text style={[styles.bulletChar, { fontSize: computedFontSize, lineHeight: computedLineHeight }]}>
+                <Text
+                  style={[
+                    styles.bulletChar,
+                    {
+                      color: palette.accent,
+                      fontSize: computedFontSize,
+                      lineHeight: computedLineHeight,
+                    },
+                  ]}
+                >
                   {block.bullet}
                 </Text>
               ) : null}
@@ -455,7 +471,9 @@ export const RichHtmlRenderer: React.FC<RichHtmlRendererProps> = ({
                       <Text
                         key={sIdx}
                         style={spanStyle}
-                        onPress={() => Linking.openURL(sp.href!).catch(() => {})}
+                        onPress={() => {
+                          void openSafeExternalUrl(sp.href);
+                        }}
                       >
                         {sp.text}
                       </Text>
@@ -491,7 +509,6 @@ const styles = StyleSheet.create({
   },
   quoteBlock: {
     borderLeftWidth: 3,
-    borderLeftColor: colors.lime,
     paddingLeft: 10,
     paddingVertical: 2,
     backgroundColor: 'rgba(255, 255, 255, 0.03)',
@@ -502,7 +519,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   bulletChar: {
-    color: colors.lime,
     fontWeight: '700',
     marginRight: 7,
   },

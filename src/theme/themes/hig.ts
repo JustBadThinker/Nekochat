@@ -2,38 +2,38 @@ import { Easing } from 'react-native';
 import type { UiSkinTokens } from './types';
 
 /**
- *  HIG (iPhone / UIKit) Theme Pack
- * True iOS dark systemBackground (#000000), secondarySystemGroupedBackground (#1C1C1E),
- * crisp 0.5px hairlines without heavy GPU blur lag, and fluid Cupertino motion.
+ *  HIG Liquid Glass (iPhone / iOS 26+) Theme Pack
+ * Translucent liquid glass panels, specular top rims, floating capsule navigation
+ * with a sliding liquid lens, and 120fps Android-safe gradient sheen fallbacks.
  */
 export const higTheme: UiSkinTokens = {
   id: 'ios',
-  name: ' HIG (iPhone)',
+  name: ' HIG Liquid Glass',
   badge: 'HIG',
-  desc: 'True iOS dark surfaces, 0.5px hairlines, insetGrouped lists, and Cupertino motion',
+  desc: 'Translucent liquid glass, specular rims, floating lens bar & Cupertino motion',
   surfaceMode: 'frosted',
-  screenBg: '#000000',
-  surfaceBg: '#1C1C1E',
-  surfaceSubtleBg: '#2C2C2E',
+  screenBg: '#06070B',
+  surfaceBg: 'rgba(28, 30, 38, 0.72)',
+  surfaceSubtleBg: 'rgba(42, 44, 56, 0.62)',
   navBarStyle: 'ios_tab_bar',
   settingsLayout: 'ios_inset_grouped',
   switchStyle: 'ios',
-  cardRadius: 12,
-  cardBorderWidth: 0.5,
+  cardRadius: 22,
+  cardBorderWidth: 1,
   cardBorderAccentMix: 0,
   cardGlowOpacity: 0,
   cardGlowRadius: 0,
-  buttonRadius: 10,
-  pillRadius: 12,
-  inputRadius: 12,
-  sheetRadius: 16,
-  grabberWidth: 36,
+  buttonRadius: 16,
+  pillRadius: 999,
+  inputRadius: 26,
+  sheetRadius: 30,
+  grabberWidth: 40,
   grabberHeight: 5,
-  bubbleRadius: 18,
-  bubbleTailRadius: 4,
-  bubbleBorderWidth: 0,
-  dockRadius: 0,
-  dockBorderWidth: 0.5,
+  bubbleRadius: 22,
+  bubbleTailRadius: 6,
+  bubbleBorderWidth: 1,
+  dockRadius: 32,
+  dockBorderWidth: 1,
   pressScale: 0.975,
   animation: {
     mode: 'spring',

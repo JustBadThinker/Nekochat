@@ -142,7 +142,24 @@ export function isRecordStale(
 const REFUSAL_PATTERNS = [
   /\b(i cannot|i can't|i am unable to|i'm unable to|i must decline|i won't|cannot fulfill|cannot assist with|against my ethical|violates? (?:our|my|the) (?:content |safety )?policy)\b/i,
   /\b(as an ai|content moderation|safety guidelines|harmful or explicit|not able to generate)\b/i,
+  /\b(i(?:'d| would) prefer to keep|let's keep (?:this|it|things) (?:pg|safe|light|clean|appropriate|non-explicit)|toned[- ]down version|instead,?\s*i can (?:write|offer|provide) a (?:softer|milder|non-explicit|pg|safe)|fade to black|not comfortable (?:writing|generating|engaging)|i have to (?:decline|pass|refuse)|cannot generate explicit|can't write explicit|beyond what i(?:'m| am) able)\b/i,
+  /(?:maaf,?\s*(?:saya )?(?:tidak bisa|tidak dapat|enggak bisa|nggak bisa)|tidak dapat (?:memenuhi|membantu|membuat)|melanggar kebijakan|lo siento,?\s*no puedo|申し訳ありませんが.*(?:できません|お答えできません)|抱歉.*(?:无法|不能))/i,
 ];
+
+const META_ACK_PATTERN =
+  /^(?:sure|yes|okay|ok|certainly|of course|alright|got it|understood)[,!.\s]*(?:i can do that|i can help(?: with that)?|i'd be happy to(?: help)?|let me know(?: what you(?:'d| would) like)?|tell me more|what would you like)[!.\s]*$/i;
+
+/**
+ * Strips `<think>...</think>` reasoning blocks (including unclosed trailing tags)
+ * and normalizes whitespace for classification or snippet display.
+ */
+export function stripThinkingForPreview(raw?: string): string {
+  return String(raw || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, ' ')
+    .replace(/<think>[\s\S]*$/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 export function classifyTestOutcome(input: {
   httpStatus?: number;
@@ -181,7 +198,7 @@ export function classifyTestOutcome(input: {
     return { outcome: 'inconclusive', modelStatus: 'unknown', providerStatus: 'unknown' };
   }
 
-  const text = String(input.responseText || '').trim();
+  const text = stripThinkingForPreview(input.responseText);
   if (!text) {
     return { outcome: 'malformed_response', modelStatus: 'unknown', providerStatus: 'unknown' };
   }
@@ -190,6 +207,14 @@ export function classifyTestOutcome(input: {
     return {
       outcome: 'model_refusal',
       modelStatus: 'unsupported',
+      providerStatus: 'supported',
+    };
+  }
+
+  if (text.length < 95 && META_ACK_PATTERN.test(text)) {
+    return {
+      outcome: 'inconclusive',
+      modelStatus: 'unknown',
       providerStatus: 'supported',
     };
   }

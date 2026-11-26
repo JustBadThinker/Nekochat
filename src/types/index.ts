@@ -450,11 +450,32 @@ export interface AppSettings {
   hasCompletedOnboarding?: boolean;
   passcodeEnabled?: boolean;
   passcodePin?: string;
+  passcodeHash?: string;
+  passcodeAutoLockSec?: number;
   activePersonaId?: string;
   customProxyUrl?: string;
   backendUrl?: string;
   enableExternalCatalogs?: boolean;
   autoMemoryEnabled?: boolean;
+  notifyMissYou?: boolean;
+  notifyAlgorithmPicks?: boolean;
+  notifyFollowedCreators?: boolean;
+  notifyDiscreetMode?: boolean;
+  notifyQuietHours?: boolean;
+}
+
+export interface CreatorDropNotificationItem {
+  id: string;
+  creatorHandle: string;
+  characterId: string;
+  characterName: string;
+  avatarUrl?: string;
+  tagline?: string;
+  isNsfw?: boolean;
+  discoveredAt: number;
+  read: boolean;
+  source?: string;
+  fullPath?: string;
 }
 
 export interface AuthUser {

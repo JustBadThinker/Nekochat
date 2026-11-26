@@ -472,7 +472,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     ...(Platform.OS === 'web'
       ? ({
         backgroundImage:
-          'linear-gradient(to bottom, rgba(15, 18, 29, 0) 0%, rgba(15, 18, 29, 0.45) 45%, rgba(15, 18, 29, 0.92) 85%, #0f121d 100%)',
+          'linear-gradient(to bottom, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.45) 45%, rgba(0, 0, 0, 0.88) 85%, rgba(0, 0, 0, 0.96) 100%)',
       } as any)
       : {}),
   },

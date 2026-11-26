@@ -2,7 +2,7 @@
   "expo": {
     "name": "NekoChat",
     "slug": "nekochat",
-    "version": "0.2.3",
+    "version": "0.2.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.nekochat.app",
-      "versionCode": 9,
+      "versionCode": 10,
       "adaptiveIcon": {
         "backgroundColor": "#000000",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -40,7 +40,9 @@
         }
       ],
       "expo-font",
-      "./plugins/withAndroidAbiSplits"
+      "./plugins/withAndroidAbiSplits",
+      "expo-background-task",
+      "expo-notifications"
     ]
   }
 }

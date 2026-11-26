@@ -20,8 +20,10 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GLASS } from '../theme/glassTheme';
+import { getM3TonalContainer } from '../theme/skins';
 import { useTheme } from '../theme/ThemeContext';
 import { runSheetCloseAnimation, runSheetOpenAnimation } from '../theme/animations';
 
@@ -51,6 +53,16 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
   const [backdropOpacity] = useState(() => new Animated.Value(0));
   const onCloseRef = useRef(onClose);
   const isAnimatingOutRef = useRef(false);
+  const sheetRef = useRef<any>(null);
+  const sheetTopYRef = useRef<number | null>(null);
+
+  const measureSheetTop = () => {
+    sheetRef.current?.measureInWindow?.((_x: number, y: number) => {
+      if (typeof y === 'number' && !Number.isNaN(y)) {
+        sheetTopYRef.current = y;
+      }
+    });
+  };
 
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -76,7 +88,10 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
       isAnimatingOutRef.current = false;
       setInternalVisible(true);
       runSheetOpenAnimation(translateY, backdropOpacity, skin.animation);
+      const timer = setTimeout(measureSheetTop, 320);
+      return () => clearTimeout(timer);
     } else if (internalVisible && !isAnimatingOutRef.current) {
+      sheetTopYRef.current = null;
       isAnimatingOutRef.current = true;
       runSheetCloseAnimation(translateY, backdropOpacity, skin.animation, () => {
         isAnimatingOutRef.current = false;
@@ -84,6 +99,12 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
       });
     }
   }, [visible, internalVisible, translateY, backdropOpacity, skin.animation]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const timer = setTimeout(measureSheetTop, 120);
+    return () => clearTimeout(timer);
+  }, [visible, keyboardHeight]);
 
   const animateClose = () => {
     if (isAnimatingOutRef.current) return;
@@ -133,25 +154,17 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
     })
   );
 
-  const isEventInsideScrolledChild = (evt: any): boolean => {
-    if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      let node = evt?.nativeEvent?.target || evt?.target;
-      while (node && node !== document.body) {
-        if (typeof node.scrollTop === 'number' && node.scrollTop > 2) {
-          return true;
-        }
-        node = node.parentElement;
-      }
-    }
-    return false;
-  };
-
   const [sheetPanResponder] = useState(() =>
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
       onMoveShouldSetPanResponder: (evt, gesture) => {
-        if (isEventInsideScrolledChild(evt)) return false;
-        return gesture.dy > 12 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.4;
+        if (gesture.dy <= 12 || Math.abs(gesture.dy) <= Math.abs(gesture.dx) * 1.4) {
+          return false;
+        }
+        const sheetTopY = sheetTopYRef.current;
+        if (sheetTopY === null) return false;
+        const startPageY = evt.nativeEvent.pageY - gesture.dy;
+        return startPageY >= sheetTopY - 8 && startPageY <= sheetTopY + 76;
       },
       onPanResponderTerminationRequest: () => false,
       onPanResponderMove: (_, gesture) => {
@@ -205,24 +218,63 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
           onPress={animateClose}
         />
 
-        {/* Sheet Card (supports swiping down anywhere on non-scrolling areas to dismiss) */}
+        {/* Sheet Card (supports swiping down only from top drag bar / header zone) */}
         <Animated.View
+          ref={sheetRef}
+          onLayout={measureSheetTop}
           {...sheetPanResponder.panHandlers}
           style={[
             styles.sheet,
             {
               borderTopLeftRadius: skin.sheetRadius,
               borderTopRightRadius: skin.sheetRadius,
-              backgroundColor: skin.surfaceBg
-                ? skin.surfaceBg
-                : skin.surfaceMode === 'tonal'
-                  ? palette.bgSurfaceSubtle
-                  : palette.bgSurface,
+              backgroundColor:
+                skin.id === 'ios'
+                  ? Platform.OS === 'android'
+                    ? 'rgba(20, 22, 32, 0.78)'
+                    : 'rgba(20, 22, 32, 0.56)'
+                  : skin.id === 'material'
+                    ? getM3TonalContainer(palette, 'low')
+                    : skin.surfaceBg
+                      ? skin.surfaceBg
+                      : skin.surfaceMode === 'tonal'
+                        ? palette.bgSurfaceSubtle
+                        : palette.bgSurface,
+              borderWidth: skin.id === 'material' ? 0 : 1,
               borderColor:
                 skin.id === 'janitor'
                   ? `rgba(${palette.accentRgb}, 0.35)`
-                  : 'rgba(255, 255, 255, 0.12)',
-              marginBottom: keyboardHeight,
+                  : skin.id === 'ios'
+                    ? 'rgba(255, 255, 255, 0.24)'
+                    : 'rgba(255, 255, 255, 0.12)',
+              ...(skin.id === 'ios'
+                ? {
+                    borderTopColor: 'rgba(255, 255, 255, 0.56)',
+                    borderBottomColor: 'rgba(0, 0, 0, 0.48)',
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 14 },
+                    shadowOpacity: 0.58,
+                    shadowRadius: 28,
+                    elevation: 20,
+                    ...(!fullScreen
+                      ? {
+                          marginHorizontal: 8,
+                          borderRadius: 32,
+                          borderTopLeftRadius: 32,
+                          borderTopRightRadius: 32,
+                        }
+                      : null),
+                    ...(Platform.OS === 'web'
+                      ? ({ backdropFilter: 'blur(30px) saturate(185%)' } as any)
+                      : null),
+                  }
+                : null),
+              marginBottom:
+                skin.id === 'ios' && !fullScreen
+                  ? keyboardHeight > 0
+                    ? keyboardHeight + 6
+                    : Math.max(10, insets.bottom)
+                  : keyboardHeight,
               maxHeight: Math.max(240, windowHeight - keyboardHeight - insets.top - (fullScreen ? 8 : 28)),
               paddingBottom: keyboardHeight > 0 ? 14 : Math.max(24, insets.bottom + 12),
             },
@@ -233,13 +285,43 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
             { transform: [{ translateY }] },
           ]}
         >
-          <LinearGradient
-            pointerEvents="none"
-            colors={GLASS.sheenColors}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
+          {skin.id === 'ios' && Platform.OS === 'ios' && (
+            <BlurView
+              intensity={55}
+              tint="dark"
+              style={[StyleSheet.absoluteFill, { borderRadius: fullScreen ? 0 : 32 }]}
+            />
+          )}
+          {skin.id !== 'material' && (
+            <LinearGradient
+              pointerEvents="none"
+              colors={
+                skin.id === 'ios'
+                  ? [
+                      'rgba(255, 255, 255, 0.18)',
+                      'rgba(255, 255, 255, 0.02)',
+                      'rgba(255, 255, 255, 0.08)',
+                    ]
+                  : GLASS.sheenColors
+              }
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+          )}
+          {skin.id === 'ios' && (
+            <View
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 24,
+                right: 24,
+                height: 1.5,
+                backgroundColor: 'rgba(255, 255, 255, 0.46)',
+              }}
+            />
+          )}
           {/* Swipe-Down Drag Handle Zone */}
           {showDragHandle && (
             <View style={styles.dragZone} {...panResponder.panHandlers}>
@@ -251,6 +333,7 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
                     height: skin.grabberHeight,
                     borderRadius: skin.grabberHeight / 2,
                   },
+                  skin.id === 'material' && { backgroundColor: 'rgba(255, 255, 255, 0.36)' },
                 ]}
               />
             </View>
@@ -287,8 +370,8 @@ const styles = StyleSheet.create({
   },
   dragZone: {
     width: '100%',
-    paddingTop: 10,
-    paddingBottom: 14,
+    paddingTop: 12,
+    paddingBottom: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },

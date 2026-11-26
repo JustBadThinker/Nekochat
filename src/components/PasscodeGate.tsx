@@ -12,6 +12,11 @@ import { Lock, Delete } from 'lucide-react-native';
 import { useTheme } from '../theme/ThemeContext';
 import { getScreenBg } from '../theme/skins';
 import { runEnterAnimation } from '../theme/animations';
+import {
+  computeLockoutMs,
+  PASSCODE_MAX_ATTEMPTS,
+  verifyPasscode,
+} from '../services/passcodeService';
 import { NekoLogoSvg } from './NekoLogoSvg';
 
 interface PasscodeGateProps {
@@ -23,6 +28,9 @@ export const PasscodeGate: React.FC<PasscodeGateProps> = ({ expectedPin, onUnloc
   const { palette, skin } = useTheme();
   const [pin, setPin] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutUntilMs, setLockoutUntilMs] = useState(0);
+  const [remainingSec, setRemainingSec] = useState(0);
 
   const enterAnim = useRef(new Animated.Value(0)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
@@ -30,6 +38,24 @@ export const PasscodeGate: React.FC<PasscodeGateProps> = ({ expectedPin, onUnloc
   useEffect(() => {
     runEnterAnimation(enterAnim, skin.animation);
   }, [enterAnim, skin.animation]);
+
+  useEffect(() => {
+    if (lockoutUntilMs <= Date.now()) {
+      setRemainingSec(0);
+      return;
+    }
+    const updateRemaining = () => {
+      const left = Math.max(0, Math.ceil((lockoutUntilMs - Date.now()) / 1000));
+      setRemainingSec(left);
+      if (left <= 0) {
+        setLockoutUntilMs(0);
+        setErrorMsg('');
+      }
+    };
+    updateRemaining();
+    const timer = setInterval(updateRemaining, 500);
+    return () => clearInterval(timer);
+  }, [lockoutUntilMs]);
 
   const triggerShake = () => {
     shakeAnim.setValue(0);
@@ -42,13 +68,16 @@ export const PasscodeGate: React.FC<PasscodeGateProps> = ({ expectedPin, onUnloc
   };
 
   const handleDigit = (digit: string) => {
-    if (pin.length >= 4) return;
+    if (remainingSec > 0 || pin.length >= 4) return;
     setErrorMsg('');
     const next = pin + digit;
     setPin(next);
 
     if (next.length === 4) {
-      if (next === expectedPin) {
+      if (verifyPasscode(next, expectedPin)) {
+        setFailedAttempts(0);
+        setLockoutUntilMs(0);
+        setRemainingSec(0);
         Animated.timing(enterAnim, {
           toValue: 0,
           duration: 220,
@@ -56,15 +85,31 @@ export const PasscodeGate: React.FC<PasscodeGateProps> = ({ expectedPin, onUnloc
           useNativeDriver: true,
         }).start(() => onUnlock());
       } else {
+        const nextAttempts = failedAttempts + 1;
+        setFailedAttempts(nextAttempts);
         triggerShake();
-        setErrorMsg('Incorrect passcode');
+        const lockMs = computeLockoutMs(nextAttempts);
+        if (lockMs > 0) {
+          const until = Date.now() + lockMs;
+          const sec = Math.ceil(lockMs / 1000);
+          setLockoutUntilMs(until);
+          setRemainingSec(sec);
+          setErrorMsg(`Too many attempts. Try again in ${sec}s`);
+        } else {
+          const leftBeforeCooldown = PASSCODE_MAX_ATTEMPTS - nextAttempts;
+          setErrorMsg(
+            leftBeforeCooldown <= 2
+              ? `Incorrect passcode (${leftBeforeCooldown} left before cooldown)`
+              : 'Incorrect passcode'
+          );
+        }
         setTimeout(() => setPin(''), 240);
       }
     }
   };
 
   const handleBackspace = () => {
-    if (pin.length === 0) return;
+    if (remainingSec > 0 || pin.length === 0) return;
     setErrorMsg('');
     setPin(prev => prev.slice(0, -1));
   };
@@ -118,7 +163,9 @@ export const PasscodeGate: React.FC<PasscodeGateProps> = ({ expectedPin, onUnloc
           })}
         </Animated.View>
 
-        <Text style={styles.errorText}>{errorMsg || ' '}</Text>
+        <Text style={styles.errorText}>
+          {remainingSec > 0 ? `Too many attempts. Try again in ${remainingSec}s` : errorMsg || ' '}
+        </Text>
 
         {/* Numeric Keypad */}
         <View style={styles.keypadGrid}>
@@ -130,8 +177,9 @@ export const PasscodeGate: React.FC<PasscodeGateProps> = ({ expectedPin, onUnloc
               return (
                 <TouchableOpacity
                   key="del"
-                  style={styles.keyBtn}
+                  style={[styles.keyBtn, remainingSec > 0 && { opacity: 0.4 }]}
                   onPress={handleBackspace}
+                  disabled={remainingSec > 0}
                   activeOpacity={0.7}
                   accessibilityLabel="Delete digit"
                 >
@@ -142,8 +190,9 @@ export const PasscodeGate: React.FC<PasscodeGateProps> = ({ expectedPin, onUnloc
             return (
               <TouchableOpacity
                 key={k}
-                style={styles.keyBtn}
+                style={[styles.keyBtn, remainingSec > 0 && { opacity: 0.4 }]}
                 onPress={() => handleDigit(k)}
+                disabled={remainingSec > 0}
                 activeOpacity={0.7}
               >
                 <Text style={styles.keyText}>{k}</Text>

@@ -6,7 +6,6 @@
 
 import React from 'react';
 import Svg, { G, Path } from 'react-native-svg';
-import { colors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 
 export interface NekoLogoSvgProps {
@@ -16,7 +15,7 @@ export interface NekoLogoSvgProps {
 
 export const NekoLogoSvg: React.FC<NekoLogoSvgProps> = ({ size = 36, color }) => {
   const { palette } = useTheme();
-  const activeColor = color || colors.lime || palette.accent;
+  const activeColor = color || palette.accent;
 
   return (
     <Svg

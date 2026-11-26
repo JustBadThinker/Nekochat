@@ -16,6 +16,11 @@
 | `a.download` / Object URLs | Sharing & Intent Manager | `expo-sharing` | Exports `.warden` backups and PNG character cards. |
 | `window.speechSynthesis` | Native Speech Engine | `expo-speech` | Speech synthesis on Android / iOS devices. |
 | `new Audio(url)` | Native Media Player | `expo-audio` / `expo-av` | Local audio playback for TTS waveforms. |
+| IndexedDB / Local Search | Native SQLite + FTS5/BM25 | `expo-sqlite` | Stores conversations, branches, and BM25 long-term memory recall on-device. |
+| Browser Credential Storage | Hardware Keystore / Keychain | `expo-secure-store` | Stores LLM provider and Image Gen API keys on native builds. |
+| CSS `backdrop-filter` | Native Hardware Blur | `expo-blur` (`BlurView` + `BlurTargetView`) | Live Android 12+ GPU blur (`dimezisBlurViewSdk31Plus`) and iOS blur. |
+| Web Canvas / Radial Glows | Native SVG Graphics | `react-native-svg` | Feathered radial ambient glows and custom vector artwork. |
+| Browser Push / Service Worker | Native Scheduler & Worker | `expo-notifications`, `expo-background-task` | Local check-ins, algorithm picks, and followed creator drop alerts. |
 | Web CSS `cursor`, `overflow` | React Native `StyleSheet` | Built-in | Validated with strict TypeScript compilation. |
 | Web Drag / Mouse Events | Gesture Handlers | `PanResponder` / `react-native-gesture-handler` | Tested 60/120Hz continuous swipe tracking. |
 | HTML DOM Elements (`div`, `span`) | Native Views (`View`, `Text`) | `react-native` | Native Android view hierarchy. |
@@ -32,6 +37,7 @@ NekoChat uses an environment-aware resolver:
 - **Android Emulator:** `http://10.0.2.2:3001`
 - **Physical Device (LAN):** `http://<DEV_MACHINE_IP>:3001` (configured via Settings)
 - **Direct Web / Fallback:** Direct public endpoints with session tokens (`https://datacat.run/api/liberator/identify` and `https://api.chub.ai`).
+- **Release Update Check:** Direct read-only HTTPS check against GitHub Releases (`https://api.github.com/repos/JustBadThinker/nekochat/releases/latest`) with no telemetry or account login.
 - **Production Proxy:** Configurable custom remote proxy URL in Settings.
 
 ---

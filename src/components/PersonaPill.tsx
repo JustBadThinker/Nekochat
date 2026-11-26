@@ -9,6 +9,7 @@ import { User, ChevronDown, Check } from 'lucide-react-native';
 import { Persona } from '../types';
 import { colors } from '../theme/colors';
 import { GLASS } from '../theme/glassTheme';
+import { useTheme } from '../theme/ThemeContext';
 import { BottomSheetModal } from './BottomSheetModal';
 
 interface PersonaPillProps {
@@ -22,6 +23,7 @@ export const PersonaPill: React.FC<PersonaPillProps> = ({
   activePersona,
   onSelectPersona,
 }) => {
+  const { palette } = useTheme();
   const [modalVisible, setModalVisible] = useState(false);
 
   return (
@@ -31,7 +33,7 @@ export const PersonaPill: React.FC<PersonaPillProps> = ({
         onPress={() => setModalVisible(true)}
         activeOpacity={0.8}
       >
-        <User size={12} color={colors.lime} style={{ marginRight: 4 }} />
+        <User size={12} color={palette.accent} style={{ marginRight: 4 }} />
         <Text style={styles.pillText} numberOfLines={1}>
           Playing as: <Text style={styles.pillName}>{activePersona.name}</Text>
         </Text>
@@ -52,21 +54,28 @@ export const PersonaPill: React.FC<PersonaPillProps> = ({
             const isSelected = item.id === activePersona.id;
             return (
               <TouchableOpacity
-                style={[styles.personaItem, isSelected && styles.personaItemActive]}
+                style={[
+                  styles.personaItem,
+                  isSelected && {
+                    backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
+                    borderWidth: 1,
+                    borderColor: palette.accent,
+                  },
+                ]}
                 onPress={() => {
                   onSelectPersona(item);
                   setModalVisible(false);
                 }}
               >
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.personaName, isSelected && { color: colors.lime }]}>
+                  <Text style={[styles.personaName, isSelected && { color: palette.accent }]}>
                     {item.name}
                   </Text>
                   <Text style={styles.personaDesc} numberOfLines={1}>
                     {item.description}
                   </Text>
                 </View>
-                {isSelected && <Check size={18} color={colors.lime} />}
+                {isSelected && <Check size={18} color={palette.accent} />}
               </TouchableOpacity>
             );
           }}
@@ -135,11 +144,6 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     marginBottom: 6,
     backgroundColor: 'rgba(255,255,255,0.03)',
-  },
-  personaItemActive: {
-    backgroundColor: 'rgba(204, 255, 0, 0.08)',
-    borderWidth: 1,
-    borderColor: colors.lime,
   },
   personaName: {
     color: colors.textPrimary,

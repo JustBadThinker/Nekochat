@@ -7,6 +7,9 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Character, Persona } from '../types';
+import { getDefaultSecureStoreDriver, getImageKeyStoreName } from './secureKeyStore';
+
+const IMAGE_GEN_SECURE_KEY_ID = 'image_gen_service';
 
 export type ImageGenProvider = 'pollinations' | 'openai' | 'custom';
 
@@ -140,6 +143,30 @@ export class ImageGenService {
           this.config.customStylePrompt = '';
         }
       }
+
+      try {
+        const driver = await getDefaultSecureStoreDriver();
+        const available = await driver.isAvailable().catch(() => false);
+        if (available) {
+          const keyName = getImageKeyStoreName(IMAGE_GEN_SECURE_KEY_ID);
+          if (this.config.apiKey && this.config.apiKey.trim()) {
+            const plaintextKey = this.config.apiKey;
+            await driver.setItemAsync(keyName, plaintextKey);
+            const readBack = await driver.getItemAsync(keyName);
+            if (readBack === plaintextKey) {
+              const strippedCopy: ImageGenConfig = { ...this.config, apiKey: '' };
+              await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(strippedCopy)).catch(() => {});
+            }
+          } else {
+            const stored = await driver.getItemAsync(keyName);
+            if (stored) {
+              this.config.apiKey = stored;
+            }
+          }
+        }
+      } catch {
+        // Keep in-memory / AsyncStorage fallback if SecureStore fails
+      }
     } catch (e) {
       console.warn('[ImageGenService] Failed to load config from storage:', e);
       this.config = { ...DEFAULT_IMAGE_GEN_CONFIG };
@@ -150,8 +177,27 @@ export class ImageGenService {
 
   public async saveConfig(updates: Partial<ImageGenConfig>): Promise<ImageGenConfig> {
     this.config = { ...this.config, ...updates };
+    const toPersist: ImageGenConfig = { ...this.config };
     try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(this.config));
+      const driver = await getDefaultSecureStoreDriver();
+      const available = await driver.isAvailable().catch(() => false);
+      if (available) {
+        const keyName = getImageKeyStoreName(IMAGE_GEN_SECURE_KEY_ID);
+        if (toPersist.apiKey && toPersist.apiKey.trim()) {
+          await driver.setItemAsync(keyName, toPersist.apiKey);
+          const readBack = await driver.getItemAsync(keyName);
+          if (readBack === toPersist.apiKey) {
+            toPersist.apiKey = '';
+          }
+        } else if ('apiKey' in updates && !toPersist.apiKey.trim()) {
+          await driver.deleteItemAsync(keyName).catch(() => {});
+        }
+      }
+    } catch {
+      // Keep toPersist intact if SecureStore write fails so user key is never lost
+    }
+    try {
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(toPersist));
     } catch (e) {
       console.warn('[ImageGenService] Failed to save config to storage:', e);
     }

@@ -121,23 +121,23 @@ const HELP_ARTICLES: HelpArticle[] = [
         body: 'Tap the top-left mode pill to switch between Catalog Grid (browse & filter), For You (full-screen vertical feed), and Match Mode (swipe deck). Use the source toggle on the right to switch between JanitorAI and Chub.ai.',
       },
       {
-        heading: 'Smart #Tag Search',
-        body: 'Combine tag chips (like #female) with #tags in the search bar (like #dominance, #ntr, #noncon, #comedy). NekoChat automatically strips literal # symbols and maps aliases like #dominance → #dominant so searches return accurate matches.',
+        heading: 'Smart #Tag Search & On-Device Taste',
+        body: 'Combine tag chips (like #female) with #tags in the search bar. NekoChat automatically strips literal # symbols and maps aliases like #dominance → #dominant. Everything learned from your likes, chats, searches, and skips stays 100% on-device — manage, boost, mute, or reset tags anytime in Settings → For You & Taste.',
       },
     ],
   },
   {
     id: 'chat-room',
     title: 'Chat Room, Story & Memory',
-    shortDesc: 'Novel vs Bubble, Thinking drawer, response length, fonts, wallpapers & memory.',
+    shortDesc: 'Novel vs Bubble, Persona Switcher, Thinking drawer, fonts, wallpapers & memory.',
     badge: 'Roleplay',
-    keywords: ['novel', 'bubble', 'thinking', 'memory', 'font', 'wallpaper', 'ooc', 'length', 'shorter', 'standard'],
+    keywords: ['novel', 'bubble', 'thinking', 'memory', 'font', 'wallpaper', 'ooc', 'length', 'shorter', 'standard', 'persona'],
     screenshot: SCREENSHOT_CHAT,
     screenshotCaption: 'Switch freely between full-width Story/Novel prose and contained Bubble messages.',
     sections: [
       {
-        heading: 'Novel vs. Bubble & Custom Fonts',
-        body: 'Open ••• → Customize to toggle Novel (borderless story layout) or Bubble mode, pick Default / Serif / Mono / Light message fonts, adjust text size, and customize dialogue/narration colors.',
+        heading: 'Novel vs. Bubble, Fonts & Persona Switcher',
+        body: 'Open ••• → Customize to toggle Novel (borderless story layout) or Bubble mode, pick Default / Serif / Mono / Light message fonts, adjust text size, and customize dialogue/narration colors. Tap your persona chip inside the chat composer for instant one-tap persona switching.',
       },
       {
         heading: 'Thinking Drawer & Response Length',
@@ -160,26 +160,26 @@ const HELP_ARTICLES: HelpArticle[] = [
     sections: [
       {
         heading: 'Bring Your Own Key (Zero Login)',
-        body: 'Your API keys stay strictly on your device (stored in hardware-backed SecureStore on native builds). NekoChat never uploads your keys or chats to any remote account.',
+        body: 'Your AI provider and Image Gen API keys stay strictly on your device (stored in hardware-backed SecureStore on native builds). NekoChat never uploads your keys or chats to any remote account.',
       },
       {
-        heading: 'Generation Controls & .neko Vault',
-        body: 'Tune Temperature, Top-P, Repetition Penalty (1.12–1.18 helps stop smaller models from repeating lines), and Max Output Tokens (including Unlimited). Export encrypted-clean .neko backups anytime from Data Vault.',
+        heading: 'Generation Controls, Vault & Updates',
+        body: 'Tune Temperature, Top-P, Repetition Penalty (1.12–1.18 helps stop smaller models from repeating lines), and Max Output Tokens (including Unlimited). Export sanitized .neko backups from Data Vault, and check for new APK releases directly in Settings → About NekoChat.',
       },
     ],
   },
   {
     id: 'themes-neko',
     title: 'Skins, Palettes & Desk Neko',
-    shortDesc: 'Customize UI skins, color palettes, smart wallpapers, and your Desk Neko companion.',
+    shortDesc: 'Customize UI skins, 8 color palettes, smart wallpapers, and your Desk Neko companion.',
     badge: 'Skins',
-    keywords: ['theme', 'skin', 'neko', 'oled', 'classic', 'material', 'hig', 'iphone', 'palette', 'cat', 'game'],
+    keywords: ['theme', 'skin', 'neko', 'bento', 'classic', 'material', 'hig', 'glass', 'palette', 'cat', 'game'],
     screenshot: SCREENSHOT_SKINS,
-    screenshotCaption: 'Four modular UI skins paired with live color palettes.',
+    screenshotCaption: 'Four modular UI skins paired with 8 dark color palettes.',
     sections: [
       {
         heading: 'UI Skins & Color Palettes',
-        body: 'Open Settings → Theming to switch between Neko OLED, Classic, Material You, and HIG (iPhone) layouts, and pair them with Midnight Cyber, Sakura Dusk, Amethyst, Cyan, or Warm Slate.',
+        body: 'Open Settings → Theming to switch between Neko Bento (2×2 keycap macro-pad composer), Classic (frosted liquid-merge pill composer), Material 3 Expressive (dynamic tonal surfaces), and HIG Liquid Glass (live Android 12+ GPU blur), and pair them with 8 palettes including Midnight Cyber, Sakura Dusk, Warm Slate, Cyber Cyan, Crimson Velvet, Amethyst Night, Matcha Forest, and Sunset Tangerine.',
       },
       {
         heading: 'Desk Neko Companion',

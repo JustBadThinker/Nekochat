@@ -6,19 +6,37 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
 import { colors } from '../theme/colors';
+import { useTheme } from '../theme/ThemeContext';
+import { getScreenBg } from '../theme/skins';
 import { APP_VERSION_LABEL } from '../constants/appInfo';
 import { NekoLogoSvg } from './NekoLogoSvg';
 
 interface SplashScreenProps {
   onFinish?: () => void;
   isReady?: boolean;
+  themeReady?: boolean;
 }
 
-export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish, isReady = true }) => {
+export const SplashScreen: React.FC<SplashScreenProps> = ({
+  onFinish,
+  isReady = true,
+  themeReady = true,
+}) => {
+  const { palette, skin } = useTheme();
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const glowAnim = useRef(new Animated.Value(0.4)).current;
   const fadeAnim = useRef(new Animated.Value(1)).current;
+  const contentFadeAnim = useRef(new Animated.Value(themeReady ? 1 : 0)).current;
   const [minDelayDone, setMinDelayDone] = useState(false);
+
+  useEffect(() => {
+    if (!themeReady) return;
+    Animated.timing(contentFadeAnim, {
+      toValue: 1,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  }, [themeReady, contentFadeAnim]);
 
   useEffect(() => {
     // Breathing cat animation
@@ -55,7 +73,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish, isReady = 
       setMinDelayDone(true);
     }, 1600);
     return () => clearTimeout(timer);
-  }, []);
+  }, [pulseAnim, glowAnim]);
 
   useEffect(() => {
     if (!minDelayDone || !isReady || !onFinish) return;
@@ -67,47 +85,49 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish, isReady = 
   }, [minDelayDone, isReady, onFinish, fadeAnim]);
 
   return (
-    <Animated.View style={[styles.container, { opacity: fadeAnim, backgroundColor: colors.bgDark }]}>
-      <Animated.View
-        style={[
-          styles.catWrapper,
-          {
-            shadowColor: colors.lime,
-            transform: [{ scale: pulseAnim }],
-            shadowOpacity: glowAnim as any,
-          },
-        ]}
-      >
-        <View
+    <Animated.View style={[styles.container, { opacity: fadeAnim, backgroundColor: getScreenBg(palette, skin) }]}>
+      <Animated.View style={{ alignItems: 'center', opacity: contentFadeAnim }}>
+        <Animated.View
           style={[
-            styles.catGlowCircle,
+            styles.catWrapper,
             {
-              borderColor: colors.lime,
-              backgroundColor: `rgba(${colors.accentRgb}, 0.08)`,
+              shadowColor: palette.accent,
+              transform: [{ scale: pulseAnim }],
+              shadowOpacity: glowAnim as any,
             },
           ]}
         >
-          <NekoLogoSvg size={82} color={colors.lime} />
+          <View
+            style={[
+              styles.catGlowCircle,
+              {
+                borderColor: palette.accent,
+                backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
+              },
+            ]}
+          >
+            <NekoLogoSvg size={82} color={palette.accent} />
+          </View>
+        </Animated.View>
+
+        <Text style={styles.title}>NekoChat</Text>
+        <Text style={styles.subtitle}>AI Companion & Roleplay Client</Text>
+        <Text
+          style={[
+            styles.versionBadge,
+            {
+              color: palette.accent,
+              backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
+            },
+          ]}
+        >
+          {APP_VERSION_LABEL} • Powered by Warden Core
+        </Text>
+
+        <View style={styles.loaderBarContainer}>
+          <Animated.View style={[styles.loaderBar, { opacity: glowAnim, backgroundColor: palette.accent }]} />
         </View>
       </Animated.View>
-
-      <Text style={styles.title}>NekoChat</Text>
-      <Text style={styles.subtitle}>AI Companion & Roleplay Client</Text>
-      <Text
-        style={[
-          styles.versionBadge,
-          {
-            color: colors.lime,
-            backgroundColor: `rgba(${colors.accentRgb}, 0.12)`,
-          },
-        ]}
-      >
-        {APP_VERSION_LABEL} • Powered by Warden Core
-      </Text>
-
-      <View style={styles.loaderBarContainer}>
-        <Animated.View style={[styles.loaderBar, { opacity: glowAnim, backgroundColor: colors.lime }]} />
-      </View>
     </Animated.View>
   );
 };

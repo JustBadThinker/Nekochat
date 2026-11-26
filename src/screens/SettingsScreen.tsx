@@ -18,7 +18,6 @@ import {
   StyleSheet,
   ActivityIndicator,
   Platform,
-  Linking,
   Image,
 } from 'react-native';
 import {
@@ -44,21 +43,39 @@ import {
   Image as ImageIcon,
   Globe,
   Lock,
+  Bell,
   HelpCircle,
+  Brain,
+  Plus,
+  Trash2,
 } from 'lucide-react-native';
 import { ProviderConfig, AppSettings, Persona } from '../types';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
+import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { storageService } from '../services/storageService';
+import { hasPasscodeConfigured } from '../services/passcodeService';
 import { GLASS } from '../theme/glassTheme';
 import { aiProviderService } from '../services/aiProviderService';
 import { wardenVaultService } from '../services/wardenVaultService';
 import { ttsService, VOICE_PROFILES, TtsConfig, DEFAULT_TTS_CONFIG } from '../services/ttsService';
 import { imageGenService, IMAGE_STYLE_OPTIONS, ImageGenConfig, DEFAULT_IMAGE_GEN_CONFIG } from '../services/imageGenService';
 import { colors, applyThemePalette, ThemeId, ThemePalette, THEME_PALETTES } from '../theme/colors';
-import { UI_SKINS, UiSkinId, getCardSurfaceStyle, getScreenBg } from '../theme/skins';
-import { APP_VERSION_LABEL } from '../constants/appInfo';
+import {
+  UI_SKINS,
+  UiSkinId,
+  UiSkinTokens,
+  getCardSurfaceStyle,
+  getM3TonalContainer,
+  getScreenBg,
+  getSubtleSurfaceBg,
+  getSurfaceBg,
+} from '../theme/skins';
+import { APP_VERSION, APP_VERSION_LABEL } from '../constants/appInfo';
+import { checkForGitHubUpdate, GITHUB_REPO_URL, UpdateCheckResult } from '../services/githubUpdateService';
+import { openSafeExternalUrl } from '../utils/safeExternalUrl';
 import { useTheme } from '../theme/ThemeContext';
 import { useTranslation } from '../i18n/LanguageContext';
 import { LANGUAGE_OPTIONS, UiLanguage, getDefaultLanguagePrompt } from '../i18n/translations';
@@ -68,6 +85,15 @@ import { HelpCenterModal } from '../components/HelpCenterModal';
 import { CapabilityMatrixModal } from '../components/CapabilityMatrixModal';
 import { NekoSwitch } from '../components/NekoSwitch';
 import { AnimatedChevron, AnimatedCollapsible } from '../components/SmoothTransition';
+import {
+  checkFollowedCreatorDropsNow,
+  requestNotificationPermissionsAsync,
+  sendTestNotificationNow,
+} from '../services/notificationService';
+import { tasteEngineService } from '../services/tasteEngineService';
+import { matchAlgorithmService } from '../services/matchAlgorithmService';
+import type { GenderFocusMode, UserTasteProfile } from '../services/tasteEngineLogic';
+import { POPULAR_COMMUNITY_CATEGORIES } from '../services/communityCatalogService';
 
 interface SettingsScreenProps {
   config: ProviderConfig;
@@ -76,6 +102,8 @@ interface SettingsScreenProps {
   onUpdateSettings: (s: AppSettings) => void;
   onReplayOnboarding?: () => void;
   onScrollDirectionChange?: (visible: boolean) => void;
+  openNotificationsSignal?: number;
+  onRefreshDropsInbox?: () => void;
 }
 
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
@@ -85,19 +113,42 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onUpdateSettings,
   onReplayOnboarding,
   onScrollDirectionChange,
+  openNotificationsSignal,
+  onRefreshDropsInbox,
 }) => {
   const lastScrollYRef = useRef(0);
   const { palette, skin } = useTheme();
   const { t } = useTranslation();
-  const styles = useMemo(() => createStyles(palette), [palette]);
+  const styles = useMemo(() => createStyles(palette, skin), [palette, skin]);
   // Modal Visibility State
   const [activeModal, setActiveModal] = useState<
-    'api' | 'theming' | 'language' | 'passcode' | 'vault' | 'personas' | 'tokens' | 'about' | 'voice' | 'image' | 'help' | 'matrix' | null
+    'api' | 'theming' | 'taste' | 'language' | 'passcode' | 'notifications' | 'vault' | 'personas' | 'tokens' | 'about' | 'voice' | 'image' | 'help' | 'matrix' | null
   >(null);
 
+  // On-Device Taste & Algorithm State
+  const [tasteProfile, setTasteProfile] = useState<UserTasteProfile | null>(null);
+  const [newPinTagDraft, setNewPinTagDraft] = useState('');
+  const [newMuteTagDraft, setNewMuteTagDraft] = useState('');
+  const [tasteNotice, setTasteNotice] = useState<string | null>(null);
+
+  // GitHub Release Update Checker State
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateResult, setUpdateResult] = useState<UpdateCheckResult | null>(null);
+
+  const handleCheckForUpdate = async () => {
+    setCheckingUpdate(true);
+    try {
+      const res = await checkForGitHubUpdate(APP_VERSION);
+      setUpdateResult(res);
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
   const [passcodeEnabledDraft, setPasscodeEnabledDraft] = useState<boolean>(!!settings.passcodeEnabled);
-  const [passcodePinDraft, setPasscodePinDraft] = useState<string>(settings.passcodePin || '');
-  const [passcodeConfirmDraft, setPasscodeConfirmDraft] = useState<string>(settings.passcodePin || '');
+  const [passcodePinDraft, setPasscodePinDraft] = useState<string>('');
+  const [passcodeConfirmDraft, setPasscodeConfirmDraft] = useState<string>('');
+  const [passcodeAutoLockDraft, setPasscodeAutoLockDraft] = useState<number>(settings.passcodeAutoLockSec ?? 60);
   const [passcodeError, setPasscodeError] = useState<string>('');
 
   const [selectedUiLang, setSelectedUiLang] = useState<UiLanguage>(settings.uiLanguage || 'en');
@@ -105,6 +156,15 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [langCustomPrompt, setLangCustomPrompt] = useState<string>(
     settings.languageCustomPrompt || getDefaultLanguagePrompt(settings.uiLanguage || 'en')
   );
+
+  // Notifications State
+  const [notifyMissYouDraft, setNotifyMissYouDraft] = useState<boolean>(!!settings.notifyMissYou);
+  const [notifyAlgoDraft, setNotifyAlgoDraft] = useState<boolean>(!!settings.notifyAlgorithmPicks);
+  const [notifyCreatorsDraft, setNotifyCreatorsDraft] = useState<boolean>(!!settings.notifyFollowedCreators);
+  const [notifyDiscreetDraft, setNotifyDiscreetDraft] = useState<boolean>(settings.notifyDiscreetMode !== false);
+  const [notifyQuietDraft, setNotifyQuietDraft] = useState<boolean>(settings.notifyQuietHours !== false);
+  const [notifyNotice, setNotifyNotice] = useState<string | null>(null);
+  const [checkingCreatorsNow, setCheckingCreatorsNow] = useState(false);
 
   // Health Monitor State (100% Genuine Probes — Zero Mock Data)
   const [testingHealth, setTestingHealth] = useState(false);
@@ -187,11 +247,23 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [topP, setTopP] = useState<string>(String(config.topP || '0.95'));
   const [repPenalty, setRepPenalty] = useState<string>(String(config.repetitionPenalty || '1.15'));
 
+  const loadTasteProfile = async (force: boolean = false) => {
+    try {
+      const profile = await tasteEngineService.buildUserTasteProfile(force);
+      setTasteProfile(profile);
+    } catch {}
+  };
+
   useEffect(() => {
     testAllServices();
     loadPersonas();
     loadProviders();
     loadMediaConfigs();
+    loadTasteProfile();
+    const unsubTaste = tasteEngineService.subscribe(() => {
+      loadTasteProfile(true);
+    });
+    return () => unsubTaste();
   }, []);
 
   useEffect(() => {
@@ -199,6 +271,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       setSelectedTheme(settings.theme as any);
     }
   }, [settings?.theme]);
+
+  useEffect(() => {
+    if (openNotificationsSignal && openNotificationsSignal > 0) {
+      setNotifyMissYouDraft(!!settings.notifyMissYou);
+      setNotifyAlgoDraft(!!settings.notifyAlgorithmPicks);
+      setNotifyCreatorsDraft(!!settings.notifyFollowedCreators);
+      setNotifyDiscreetDraft(settings.notifyDiscreetMode !== false);
+      setNotifyQuietDraft(settings.notifyQuietHours !== false);
+      setNotifyNotice(null);
+      setActiveModal('notifications');
+    }
+  }, [openNotificationsSignal, settings]);
 
   const loadMediaConfigs = async () => {
     try {
@@ -410,12 +494,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     testAllServices(updated);
   };
 
-  const handleOpenExportVault = async () => {
-    const jsonStr = await storageService.exportVaultData();
-    setVaultJson(jsonStr);
-    setVaultNotice('Vault backup ready to copy or download.');
-  };
-
   const handleDownloadVaultFile = async () => {
     const jsonStr = vaultJson || (await storageService.exportVaultData());
     setVaultJson(jsonStr);
@@ -561,25 +639,137 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     }
   };
 
+  const isIosGlass = skin.id === 'ios';
+  const isM3 = skin.id === 'material';
+  const isNekoBento = skin.id === 'bento';
+
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: getScreenBg(palette, skin) }]}
-      contentContainerStyle={styles.contentContainer}
-      scrollEventThrottle={16}
-      onScroll={e => {
-        if (!onScrollDirectionChange) return;
-        const y = e?.nativeEvent?.contentOffset?.y ?? 0;
-        const dy = y - lastScrollYRef.current;
-        lastScrollYRef.current = y;
-        if (y <= 14) onScrollDirectionChange(true);
-        else if (dy > 8 && y > 60) onScrollDirectionChange(false);
-        else if (dy < -8) onScrollDirectionChange(true);
-      }}
-    >
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* 1. LARGE HEALTH & LATENCY MONITOR DASHBOARD (User Requested)        */}
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      <View style={[styles.healthCardBig, { backgroundColor: palette.bgSurface }]}>
+    <View style={{ flex: 1, backgroundColor: getScreenBg(palette, skin) }}>
+      {isIosGlass && (
+        <>
+          <LinearGradient
+            pointerEvents="none"
+            colors={[
+              `rgba(${palette.accentRgb}, 0.16)`,
+              'rgba(10, 12, 20, 0.92)',
+              '#06070B',
+            ]}
+            locations={[0, 0.44, 1]}
+            start={{ x: 0.2, y: 0 }}
+            end={{ x: 0.8, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <Svg
+            pointerEvents="none"
+            style={StyleSheet.absoluteFill}
+            width="100%"
+            height="100%"
+          >
+            <Defs>
+              <RadialGradient id="higGlowTopRight" cx="88%" cy="10%" r="55%">
+                <Stop offset="0%" stopColor={palette.accent} stopOpacity="0.22" />
+                <Stop offset="45%" stopColor={palette.accent} stopOpacity="0.08" />
+                <Stop offset="100%" stopColor={palette.accent} stopOpacity="0" />
+              </RadialGradient>
+              <RadialGradient id="higGlowMidLeft" cx="8%" cy="46%" r="55%">
+                <Stop offset="0%" stopColor="#6366f1" stopOpacity="0.16" />
+                <Stop offset="45%" stopColor="#6366f1" stopOpacity="0.05" />
+                <Stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
+              </RadialGradient>
+              <RadialGradient id="higGlowBottomRight" cx="90%" cy="88%" r="50%">
+                <Stop offset="0%" stopColor={palette.accent} stopOpacity="0.16" />
+                <Stop offset="45%" stopColor={palette.accent} stopOpacity="0.05" />
+                <Stop offset="100%" stopColor={palette.accent} stopOpacity="0" />
+              </RadialGradient>
+            </Defs>
+            <Rect x="0" y="0" width="100%" height="100%" fill="url(#higGlowTopRight)" />
+            <Rect x="0" y="0" width="100%" height="100%" fill="url(#higGlowMidLeft)" />
+            <Rect x="0" y="0" width="100%" height="100%" fill="url(#higGlowBottomRight)" />
+          </Svg>
+        </>
+      )}
+      <ScrollView
+        style={[
+          styles.container,
+          { backgroundColor: isIosGlass ? 'transparent' : getScreenBg(palette, skin) },
+        ]}
+        contentContainerStyle={styles.contentContainer}
+        scrollEventThrottle={16}
+        onScroll={e => {
+          if (!onScrollDirectionChange) return;
+          const y = e?.nativeEvent?.contentOffset?.y ?? 0;
+          const dy = y - lastScrollYRef.current;
+          lastScrollYRef.current = y;
+          if (y <= 14) onScrollDirectionChange(true);
+          else if (dy > 8 && y > 60) onScrollDirectionChange(false);
+          else if (dy < -8) onScrollDirectionChange(true);
+        }}
+      >
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* 1. LARGE HEALTH & LATENCY MONITOR DASHBOARD (User Requested)        */}
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        <View
+          style={[
+            styles.healthCardBig,
+            {
+              backgroundColor: isIosGlass
+                ? 'rgba(20, 22, 32, 0.60)'
+                : isM3
+                  ? getM3TonalContainer(palette, 'container')
+                  : palette.bgSurface,
+            },
+            isM3 && {
+              borderRadius: 28,
+              borderWidth: 0,
+            },
+            isNekoBento && {
+              borderRadius: 24,
+              borderWidth: 1.25,
+              borderColor: 'rgba(255, 255, 255, 0.12)',
+              borderBottomWidth: 3.5,
+              borderBottomColor: 'rgba(0, 0, 0, 0.55)',
+            },
+            isIosGlass && {
+              borderRadius: 24,
+              borderWidth: 1,
+              borderColor: 'rgba(255, 255, 255, 0.22)',
+              borderTopColor: 'rgba(255, 255, 255, 0.50)',
+              borderBottomColor: 'rgba(0, 0, 0, 0.48)',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 10 },
+              shadowOpacity: 0.46,
+              shadowRadius: 20,
+              elevation: 8,
+              overflow: 'hidden',
+            },
+          ]}
+        >
+          {isIosGlass && (
+            <>
+              <LinearGradient
+                pointerEvents="none"
+                colors={[
+                  'rgba(255, 255, 255, 0.18)',
+                  'rgba(255, 255, 255, 0.02)',
+                  'rgba(255, 255, 255, 0.08)',
+                ]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 22,
+                  right: 22,
+                  height: 1,
+                  backgroundColor: 'rgba(255, 255, 255, 0.45)',
+                }}
+              />
+            </>
+          )}
         <View style={styles.healthCardHeader}>
           <View style={styles.healthTitleRow}>
             <Activity size={18} color={palette.accent} style={{ marginRight: 8 }} />
@@ -606,7 +796,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         {/* 4 Health Status Bars (100% Real Live Readings — Zero Fake Latency) */}
         <View style={styles.healthGrid}>
           {/* Service 1: Active LLM Engine */}
-          <View style={styles.healthItemBox}>
+          <View
+            style={[
+              styles.healthItemBox,
+              isM3 && {
+                backgroundColor: getM3TonalContainer(palette, 'high'),
+                borderRadius: 18,
+                borderWidth: 0,
+              },
+              isNekoBento && {
+                borderRadius: 14,
+                borderBottomWidth: 2.5,
+                borderBottomColor: 'rgba(0, 0, 0, 0.42)',
+              },
+            ]}
+          >
             <View style={styles.healthItemTop}>
               <View
                 style={
@@ -634,7 +838,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </View>
 
           {/* Service 2: Chub.ai Community API */}
-          <View style={styles.healthItemBox}>
+          <View
+            style={[
+              styles.healthItemBox,
+              isM3 && {
+                backgroundColor: getM3TonalContainer(palette, 'high'),
+                borderRadius: 18,
+                borderWidth: 0,
+              },
+              isNekoBento && {
+                borderRadius: 14,
+                borderBottomWidth: 2.5,
+                borderBottomColor: 'rgba(0, 0, 0, 0.42)',
+              },
+            ]}
+          >
             <View style={styles.healthItemTop}>
               <View
                 style={
@@ -662,7 +880,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </View>
 
           {/* Service 3: Datacat Janitor Mirror */}
-          <View style={styles.healthItemBox}>
+          <View
+            style={[
+              styles.healthItemBox,
+              isM3 && {
+                backgroundColor: getM3TonalContainer(palette, 'high'),
+                borderRadius: 18,
+                borderWidth: 0,
+              },
+              isNekoBento && {
+                borderRadius: 14,
+                borderBottomWidth: 2.5,
+                borderBottomColor: 'rgba(0, 0, 0, 0.42)',
+              },
+            ]}
+          >
             <View style={styles.healthItemTop}>
               <View
                 style={
@@ -690,7 +922,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </View>
 
           {/* Service 4: Image Generation Engine */}
-          <View style={styles.healthItemBox}>
+          <View
+            style={[
+              styles.healthItemBox,
+              isM3 && {
+                backgroundColor: getM3TonalContainer(palette, 'high'),
+                borderRadius: 18,
+                borderWidth: 0,
+              },
+              isNekoBento && {
+                borderRadius: 14,
+                borderBottomWidth: 2.5,
+                borderBottomColor: 'rgba(0, 0, 0, 0.42)',
+              },
+            ]}
+          >
             <View style={styles.healthItemTop}>
               <View
                 style={
@@ -748,6 +994,23 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             onPress: () => setActiveModal('theming'),
           },
           {
+            key: 'taste',
+            Icon: Brain,
+            title: 'For You & Taste',
+            subtitle: '100% On-Device • Tags, Focus & Reset',
+            badge: tasteProfile?.learningPaused
+              ? 'Paused'
+              : `${tasteProfile?.topLearnedTags.length || 0} Tags`,
+            accentBadge: Boolean(
+              !tasteProfile?.learningPaused && (tasteProfile?.topLearnedTags.length || 0) > 0
+            ),
+            onPress: () => {
+              setTasteNotice(null);
+              loadTasteProfile(true);
+              setActiveModal('taste');
+            },
+          },
+          {
             key: 'vault',
             Icon: ShieldCheck,
             title: t('settings.dataVault'),
@@ -791,16 +1054,39 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             onPress: () => setActiveModal('language'),
           },
           {
+            key: 'notifications',
+            Icon: Bell,
+            title: 'Notifications',
+            subtitle: 'Check-ins, Picks & Creator Drops',
+            badge:
+              settings.notifyMissYou || settings.notifyAlgorithmPicks || settings.notifyFollowedCreators
+                ? 'Active'
+                : 'Off',
+            accentBadge: Boolean(
+              settings.notifyMissYou || settings.notifyAlgorithmPicks || settings.notifyFollowedCreators
+            ),
+            onPress: () => {
+              setNotifyMissYouDraft(!!settings.notifyMissYou);
+              setNotifyAlgoDraft(!!settings.notifyAlgorithmPicks);
+              setNotifyCreatorsDraft(!!settings.notifyFollowedCreators);
+              setNotifyDiscreetDraft(settings.notifyDiscreetMode !== false);
+              setNotifyQuietDraft(settings.notifyQuietHours !== false);
+              setNotifyNotice(null);
+              setActiveModal('notifications');
+            },
+          },
+          {
             key: 'passcode',
             Icon: Lock,
             title: 'Passcode Lock',
             subtitle: 'App PIN & First-Time Tour',
-            badge: settings.passcodeEnabled && settings.passcodePin ? 'Enabled' : 'Off',
+            badge: settings.passcodeEnabled && hasPasscodeConfigured(settings) ? 'Enabled' : 'Off',
             accentBadge: false,
             onPress: () => {
               setPasscodeEnabledDraft(!!settings.passcodeEnabled);
-              setPasscodePinDraft(settings.passcodePin || '');
-              setPasscodeConfirmDraft(settings.passcodePin || '');
+              setPasscodePinDraft('');
+              setPasscodeConfirmDraft('');
+              setPasscodeAutoLockDraft(settings.passcodeAutoLockSec ?? 60);
               setPasscodeError('');
               setActiveModal('passcode');
             },
@@ -829,14 +1115,43 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           return (
             <View
               style={{
-                borderRadius: 12,
-                backgroundColor: 'rgba(28, 28, 30, 0.86)',
-                borderWidth: 0.5,
-                borderColor: 'rgba(255, 255, 255, 0.14)',
+                borderRadius: 24,
+                backgroundColor: 'rgba(20, 22, 32, 0.60)',
+                borderWidth: 1,
+                borderColor: 'rgba(255, 255, 255, 0.22)',
+                borderTopColor: 'rgba(255, 255, 255, 0.50)',
+                borderBottomColor: 'rgba(0, 0, 0, 0.48)',
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 10 },
+                shadowOpacity: 0.46,
+                shadowRadius: 20,
+                elevation: 8,
                 overflow: 'hidden',
                 marginBottom: 16,
               }}
             >
+              <LinearGradient
+                pointerEvents="none"
+                colors={[
+                  'rgba(255, 255, 255, 0.18)',
+                  'rgba(255, 255, 255, 0.02)',
+                  'rgba(255, 255, 255, 0.08)',
+                ]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <View
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 22,
+                  right: 22,
+                  height: 1,
+                  backgroundColor: 'rgba(255, 255, 255, 0.45)',
+                }}
+              />
               {controlItems.map((item, idx) => {
                 const IconComp = item.Icon;
                 return (
@@ -850,7 +1165,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                       paddingVertical: 12,
                       paddingHorizontal: 14,
                       borderBottomWidth: idx < controlItems.length - 1 ? 0.5 : 0,
-                      borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+                      borderBottomColor: 'rgba(255, 255, 255, 0.10)',
                       gap: 12,
                     }}
                   >
@@ -858,7 +1173,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                       style={{
                         width: 30,
                         height: 30,
-                        borderRadius: 7,
+                        borderRadius: 10,
                         backgroundColor: item.accentBadge ? palette.accent : `rgba(${palette.accentRgb}, 0.18)`,
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -885,35 +1200,45 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
         if (skin.settingsLayout === 'm3_list') {
           return (
-            <View style={{ gap: 10, marginBottom: 16 }}>
-              {controlItems.map(item => {
+            <View style={{ gap: 3, marginBottom: 16 }}>
+              {controlItems.map((item, idx) => {
                 const IconComp = item.Icon;
+                const isFirst = idx === 0;
+                const isLast = idx === controlItems.length - 1;
                 return (
                   <TouchableOpacity
                     key={item.key}
                     onPress={item.onPress}
-                    activeOpacity={0.85}
+                    activeOpacity={0.82}
                     style={{
                       flexDirection: 'row',
                       alignItems: 'center',
-                      paddingVertical: 14,
+                      paddingVertical: 15,
                       paddingHorizontal: 16,
-                      borderRadius: skin.cardRadius,
-                      backgroundColor: palette.bgSurfaceSubtle,
+                      borderTopLeftRadius: isFirst ? 24 : 6,
+                      borderTopRightRadius: isFirst ? 24 : 6,
+                      borderBottomLeftRadius: isLast ? 24 : 6,
+                      borderBottomRightRadius: isLast ? 24 : 6,
+                      backgroundColor: getM3TonalContainer(palette, 'container'),
                       gap: 14,
                     }}
                   >
                     <View
                       style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: 20,
-                        backgroundColor: `rgba(${palette.accentRgb}, 0.16)`,
+                        width: 42,
+                        height: 42,
+                        borderRadius: 14,
+                        backgroundColor: item.accentBadge
+                          ? palette.accent
+                          : `rgba(${palette.accentRgb}, 0.16)`,
                         alignItems: 'center',
                         justifyContent: 'center',
                       }}
                     >
-                      <IconComp size={18} color={palette.accent} />
+                      <IconComp
+                        size={18}
+                        color={item.accentBadge ? palette.bgDark : palette.accent}
+                      />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '600' }}>{item.title}</Text>
@@ -923,12 +1248,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     </View>
                     <View
                       style={{
-                        paddingHorizontal: 10,
-                        paddingVertical: 4,
-                        borderRadius: 8,
+                        paddingHorizontal: 11,
+                        paddingVertical: 5,
+                        borderRadius: 999,
                         backgroundColor: item.accentBadge
                           ? `rgba(${palette.accentRgb}, 0.22)`
-                          : 'rgba(255, 255, 255, 0.06)',
+                          : getM3TonalContainer(palette, 'high'),
                       }}
                     >
                       <Text
@@ -953,6 +1278,55 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.bentoTwoGrid}>
             {controlItems.map(item => {
               const IconComp = item.Icon;
+              const isFeaturedWide =
+                (isNekoBento && (item.key === 'api' || item.key === 'theming' || item.key === 'taste')) ||
+                (!isNekoBento && item.key === 'taste');
+              if (isFeaturedWide) {
+                return (
+                  <TouchableOpacity
+                    key={item.key}
+                    style={[
+                      styles.bentoTile,
+                      getCardSurfaceStyle(palette, skin),
+                      {
+                        width: '100%',
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 14,
+                        paddingVertical: 15,
+                        paddingHorizontal: 16,
+                      },
+                    ]}
+                    onPress={item.onPress}
+                    activeOpacity={0.8}
+                  >
+                    <View
+                      style={[
+                        styles.tileIconCircle,
+                        { width: 44, height: 44, borderRadius: 14, marginBottom: 0 },
+                      ]}
+                    >
+                      <IconComp size={20} color={palette.accent} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.tileTitle}>{item.title}</Text>
+                      <Text style={[styles.tileSubtitle, { marginBottom: 0 }]} numberOfLines={1}>
+                        {item.subtitle}
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        item.accentBadge ? styles.tileBadgeLime : styles.tileBadge,
+                        { borderRadius: 999, alignSelf: 'center', marginTop: 0 },
+                      ]}
+                    >
+                      <Text style={item.accentBadge ? styles.tileBadgeLimeText : styles.tileBadgeText}>
+                        {item.badge}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              }
               return (
                 <TouchableOpacity
                   key={item.key}
@@ -960,7 +1334,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   onPress={item.onPress}
                   activeOpacity={0.8}
                 >
-                  <View style={[styles.tileIconCircle, { borderRadius: skin.pillRadius === 999 ? 18 : 10 }]}>
+                  <View
+                    style={[
+                      styles.tileIconCircle,
+                      { borderRadius: isNekoBento ? 13 : skin.pillRadius === 999 ? 18 : 10 },
+                    ]}
+                  >
                     <IconComp size={18} color={palette.accent} />
                   </View>
                   <Text style={styles.tileTitle}>{item.title}</Text>
@@ -1742,7 +2121,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             {passcodeEnabledDraft && (
               <View style={{ marginTop: 14, gap: 10 }}>
                 <View>
-                  <Text style={styles.inputLabel}>4-Digit Passcode</Text>
+                  <Text style={styles.inputLabel}>
+                    {hasPasscodeConfigured(settings) ? 'New 4-Digit Passcode (optional)' : '4-Digit Passcode'}
+                  </Text>
                   <TextInput
                     style={styles.inputBox}
                     value={passcodePinDraft}
@@ -1753,7 +2134,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     keyboardType="number-pad"
                     maxLength={4}
                     secureTextEntry
-                    placeholder="••••"
+                    placeholder={hasPasscodeConfigured(settings) ? 'Leave blank to keep current PIN' : '••••'}
                     placeholderTextColor="#6b7280"
                   />
                 </View>
@@ -1769,9 +2150,34 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     keyboardType="number-pad"
                     maxLength={4}
                     secureTextEntry
-                    placeholder="••••"
+                    placeholder={hasPasscodeConfigured(settings) ? 'Confirm new PIN' : '••••'}
                     placeholderTextColor="#6b7280"
                   />
+                </View>
+                <View style={{ marginTop: 4 }}>
+                  <Text style={styles.inputLabel}>Auto-Lock After Leaving App</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                    {[
+                      { label: 'Immediate', sec: 0 },
+                      { label: '1 min', sec: 60 },
+                      { label: '5 min', sec: 300 },
+                      { label: 'Launch only', sec: -1 },
+                    ].map(opt => {
+                      const active = passcodeAutoLockDraft === opt.sec;
+                      return (
+                        <TouchableOpacity
+                          key={opt.sec}
+                          style={[styles.radioChip, active && styles.radioChipActive]}
+                          onPress={() => setPasscodeAutoLockDraft(opt.sec)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={[styles.radioChipText, active && styles.radioChipTextActive]}>
+                            {opt.label}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
                 </View>
                 {passcodeError ? (
                   <Text style={{ color: '#f87171', fontSize: 12, fontWeight: '600' }}>{passcodeError}</Text>
@@ -1804,7 +2210,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <TouchableOpacity
             style={styles.saveBtn}
             onPress={async () => {
-              if (passcodeEnabledDraft) {
+              const hasExisting = hasPasscodeConfigured(settings);
+              if (passcodeEnabledDraft && (passcodePinDraft.length > 0 || !hasExisting)) {
                 if (!/^\d{4}$/.test(passcodePinDraft)) {
                   setPasscodeError('Please enter a 4-digit numeric passcode.');
                   return;
@@ -1814,13 +2221,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   return;
                 }
               }
-              const updated: AppSettings = {
-                ...settings,
-                passcodeEnabled: passcodeEnabledDraft,
-                passcodePin: passcodeEnabledDraft ? passcodePinDraft : '',
-              };
-              await storageService.saveSettings(updated);
-              onUpdateSettings(updated);
+              const saved = await storageService.saveSettings(
+                passcodeEnabledDraft
+                  ? {
+                      passcodeEnabled: true,
+                      ...(passcodePinDraft ? { passcodePin: passcodePinDraft } : {}),
+                      passcodeAutoLockSec: passcodeAutoLockDraft,
+                    }
+                  : {
+                      passcodeEnabled: false,
+                      passcodePin: '',
+                      passcodeHash: '',
+                      passcodeAutoLockSec: passcodeAutoLockDraft,
+                    }
+              );
+              onUpdateSettings(saved);
               setActiveModal(null);
             }}
             activeOpacity={0.8}
@@ -2031,7 +2446,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </TouchableOpacity>
 
               <AnimatedCollapsible expanded={showAdvancedSampling}>
-                <View style={{ backgroundColor: '#161922', padding: 12, borderRadius: 12, marginBottom: 14, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)' }}>
+                <View style={{ backgroundColor: getSubtleSurfaceBg(palette, skin), padding: 12, borderRadius: skin.cardRadius, marginBottom: 14, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)' }}>
                   {/* Context Truncation Strategy */}
                   <Text style={styles.inputLabel}>Context Truncation Strategy</Text>
                   <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12 }}>
@@ -2502,7 +2917,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <ScrollView style={styles.modalBody}>
               <View style={styles.aboutCard}>
                 <View style={{ alignItems: 'center', marginBottom: 10 }}>
-                  <NekoLogoSvg size={48} color={colors.lime} />
+                  <NekoLogoSvg size={48} color={palette.accent} />
                 </View>
                 <Text style={styles.aboutTitle}>NekoChat</Text>
                 <Text style={styles.aboutVersion}>{APP_VERSION_LABEL} • Open-Source</Text>
@@ -2510,14 +2925,162 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   Yet another AI roleplay app. Built with Expo and React Native for people who want a local, bring-your-own-key chat client.
                 </Text>
 
-                <TouchableOpacity
-                  style={styles.repoLinkBtn}
-                  onPress={() => Linking.openURL('https://github.com/JustBadThinker/nekochat').catch(() => {})}
-                  activeOpacity={0.8}
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    flexWrap: 'wrap',
+                    justifyContent: 'center',
+                    gap: 8,
+                  }}
                 >
-                  <ExternalLink size={13} color="#000000" style={{ marginRight: 5 }} />
-                  <Text style={styles.repoLinkBtnText}>Source Code & Upstream</Text>
-                </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.repoLinkBtn}
+                    onPress={handleCheckForUpdate}
+                    disabled={checkingUpdate}
+                    activeOpacity={0.8}
+                  >
+                    {checkingUpdate ? (
+                      <ActivityIndicator size="small" color="#000000" style={{ marginRight: 5 }} />
+                    ) : (
+                      <RefreshCw size={13} color="#000000" style={{ marginRight: 5 }} />
+                    )}
+                    <Text style={styles.repoLinkBtnText}>
+                      {checkingUpdate ? 'Checking...' : 'Check for Updates'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.tokenPill,
+                      {
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        borderRadius: 10,
+                        paddingHorizontal: 14,
+                        paddingVertical: 8,
+                      },
+                    ]}
+                    onPress={() => openSafeExternalUrl(GITHUB_REPO_URL)}
+                    activeOpacity={0.8}
+                  >
+                    <ExternalLink size={13} color={palette.accent} style={{ marginRight: 5 }} />
+                    <Text style={{ color: '#e2e8f0', fontSize: 11, fontWeight: '700' }}>
+                      Source Code
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {updateResult && (
+                  <View
+                    style={{
+                      width: '100%',
+                      marginTop: 12,
+                      padding: 12,
+                      borderRadius: skin.cardRadius,
+                      backgroundColor:
+                        updateResult.status === 'update_available'
+                          ? `rgba(${palette.accentRgb}, 0.10)`
+                          : getSubtleSurfaceBg(palette, skin),
+                      borderWidth: 1,
+                      borderColor:
+                        updateResult.status === 'update_available'
+                          ? `rgba(${palette.accentRgb}, 0.45)`
+                          : 'rgba(255, 255, 255, 0.08)',
+                    }}
+                  >
+                    {updateResult.status === 'update_available' && (
+                      <>
+                        <Text style={{ color: palette.accent, fontSize: 12, fontWeight: '800' }}>
+                          Update Available: v{updateResult.latestVersion}
+                        </Text>
+                        {Boolean(updateResult.releaseNotes) && (
+                          <Text
+                            style={{ color: '#cbd5e1', fontSize: 11, lineHeight: 15, marginTop: 4 }}
+                            numberOfLines={4}
+                          >
+                            {updateResult.releaseNotes}
+                          </Text>
+                        )}
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                          {Boolean(updateResult.apkAsset) && (
+                            <TouchableOpacity
+                              style={styles.repoLinkBtn}
+                              onPress={() => openSafeExternalUrl(updateResult.apkAsset?.downloadUrl)}
+                              activeOpacity={0.8}
+                            >
+                              <Download size={12} color="#000000" style={{ marginRight: 5 }} />
+                              <Text style={styles.repoLinkBtnText}>Download APK</Text>
+                            </TouchableOpacity>
+                          )}
+                          <TouchableOpacity
+                            style={[
+                              styles.tokenPill,
+                              { flexDirection: 'row', alignItems: 'center', borderRadius: 10 },
+                            ]}
+                            onPress={() => openSafeExternalUrl(updateResult.releaseUrl)}
+                            activeOpacity={0.8}
+                          >
+                            <ExternalLink size={12} color={palette.accent} style={{ marginRight: 5 }} />
+                            <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>
+                              View Release
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </>
+                    )}
+
+                    {(updateResult.status === 'up_to_date' || updateResult.status === 'ahead') && (
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 8,
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                          <Check size={14} color={palette.accent} />
+                          <Text style={{ color: '#e2e8f0', fontSize: 11.5, fontWeight: '600', flex: 1 }}>
+                            {updateResult.status === 'up_to_date'
+                              ? `You're up to date (v${updateResult.latestVersion})`
+                              : `Local build (${APP_VERSION_LABEL}) is ahead of latest release (v${updateResult.latestVersion})`}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => openSafeExternalUrl(updateResult.releaseUrl)}
+                          activeOpacity={0.75}
+                        >
+                          <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>
+                            Releases
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+
+                    {(updateResult.status === 'no_releases' || updateResult.status === 'error') && (
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 8,
+                        }}
+                      >
+                        <Text style={{ color: '#cbd5e1', fontSize: 11, flex: 1 }}>
+                          {updateResult.errorMessage || 'Could not check releases.'}
+                        </Text>
+                        <TouchableOpacity
+                          onPress={() => openSafeExternalUrl(updateResult.releaseUrl)}
+                          activeOpacity={0.75}
+                        >
+                          <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>
+                            Open GitHub
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                )}
 
                 {/* Open-Source & Ecosystem Credits */}
                 <View style={{ marginTop: 18, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.08)', paddingTop: 14 }}>
@@ -2550,9 +3113,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     <View
                       key={i}
                       style={{
-                        backgroundColor: '#161922',
+                        backgroundColor: getSubtleSurfaceBg(palette, skin),
                         padding: 10,
-                        borderRadius: 10,
+                        borderRadius: skin.cardRadius,
                         marginBottom: 8,
                         borderWidth: 1,
                         borderColor: 'rgba(255, 255, 255, 0.06)',
@@ -2588,22 +3151,552 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           model,
         }}
       />
-    </ScrollView>
+
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {/* MODAL 9: SMART NOTIFICATIONS                                       */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      <BottomSheetModal
+        visible={activeModal === 'notifications'}
+        onClose={() => setActiveModal(null)}
+        sheetStyle={{ maxHeight: '86%' }}
+      >
+        <View style={styles.modalHeader}>
+          <View style={styles.modalTitleRow}>
+            <Bell size={16} color={palette.accent} style={{ marginRight: 6 }} />
+            <Text style={styles.modalTitle}>Smart Notifications</Text>
+          </View>
+          <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+            <X size={18} color="#9ca3af" />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 20 }}>
+          <Text style={[styles.sectionSub, { fontWeight: '500', lineHeight: 16, marginBottom: 12 }]}>
+            Local scheduled reminders register directly with your OS (no battery optimization bypass needed). Followed Creator Drops sync periodically in the background and also appear in the Chats Bell inbox.
+          </Text>
+
+          {[
+            {
+              title: 'Companion Check-ins',
+              desc: 'Send a "miss you" check-in after 48h away from an active chat',
+              value: notifyMissYouDraft,
+              onChange: setNotifyMissYouDraft,
+            },
+            {
+              title: 'Algorithm Picks',
+              desc: 'Suggest a character matching your vibes after 24h away',
+              value: notifyAlgoDraft,
+              onChange: setNotifyAlgoDraft,
+            },
+            {
+              title: 'Followed Creator Drops',
+              desc: 'Alert when creators you follow publish a new character card',
+              value: notifyCreatorsDraft,
+              onChange: setNotifyCreatorsDraft,
+            },
+            {
+              title: 'Discreet Lock-Screen Mode',
+              desc: 'Hide character/creator names on notifications & skip NSFW cards',
+              value: notifyDiscreetDraft,
+              onChange: setNotifyDiscreetDraft,
+            },
+            {
+              title: 'Quiet Hours (11 PM – 8 AM)',
+              desc: 'Shift overnight reminders to 9:00 AM local time',
+              value: notifyQuietDraft,
+              onChange: setNotifyQuietDraft,
+            },
+          ].map(row => (
+            <View key={row.title} style={styles.toggleRow}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <Text style={styles.toggleTitle}>{row.title}</Text>
+                <Text style={styles.toggleDesc}>{row.desc}</Text>
+              </View>
+              <NekoSwitch value={row.value} onValueChange={row.onChange} />
+            </View>
+          ))}
+
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
+            <TouchableOpacity
+              style={[
+                styles.tokenPill,
+                { flex: 1, alignItems: 'center', paddingVertical: 10 },
+              ]}
+              disabled={checkingCreatorsNow}
+              onPress={async () => {
+                setCheckingCreatorsNow(true);
+                setNotifyNotice(null);
+                try {
+                  const res = await checkFollowedCreatorDropsNow(
+                    {
+                      ...settings,
+                      notifyFollowedCreators: true,
+                      notifyDiscreetMode: notifyDiscreetDraft,
+                    },
+                    false,
+                    false
+                  );
+                  onRefreshDropsInbox?.();
+                  setNotifyNotice(
+                    res.newDrops.length > 0
+                      ? `Found ${res.newDrops.length} new drop(s) — check the Bell inbox!`
+                      : 'Checked followed creators — no new drops right now.'
+                  );
+                } catch {
+                  setNotifyNotice('Could not reach catalog right now.');
+                } finally {
+                  setCheckingCreatorsNow(false);
+                }
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={{ color: '#e2e8f0', fontSize: 11.5, fontWeight: '700' }}>
+                {checkingCreatorsNow ? 'Checking...' : 'Check Creators Now'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.tokenPill,
+                { flex: 1, alignItems: 'center', paddingVertical: 10 },
+              ]}
+              onPress={async () => {
+                const ok = await sendTestNotificationNow({
+                  ...settings,
+                  notifyDiscreetMode: notifyDiscreetDraft,
+                });
+                setNotifyNotice(
+                  ok
+                    ? 'Test notification scheduled (fires in ~2 seconds).'
+                    : Platform.OS === 'web'
+                      ? 'OS push preview is mobile-only; use the Chats Bell inbox on Web.'
+                      : 'Notification permission not granted.'
+                );
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '700' }}>
+                Test Notification
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {notifyNotice ? (
+            <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '600', marginTop: 10 }}>
+              {notifyNotice}
+            </Text>
+          ) : null}
+        </ScrollView>
+
+        <View style={styles.modalFooter}>
+          <TouchableOpacity
+            style={styles.saveBtn}
+            onPress={async () => {
+              const anyEnabled = notifyMissYouDraft || notifyAlgoDraft || notifyCreatorsDraft;
+              if (anyEnabled) {
+                const perm = await requestNotificationPermissionsAsync();
+                if (perm === 'denied') {
+                  setNotifyNotice('Permission denied in OS settings. Preferences saved for Bell inbox.');
+                }
+              }
+              const updated = await storageService.saveSettings({
+                notifyMissYou: notifyMissYouDraft,
+                notifyAlgorithmPicks: notifyAlgoDraft,
+                notifyFollowedCreators: notifyCreatorsDraft,
+                notifyDiscreetMode: notifyDiscreetDraft,
+                notifyQuietHours: notifyQuietDraft,
+              });
+              onUpdateSettings(updated);
+              setActiveModal(null);
+            }}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.saveBtnText}>Save Notification Settings</Text>
+          </TouchableOpacity>
+        </View>
+      </BottomSheetModal>
+
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {/* MODAL 10: FOR YOU & TASTE (100% ON-DEVICE ALGORITHM CONTROLS)     */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      <BottomSheetModal
+        visible={activeModal === 'taste'}
+        onClose={() => setActiveModal(null)}
+        sheetStyle={{ maxHeight: '88%' }}
+      >
+        <View style={styles.modalHeader}>
+          <View style={styles.modalTitleRow}>
+            <Brain size={16} color={palette.accent} style={{ marginRight: 6 }} />
+            <Text style={styles.modalTitle}>For You & Taste</Text>
+          </View>
+          <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+            <X size={18} color="#9ca3af" />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 24 }}>
+          {/* 100% On-Device Privacy Banner */}
+          <View
+            style={[
+              styles.toggleRow,
+              {
+                borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+                backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
+                justifyContent: 'flex-start',
+                gap: 10,
+              },
+            ]}
+          >
+            <ShieldCheck size={18} color={palette.accent} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.toggleTitle}>100% On-Device Learning</Text>
+              <Text style={[styles.toggleDesc, { lineHeight: 15 }]}>
+                Learned locally on your phone from likes, chats, searches & tags. Never uploaded or shared.
+              </Text>
+            </View>
+          </View>
+
+          {/* Insights Strip */}
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+            {[
+              {
+                label: 'Signals',
+                value: String(tasteProfile?.totalInteractions ?? 0),
+              },
+              {
+                label: 'RP Depth',
+                value:
+                  tasteProfile?.preferredDepth === 'short'
+                    ? 'Quick'
+                    : tasteProfile?.preferredDepth === 'medium'
+                      ? 'Balanced'
+                      : tasteProfile?.preferredDepth === 'deep'
+                        ? 'Deep Lore'
+                        : 'Learning',
+              },
+              {
+                label: 'Creators',
+                value: String(tasteProfile?.topCreators.length ?? 0),
+              },
+            ].map(stat => (
+              <View
+                key={stat.label}
+                style={[
+                  styles.tokenPill,
+                  {
+                    flex: 1,
+                    alignItems: 'center',
+                    paddingVertical: 10,
+                    borderRadius: 12,
+                  },
+                ]}
+              >
+                <Text style={{ color: palette.accent, fontSize: 13.5, fontWeight: '800' }}>
+                  {stat.value}
+                </Text>
+                <Text style={{ color: '#9ca3af', fontSize: 10, fontWeight: '600', marginTop: 2 }}>
+                  {stat.label}
+                </Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Pause Learning Toggle */}
+          <View style={styles.toggleRow}>
+            <View style={{ flex: 1, paddingRight: 10 }}>
+              <Text style={styles.toggleTitle}>Pause Taste Learning</Text>
+              <Text style={styles.toggleDesc}>
+                Keep current recommendations without recording new browsing or chat signals
+              </Text>
+            </View>
+            <NekoSwitch
+              value={Boolean(tasteProfile?.learningPaused)}
+              onValueChange={async val => {
+                await tasteEngineService.setLearningPaused(val);
+                await loadTasteProfile(true);
+                setTasteNotice(val ? 'Learning paused.' : 'Learning resumed.');
+              }}
+            />
+          </View>
+
+          {/* Character Focus Selector */}
+          <Text style={styles.inputLabel}>CHARACTER FOCUS</Text>
+          <View style={[styles.tokenPillRow, { marginBottom: 4 }]}>
+            {(
+              [
+                { id: 'auto', label: 'Auto' },
+                { id: 'female', label: 'Female' },
+                { id: 'male', label: 'Male' },
+                { id: 'all', label: 'All' },
+              ] as { id: GenderFocusMode; label: string }[]
+            ).map(opt => {
+              const active = (tasteProfile?.genderFocus || 'auto') === opt.id;
+              return (
+                <TouchableOpacity
+                  key={opt.id}
+                  style={[styles.tokenPill, active && styles.tokenPillActive]}
+                  onPress={async () => {
+                    await tasteEngineService.setGenderFocus(opt.id);
+                    await loadTasteProfile(true);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.tokenPillText, active && styles.tokenPillTextActive]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={[styles.sectionSub, { fontWeight: '500', marginBottom: 10 }]}>
+            {(tasteProfile?.genderFocus || 'auto') === 'auto'
+              ? tasteProfile?.dominantGender && tasteProfile.dominantGender !== 'none'
+                ? `Auto-detected: ${tasteProfile.dominantGender} (${tasteProfile.genderConfidence}% confidence)`
+                : 'Auto: showing balanced matches until a preference emerges'
+              : `Locked to "${tasteProfile?.genderFocus}" characters in For You & Match`}
+          </Text>
+
+          {/* Learned & Boosted Tags */}
+          <Text style={styles.inputLabel}>LEARNED & BOOSTED TAGS</Text>
+          {tasteProfile && tasteProfile.topLearnedTags.length > 0 ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+              {tasteProfile.topLearnedTags.map(item => (
+                <TouchableOpacity
+                  key={item.tag}
+                  style={[
+                    styles.radioChip,
+                    item.pinned && styles.radioChipActive,
+                    { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 5 },
+                  ]}
+                  onPress={async () => {
+                    await tasteEngineService.removeLearnedTag(item.tag);
+                    await loadTasteProfile(true);
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <Text
+                    style={[
+                      styles.radioChipText,
+                      item.pinned ? styles.radioChipTextActive : { color: '#e2e8f0' },
+                    ]}
+                  >
+                    {item.pinned ? `★ #${item.tag}` : `#${item.tag}`}
+                  </Text>
+                  <X size={12} color={item.pinned ? palette.accent : '#94a3b8'} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : (
+            <Text style={[styles.sectionSub, { fontWeight: '500', marginBottom: 10 }]}>
+              No learned tags yet — heart characters, search, or boost tags below.
+            </Text>
+          )}
+
+          {/* Boost / Pin Tag Input */}
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+            <TextInput
+              style={[styles.inputBox, { flex: 1 }]}
+              value={newPinTagDraft}
+              onChangeText={setNewPinTagDraft}
+              placeholder="Boost a tag (e.g. fantasy, tsundere)..."
+              placeholderTextColor="rgba(255,255,255,0.38)"
+              returnKeyType="done"
+              onSubmitEditing={async () => {
+                if (!newPinTagDraft.trim()) return;
+                await tasteEngineService.pinTag(newPinTagDraft);
+                setNewPinTagDraft('');
+                await loadTasteProfile(true);
+              }}
+            />
+            <TouchableOpacity
+              style={[
+                styles.tokenPill,
+                styles.tokenPillActive,
+                { flexDirection: 'row', alignItems: 'center', gap: 4, justifyContent: 'center' },
+              ]}
+              onPress={async () => {
+                if (!newPinTagDraft.trim()) return;
+                await tasteEngineService.pinTag(newPinTagDraft);
+                setNewPinTagDraft('');
+                await loadTasteProfile(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <Plus size={13} color="#000000" />
+              <Text style={styles.tokenPillTextActive}>Boost</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Quick-tap Popular Suggestions */}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+            {POPULAR_COMMUNITY_CATEGORIES.filter(
+              c =>
+                c.value !== 'all' &&
+                c.value !== 'female' &&
+                c.value !== 'male' &&
+                !tasteProfile?.pinnedTags.includes(c.value) &&
+                !tasteProfile?.mutedTags.includes(c.value)
+            )
+              .slice(0, 6)
+              .map(cat => (
+                <TouchableOpacity
+                  key={cat.value}
+                  style={[styles.radioChip, { paddingHorizontal: 9, paddingVertical: 4 }]}
+                  onPress={async () => {
+                    await tasteEngineService.pinTag(cat.value);
+                    await loadTasteProfile(true);
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.radioChipText, { fontSize: 11 }]}>+ {cat.label}</Text>
+                </TouchableOpacity>
+              ))}
+          </View>
+
+          {/* Muted Tags */}
+          <Text style={styles.inputLabel}>MUTED TAGS (HIDDEN FROM FEED)</Text>
+          {tasteProfile && tasteProfile.mutedTags.length > 0 && (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+              {tasteProfile.mutedTags.map(tag => (
+                <TouchableOpacity
+                  key={tag}
+                  style={[
+                    styles.radioChip,
+                    {
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 5,
+                      paddingVertical: 5,
+                      borderColor: 'rgba(244, 63, 94, 0.45)',
+                      backgroundColor: 'rgba(244, 63, 94, 0.10)',
+                    },
+                  ]}
+                  onPress={async () => {
+                    await tasteEngineService.unmuteTag(tag);
+                    await loadTasteProfile(true);
+                  }}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.radioChipText, { color: '#fda4af' }]}>#{tag}</Text>
+                  <X size={12} color="#fda4af" />
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+            <TextInput
+              style={[styles.inputBox, { flex: 1 }]}
+              value={newMuteTagDraft}
+              onChangeText={setNewMuteTagDraft}
+              placeholder="Mute a tag you don't want to see..."
+              placeholderTextColor="rgba(255,255,255,0.38)"
+              returnKeyType="done"
+              onSubmitEditing={async () => {
+                if (!newMuteTagDraft.trim()) return;
+                await tasteEngineService.muteTag(newMuteTagDraft);
+                setNewMuteTagDraft('');
+                await loadTasteProfile(true);
+              }}
+            />
+            <TouchableOpacity
+              style={[
+                styles.tokenPill,
+                {
+                  justifyContent: 'center',
+                  borderColor: 'rgba(244, 63, 94, 0.4)',
+                  backgroundColor: 'rgba(244, 63, 94, 0.14)',
+                },
+              ]}
+              onPress={async () => {
+                if (!newMuteTagDraft.trim()) return;
+                await tasteEngineService.muteTag(newMuteTagDraft);
+                setNewMuteTagDraft('');
+                await loadTasteProfile(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={{ color: '#fda4af', fontSize: 11, fontWeight: '700' }}>Mute</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Reset Actions */}
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity
+              style={[
+                styles.tokenPill,
+                {
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  paddingVertical: 10,
+                },
+              ]}
+              onPress={async () => {
+                await tasteEngineService.resetTasteProfile();
+                await loadTasteProfile(true);
+                setTasteNotice('Taste profile cleared (your Favorites list is preserved).');
+              }}
+              activeOpacity={0.8}
+            >
+              <Trash2 size={13} color="#fda4af" />
+              <Text style={{ color: '#fda4af', fontSize: 11.5, fontWeight: '700' }}>Reset Taste</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.tokenPill,
+                {
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  paddingVertical: 10,
+                },
+              ]}
+              onPress={async () => {
+                await matchAlgorithmService.resetSeen();
+                setTasteNotice('Seen & swipe deck history reset.');
+              }}
+              activeOpacity={0.8}
+            >
+              <RefreshCw size={13} color={palette.accent} />
+              <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '700' }}>
+                Reset Seen Deck
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {tasteNotice ? (
+            <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '600', marginTop: 10 }}>
+              {tasteNotice}
+            </Text>
+          ) : null}
+        </ScrollView>
+      </BottomSheetModal>
+      </ScrollView>
+    </View>
   );
 };
 
-const createStyles = (palette: ThemePalette) => StyleSheet.create({
+const createStyles = (palette: ThemePalette, skin: UiSkinTokens) => {
+  const screenBg = getScreenBg(palette, skin);
+  const surfaceBg = getSurfaceBg(palette, skin);
+  const subtleSurfaceBg = getSubtleSurfaceBg(palette, skin);
+  return StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: screenBg,
   },
   contentContainer: {
     padding: 14,
     paddingBottom: 110,
   },
   healthCardBig: {
-    backgroundColor: '#0f121d',
-    borderRadius: 18,
+    backgroundColor: surfaceBg,
+    borderRadius: skin.cardRadius,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
     padding: 14,
@@ -2641,10 +3734,11 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     gap: 8,
   },
   healthItemBox: {
-    backgroundColor: '#151926',
-    borderRadius: 12,
+    backgroundColor: skin.id === 'ios' ? 'rgba(255, 255, 255, 0.06)' : subtleSurfaceBg,
+    borderRadius: skin.id === 'ios' ? 14 : 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: skin.id === 'ios' ? 'rgba(255, 255, 255, 0.14)' : 'rgba(255, 255, 255, 0.1)',
+    ...(skin.id === 'ios' ? { borderTopColor: 'rgba(255, 255, 255, 0.24)' } : null),
     padding: 10,
   },
   healthItemTop: {
@@ -2788,9 +3882,9 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
       : {}),
   },
   modalSheet: {
-    backgroundColor: '#0f121d',
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
+    backgroundColor: surfaceBg,
+    borderTopLeftRadius: skin.sheetRadius,
+    borderTopRightRadius: skin.sheetRadius,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
     maxHeight: '86%',
@@ -2829,7 +3923,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     marginTop: 8,
   },
   inputBox: {
-    backgroundColor: '#151926',
+    backgroundColor: subtleSurfaceBg,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -2841,7 +3935,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   inputPasswordRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#151926',
+    backgroundColor: subtleSurfaceBg,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -2900,7 +3994,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   },
   saveBtn: {
     backgroundColor: palette.accent,
-    borderRadius: 10,
+    borderRadius: skin.buttonRadius,
     paddingVertical: 11,
     alignItems: 'center',
   },
@@ -2962,7 +4056,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     color: '#000000',
   },
   vaultSnippetBox: {
-    backgroundColor: '#151926',
+    backgroundColor: subtleSurfaceBg,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -3015,7 +4109,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   personaItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#151926',
+    backgroundColor: subtleSurfaceBg,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -3055,7 +4149,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     flexWrap: 'wrap',
   },
   tokenPill: {
-    backgroundColor: '#151926',
+    backgroundColor: subtleSurfaceBg,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -3119,7 +4213,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#151926',
+    backgroundColor: subtleSurfaceBg,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -3161,7 +4255,7 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 16,
-    backgroundColor: '#151926',
+    backgroundColor: subtleSurfaceBg,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
   },
@@ -3219,3 +4313,4 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
     marginTop: 2,
   },
 });
+};

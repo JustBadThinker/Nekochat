@@ -1,8 +1,8 @@
 # NEKOCHAT MIGRATION PROGRESS
 
-**Last Updated:** 2026-11-11  
+**Last Updated:** 2026-11-26  
 **Current Branch:** `main`  
-**Latest Baseline Commit:** `17fb7b7`  
+**Latest Baseline Commit:** `bc50bb6` (`v0.2.4` unreleased local updates)  
 
 ---
 
@@ -65,3 +65,10 @@
   - [x] Zero-Capacitor compliance audit: pure React Native components (`View`, `Text`, `Image`, `ScrollView`, `TextInput`, `Modal`).
   - [x] Dependency verification with `npx expo-doctor` (20/20 checks passed).
   - [x] Android bundle generation verification with `npx expo export --platform android`.
+
+- [x] **Milestone 5: v0.2.4 UI Skin Overhaul, On-Device Taste Engine & Security Hardening**
+  - [x] Modular 4-skin architecture overhaul (`bento` 2×2 keycap macro-pad composer, `ios` live Android 12+ `BlurTargetView` GPU blur & SVG radial glows, `material` M3 Expressive tonal containers & Android 16 segmented lists, `janitor` frosted liquid-merge pill composer).
+  - [x] Extracted 100% on-device `tasteEngineLogic.ts` & `tasteEngineService.ts` with 14-day exponential decay, pinned/muted tags, `genderFocus` overrides, RP depth matching, and **Settings → For You & Taste** controls.
+  - [x] Direct GitHub Releases updater (`githubUpdateService.ts`) in **Settings → About NekoChat** with semver & `.apk` asset detection.
+  - [x] One-tap in-chat Persona Switcher styled across all 4 skins, native BottomSheet scroll-vs-drag isolation, SecureStore migration for Image Gen API keys, and `http(s)` external URL safety validation (`urlSafety.ts`).
+  - [x] Unit & integration suite expanded to 85 passing tests across 15 suites (`node --test tests/*.test.mjs`).

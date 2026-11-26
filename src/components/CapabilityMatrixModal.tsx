@@ -182,6 +182,10 @@ export const CapabilityMatrixModal: React.FC<CapabilityMatrixModalProps> = ({
         })}
       </View>
 
+      <Text style={styles.hintBar}>
+        Tap ↻ to run a single probe · Long-press a badge to set manually
+      </Text>
+
       <ScrollView
         style={{ flex: 1 }}
         nestedScrollEnabled
@@ -207,10 +211,17 @@ export const CapabilityMatrixModal: React.FC<CapabilityMatrixModalProps> = ({
                   Model: {row.modelStatus} · Provider: {row.providerStatus} · {sourceLabel} ({dateStr})
                   {row.isStale ? ' · Stale' : ''}
                 </Text>
+                {row.notes ? (
+                  <Text style={styles.noteText} numberOfLines={2}>
+                    {row.notes}
+                  </Text>
+                ) : null}
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <TouchableOpacity
-                  onPress={() => handleCycleManual(row.category.id, row.effectiveStatus)}
+                  onLongPress={() => handleCycleManual(row.category.id, row.effectiveStatus)}
+                  delayLongPress={350}
+                  accessibilityHint="Long press to manually override status"
                   style={[styles.statusBadge, { backgroundColor: badge.bg }]}
                 >
                   <Text style={[styles.statusText, { color: badge.text }]}>{badge.label}</Text>
@@ -320,6 +331,14 @@ const styles = StyleSheet.create({
   },
   catName: { fontSize: 13, fontWeight: '700', color: '#f8fafc' },
   metaText: { fontSize: 10.5, color: '#94a3b8', marginTop: 3 },
+  noteText: { color: '#9ca3af', fontSize: 10.5, fontStyle: 'italic', marginTop: 3 },
+  hintBar: {
+    fontSize: 10.5,
+    color: '#64748b',
+    paddingHorizontal: 14,
+    paddingTop: 6,
+    paddingBottom: 2,
+  },
   statusBadge: { paddingHorizontal: 9, paddingVertical: 5, borderRadius: 8 },
   statusText: { fontSize: 11, fontWeight: '700' },
   retestBtn: {

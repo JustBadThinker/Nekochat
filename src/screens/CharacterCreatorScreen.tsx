@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,9 +9,10 @@ import {
   Image,
   Modal,
   Platform,
+  Keyboard,
   KeyboardAvoidingView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
   Check,
@@ -58,6 +59,28 @@ export const CharacterCreatorScreen: React.FC<CharacterCreatorScreenProps> = ({
   onSave,
 }) => {
   const { palette, skin } = useTheme();
+  const insets = useSafeAreaInsets();
+  const scrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    if (!visible) {
+      setKeyboardHeight(0);
+      return;
+    }
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const subShow = Keyboard.addListener(showEvt, e => {
+      setKeyboardHeight(e.endCoordinates?.height || 0);
+    });
+    const subHide = Keyboard.addListener(hideEvt, () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, [visible]);
 
   const [name, setName] = useState('');
   const [chatName, setChatName] = useState('');
@@ -251,8 +274,17 @@ export const CharacterCreatorScreen: React.FC<CharacterCreatorScreenProps> = ({
           </View>
 
           <ScrollView
+            ref={scrollRef}
             style={{ flex: 1 }}
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[
+              styles.scrollContent,
+              {
+                paddingBottom:
+                  Platform.OS === 'android' && keyboardHeight > 0
+                    ? keyboardHeight + 36
+                    : Math.max(48, insets.bottom + 24),
+              },
+            ]}
             keyboardShouldPersistTaps="handled"
             automaticallyAdjustKeyboardInsets
             showsVerticalScrollIndicator={false}
@@ -607,6 +639,7 @@ export const CharacterCreatorScreen: React.FC<CharacterCreatorScreenProps> = ({
                   onChangeText={val =>
                     setGreetings(prev => prev.map((g, i) => (i === activeGreetingIdx ? val : g)))
                   }
+                  onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 180)}
                   placeholder="The first message from your character (*italic* for actions, quotes for speech)..."
                   placeholderTextColor="#64748b"
                   multiline
@@ -621,6 +654,7 @@ export const CharacterCreatorScreen: React.FC<CharacterCreatorScreenProps> = ({
                 style={[styles.textArea, inputSurface, { minHeight: 100 }]}
                 value={exampleDialogs}
                 onChangeText={setExampleDialogs}
+                onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 180)}
                 placeholder={'{{char}}: Hey there.\n{{user}}: Hi!\n{{char}}: Nice to meet you :)'}
                 placeholderTextColor="#64748b"
                 multiline

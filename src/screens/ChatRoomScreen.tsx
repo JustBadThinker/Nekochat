@@ -37,6 +37,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView, BlurTargetView } from 'expo-blur';
 import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SmoothSlider } from '../components/SmoothSlider';
@@ -48,9 +49,7 @@ import { AnimatedChevron, AnimatedCollapsible } from '../components/SmoothTransi
 import { GLASS } from '../theme/glassTheme';
 import {
   ArrowLeft,
-  Send,
   Plus,
-  MessageCircle,
   Sparkles,
   X,
   Check,
@@ -68,11 +67,8 @@ import {
   Volume2,
   Image as ImageIcon,
   Palette,
-  Maximize2,
-  Minimize2,
   ImagePlus,
   MoreHorizontal,
-  UserCheck,
   Smile,
   Brain,
   Cpu,
@@ -101,7 +97,15 @@ import {
 } from '../types';
 import { colors, ThemePalette } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
-import { getBubbleSurfaceStyle, getCardSurfaceStyle, getSurfaceBg } from '../theme/skins';
+import {
+  UiSkinTokens,
+  getBubbleSurfaceStyle,
+  getCardSurfaceStyle,
+  getM3TonalContainer,
+  getScreenBg,
+  getSubtleSurfaceBg,
+  getSurfaceBg,
+} from '../theme/skins';
 import { runToggleAnimation } from '../theme/animations';
 import { useTranslation } from '../i18n/LanguageContext';
 import { imageGenService, IMAGE_STYLE_OPTIONS, ImageStylePreset } from '../services/imageGenService';
@@ -124,7 +128,7 @@ import { getTokenStripperPreview } from '../services/tokenStripper';
 import { tokenPriceService } from '../services/tokenPriceService';
 import { NekoPulseLoader } from '../components/NekoPulseLoader';
 import { InlineWaitFidget } from '../components/InlineWaitFidget';
-import { DeskNekoWalker } from '../components/DeskNekoWalker';
+import { ChatComposerBar, ChatComposerBarHandle } from '../components/ChatComposerBar';
 import { HelpCenterModal } from '../components/HelpCenterModal';
 import {
   ChatBackgroundLayer,
@@ -202,21 +206,17 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 }) => {
   const { palette, skin } = useTheme();
   const { t } = useTranslation();
-  const styles = useMemo(() => createStyles(palette), [palette]);
+  const styles = useMemo(() => createStyles(palette, skin), [palette, skin]);
   // Session & Message State
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [inputText, setInputText] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [fidgetOpen, setFidgetOpen] = useState(false);
-  const [composerWidth, setComposerWidth] = useState(340);
   const [isContinuingWait, setIsContinuingWait] = useState(false);
   const [fidgetScore, setFidgetScore] = useState(0);
   const [fidgetStreak, setFidgetStreak] = useState(0);
   const [chatStyle, setChatStyle] = useState<ChatStyleMode>('bubble');
-  const [showActionDeck, setShowActionDeck] = useState(false);
-  const actionDeckAnim = useRef(new Animated.Value(0)).current;
   const wallpaperToggleAnim = useRef(new Animated.Value(1)).current;
   const chatControlTabAnim = useRef(new Animated.Value(1)).current;
 
@@ -282,7 +282,6 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [chatMaxTokens, setChatMaxTokens] = useState<number>(config?.maxTokens ?? 4096);
   const [promptPresets, setPromptPresets] = useState<{ id: string; name: string; prompt: string; updatedAt: number }[]>([]);
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
-  const [showNewPresetForm, setShowNewPresetForm] = useState(false);
   const [newPresetName, setNewPresetName] = useState('');
   const [newPresetBody, setNewPresetBody] = useState('');
   const [settingsSubView, setSettingsSubView] = useState<'main' | 'generation' | 'custom_prompt' | 'new_custom_prompt' | 'prefill' | 'forbidden_words' | 'lorebooks'>('main');
@@ -319,7 +318,6 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     bold: '#FFFFFF',
     code: '#A78BFA',
   });
-  const [memorySavedNotice, setMemorySavedNotice] = useState(false);
   const [isSummarizingMemory, setIsSummarizingMemory] = useState(false);
   const [memoryNoticeText, setMemoryNoticeText] = useState('');
   const [lastCheckpointIndex, setLastCheckpointIndex] = useState<number>(-1);
@@ -328,7 +326,6 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [castMembers, setCastMembers] = useState<DynamicCastMember[]>([]);
   const [sceneState, setSceneState] = useState<SceneContinuityState | null>(null);
   const [castCandidate, setCastCandidate] = useState<CastCandidateSuggestion | null>(null);
-  const [castCandidateMsgId, setCastCandidateMsgId] = useState<string | undefined>(undefined);
   const [showCastSheet, setShowCastSheet] = useState(false);
   const [editingCastId, setEditingCastId] = useState<string | null>(null);
   const [castDraftName, setCastDraftName] = useState('');
@@ -336,47 +333,12 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [castLocationDraft, setCastLocationDraft] = useState('');
   const [castTimeDraft, setCastTimeDraft] = useState('');
 
-  // Quick Persona Switcher & Personality Editor State (Dynamic from storage)
+  // Quick Persona Switcher State (Dynamic from storage)
   const [showPersonaModal, setShowPersonaModal] = useState(false);
   const [allPersonas, setAllPersonas] = useState<Persona[]>(personas || []);
-  const [editingPersonaName, setEditingPersonaName] = useState(persona?.name || 'Ren');
-  const [editingPersonaPersonality, setEditingPersonaPersonality] = useState(persona?.personality || persona?.description || '');
 
-  // Expandable Input Box State
-  const [isInputExpanded, setIsInputExpanded] = useState(false);
-  const [composerInputHeight, setComposerInputHeight] = useState(34);
-  const composerInputRef = useRef<any>(null);
-  const composerExpandAnim = useRef(new Animated.Value(0)).current;
-
-  const handleToggleInputExpanded = () => {
-    const nextExpanded = !isInputExpanded;
-    setIsInputExpanded(nextExpanded);
-    Animated.timing(composerExpandAnim, {
-      toValue: nextExpanded ? 1 : 0,
-      duration: 240,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  };
-
-  useEffect(() => {
-    if (!inputText) {
-      setComposerInputHeight(34);
-      if (Platform.OS === 'web' && composerInputRef.current) {
-        (composerInputRef.current as any).style.height = '100%';
-      }
-      return;
-    }
-    if (Platform.OS === 'web' && composerInputRef.current && !isInputExpanded) {
-      const el = composerInputRef.current as any;
-      requestAnimationFrame(() => {
-        el.style.height = '34px';
-        const nextH = Math.max(34, Math.min(200, el.scrollHeight));
-        el.style.height = '100%';
-        setComposerInputHeight(nextH);
-      });
-    }
-  }, [inputText, isInputExpanded]);
+  const composerRef = useRef<ChatComposerBarHandle | null>(null);
+  const chatBlurTargetRef = useRef<React.ComponentRef<typeof View> | null>(null);
   const [lightboxImageUrl, setLightboxImageUrl] = useState<string | null>(null);
 
   const scrollViewRef = useRef<any>(null);
@@ -600,17 +562,13 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   };
 
   useEffect(() => {
-    runToggleAnimation(actionDeckAnim, showActionDeck, skin.animation);
-  }, [showActionDeck, actionDeckAnim, skin.animation]);
-
-  useEffect(() => {
     Animated.spring(wallpaperToggleAnim, {
       toValue: appearance.enableWallpaper ? 1 : 0,
       useNativeDriver: true,
       friction: 7,
       tension: 140,
     }).start();
-  }, [appearance.enableWallpaper]);
+  }, [appearance.enableWallpaper, wallpaperToggleAnim]);
 
   useEffect(() => {
     runToggleAnimation(headerMenuAnim, showHeaderMenu, skin.animation);
@@ -624,7 +582,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       easing: skin.animation.easing,
       useNativeDriver: true,
     }).start();
-  }, [chatControlTab, settingsSubView, skin.animation]);
+  }, [chatControlTab, settingsSubView, skin.animation, chatControlTabAnim]);
 
   useEffect(() => {
     loadPersonas();
@@ -779,8 +737,6 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       setChatMemory(updated);
       await persistSessionMemory(activeConversationId, updated);
     }
-    setMemorySavedNotice(true);
-    setTimeout(() => setMemorySavedNotice(false), 2000);
   };
 
   const [syncedDefaultModel, setSyncedDefaultModel] = useState<string>(config?.model || '');
@@ -976,7 +932,6 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     await handleApplyCustomPrompt(trimmedBody, newPreset.id);
     setNewPresetName('');
     setNewPresetBody('');
-    setShowNewPresetForm(false);
   };
 
   const handleDeletePreset = async (id: string) => {
@@ -994,26 +949,6 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     const next = { ...syntaxColors, ...updates };
     setSyntaxColors(next);
     await AsyncStorage.setItem('@nekochat:syntax_colors', JSON.stringify(next));
-  };
-
-  const handleToggleChatStyle = async () => {
-    const next: ChatStyleMode = chatStyle === 'bubble' ? 'novel' : 'bubble';
-    setChatStyle(next);
-    await AsyncStorage.setItem('@nekochat:chat_style', next);
-  };
-
-  const handleSaveActivePersonaPersonality = async () => {
-    if (!persona) return;
-    const updatedPersona: Persona = {
-      ...persona,
-      name: editingPersonaName.trim() || persona.name,
-      personality: editingPersonaPersonality.trim(),
-      description: editingPersonaPersonality.trim(),
-    };
-    await storageService.upsertPersona(updatedPersona);
-    onSelectPersona(updatedPersona);
-    await loadPersonas();
-    setShowPersonaModal(false);
   };
 
   useEffect(() => {
@@ -1273,7 +1208,6 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       setCastMembers([...current, created]);
       if (castCandidate && castCandidate.name.toLowerCase() === cleanName.toLowerCase()) {
         setCastCandidate(null);
-        setCastCandidateMsgId(undefined);
       }
     }
     setEditingCastId(null);
@@ -1427,16 +1361,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   ).current;
 
   // --- Sending & Streaming ---
-  const handleSend = async () => {
-    const text = inputText.trim();
+  const handleSend = async (rawText: string) => {
+    const text = rawText.trim();
     if (!text || isStreaming) return;
 
-    setInputText('');
-    setComposerInputHeight(34);
-    if (Platform.OS === 'web' && composerInputRef.current) {
-      (composerInputRef.current as any).style.height = '34px';
-    }
-    setShowActionDeck(false);
+    composerRef.current?.closeActionDeck();
 
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}`,
@@ -1464,7 +1393,6 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     });
     if (candidates.length > 0 && candidates[0].signal !== 'mention') {
       setCastCandidate(candidates[0]);
-      setCastCandidateMsgId(userMsg.id);
     }
 
     setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
@@ -1846,7 +1774,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const handleRegenerate = async (specificIndex?: number, newText?: string) => {
     if (isStreaming || messages.length === 0) return;
     setSelectedMessageId(null);
-    setShowActionDeck(false);
+    composerRef.current?.closeActionDeck();
 
     let trimmed: ChatMessage[] = [];
     if (specificIndex !== undefined) {
@@ -2006,14 +1934,14 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   };
 
   // AI Writing Coach (Refine Draft OR Write for Me from Scratch)
-  const handleRefine = async (forceMode?: 'refine' | 'write') => {
-    const hasDraft = inputText.trim().length > 0;
+  const handleRefine = async (forceMode?: 'refine' | 'write', draftText = '') => {
+    const hasDraft = draftText.trim().length > 0;
     const mode: 'refine' | 'write' = forceMode || (hasDraft ? 'refine' : 'write');
     if (mode === 'refine' && !hasDraft) return;
 
     setRefineMode(mode);
     setIsRefining(true);
-    setShowActionDeck(false);
+    composerRef.current?.closeActionDeck();
 
     try {
       const activeConfig = await resolveActiveConfig();
@@ -2032,7 +1960,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           ? scratchContext || messages.filter(m => m.role === 'assistant').pop()?.content || ''
           : messages.filter(m => m.role === 'assistant').pop()?.content || '';
       const polished = await aiProviderService.refineMessage(
-        mode === 'write' ? '' : inputText,
+        mode === 'write' ? '' : draftText,
         character,
         lastBot,
         persona,
@@ -2578,225 +2506,462 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   };
 
   const totalTokens = messages.reduce((acc, m) => acc + (m.tokenCount || estimateTokens(m.content)), 0);
+  const isIosGlass = skin.id === 'ios';
+  const isM3 = skin.id === 'material';
+  const isNekoBento = skin.id === 'bento';
+  const isJanitor = skin.id === 'janitor';
+  const useFloatingBlurChrome = isIosGlass || isJanitor;
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: skin.screenBg || palette.bgDark }]}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: getScreenBg(palette, skin) }]}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior="padding"
         keyboardVerticalOffset={0}
       >
-        {/* ── Background Wallpaper, Blur & Readability Scrim ── */}
-        <ChatBackgroundLayer
-          appearance={appearance}
-          fallbackUri={character.coverUrl || character.avatar}
-          isNovel={chatStyle === 'novel'}
-        />
+        {(() => {
+          const backgroundLayer = (
+            <ChatBackgroundLayer
+              appearance={appearance}
+              fallbackUri={character.coverUrl || character.avatar}
+              isNovel={chatStyle === 'novel'}
+            />
+          );
 
-        {/* Top Header Bar — Adapts to active UI Theme Pack */}
-        <View
-          style={[
-            styles.header,
-            skin.id === 'ios' && {
-              backgroundColor: '#141416',
-              borderBottomWidth: 0.5,
-              borderBottomColor: 'rgba(255, 255, 255, 0.14)',
-            },
-            skin.id === 'material' && {
-              backgroundColor: getSurfaceBg(palette, skin),
-              borderBottomWidth: 0,
-            },
-            skin.id === 'janitor' && {
-              backgroundColor: getSurfaceBg(palette, skin),
-              borderBottomColor: 'rgba(255, 255, 255, 0.08)',
-            },
-          ]}
-        >
-          <TouchableOpacity style={styles.iconBtn} onPress={onBack} accessibilityLabel="Back">
-            <ArrowLeft size={20} color={colors.textPrimary} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.headerProfileTouchable}
-            onPress={() => setShowCharacterCardModal(true)}
-            activeOpacity={0.8}
-            accessibilityLabel="Open Character Profile Card"
-          >
-            <Image source={{ uri: character.avatar }} style={styles.headerAvatar} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.charHeaderName} numberOfLines={1}>
-                {chatCharName}
-              </Text>
-              <Text style={styles.costBadge}>
-                {tokenPriceService.formatTokenCount(totalTokens)} tokens • {calculateCost(totalTokens, 'IDR')}
-              </Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* 3-Dot Chat Control & Menu Button */}
-          <TouchableOpacity
-            style={styles.headerMoreBtn}
-            onPress={() => setShowHeaderMenu(prev => !prev)}
-            activeOpacity={0.8}
-            accessibilityLabel="Open Chat Menu"
-          >
-            <Animated.View
-              style={{
-                transform: [
-                  {
-                    rotate: headerMenuAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ['0deg', '90deg'],
-                    }),
-                  },
-                  {
-                    scale: headerMenuAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [1, 0.92],
-                    }),
-                  },
-                ],
-              }}
-            >
-              <MoreHorizontal size={20} color={palette.accent} />
-            </Animated.View>
-          </TouchableOpacity>
-        </View>
-
-        {/* Bento-OLED Header Dropdown Menu */}
-        {showHeaderMenu && (
-          <TouchableOpacity
-            style={styles.headerMenuBackdrop}
-            activeOpacity={1}
-            onPress={() => setShowHeaderMenu(false)}
-          >
-            <Animated.View
+          const headerElement = (
+            <View
               style={[
-                styles.headerMenuCard,
-                getCardSurfaceStyle(palette, skin),
-                {
-                  opacity: headerMenuAnim,
-                  transform: [
-                    {
-                      translateY: headerMenuAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [-10, 0],
-                      }),
-                    },
-                    {
-                      scale: headerMenuAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0.92, 1],
-                      }),
-                    },
-                  ],
+                styles.header,
+                isIosGlass && {
+                  position: 'absolute',
+                  top: 8,
+                  left: 10,
+                  right: 10,
+                  zIndex: 30,
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
+                  borderRadius: 26,
+                  overflow: 'hidden',
+                  backgroundColor:
+                    Platform.OS === 'web' ? 'rgba(18, 20, 30, 0.38)' : 'rgba(18, 20, 30, 0.28)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255, 255, 255, 0.28)',
+                  borderTopColor: 'rgba(255, 255, 255, 0.62)',
+                  borderBottomColor: 'rgba(255, 255, 255, 0.14)',
+                  elevation: 14,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 10 },
+                  shadowOpacity: 0.48,
+                  shadowRadius: 20,
+                  ...(Platform.OS === 'web'
+                    ? ({ backdropFilter: 'blur(26px) saturate(190%)' } as any)
+                    : null),
+                },
+                isM3 && {
+                  backgroundColor: getM3TonalContainer(palette, 'low'),
+                  borderBottomWidth: 0,
+                },
+                isJanitor && {
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  zIndex: 30,
+                  overflow: 'hidden',
+                  backgroundColor:
+                    Platform.OS === 'web' ? 'rgba(20, 20, 24, 0.56)' : 'rgba(20, 20, 24, 0.36)',
+                  borderBottomWidth: 1,
+                  borderBottomColor: 'rgba(255, 255, 255, 0.12)',
+                  ...(Platform.OS === 'web'
+                    ? ({ backdropFilter: 'blur(22px) saturate(160%)' } as any)
+                    : null),
                 },
               ]}
             >
-              {[
-                {
-                  label: 'Settings',
-                  Icon: Cpu,
-                  onPress: () => {
-                    setShowHeaderMenu(false);
-                    setChatControlTab('model');
-                    setShowChatControlModal(true);
+              {(isIosGlass || isJanitor) && Platform.OS !== 'web' && (
+                <BlurView
+                  intensity={Platform.OS === 'android' ? 75 : 55}
+                  blurReductionFactor={3}
+                  tint="dark"
+                  blurMethod="dimezisBlurViewSdk31Plus"
+                  blurTarget={chatBlurTargetRef}
+                  style={[StyleSheet.absoluteFill, isIosGlass && { borderRadius: 26 }]}
+                  pointerEvents="none"
+                />
+              )}
+              {isIosGlass && (
+                <>
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={[
+                      'rgba(255, 255, 255, 0.20)',
+                      'rgba(255, 255, 255, 0.02)',
+                      'rgba(255, 255, 255, 0.09)',
+                    ]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 22,
+                      right: 22,
+                      height: 1,
+                      backgroundColor: 'rgba(255, 255, 255, 0.50)',
+                    }}
+                  />
+                </>
+              )}
+              <TouchableOpacity
+                style={[
+                  styles.iconBtn,
+                  isIosGlass && {
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255, 255, 255, 0.22)',
+                    borderTopColor: 'rgba(255, 255, 255, 0.42)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 0,
                   },
-                },
-                {
-                  label: 'Chat Memory & Rules',
-                  Icon: Brain,
-                  onPress: () => {
-                    setShowHeaderMenu(false);
-                    setChatControlTab('memory');
-                    setShowChatControlModal(true);
+                  isM3 && {
+                    width: 38,
+                    height: 38,
+                    borderRadius: 19,
+                    backgroundColor: getM3TonalContainer(palette, 'high'),
+                    borderWidth: 0,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 0,
                   },
-                },
-                {
-                  label: 'Dynamic Cast',
-                  Icon: Users,
-                  onPress: () => handleOpenCastSheet(),
-                },
-                {
-                  label: 'Customize',
-                  Icon: Palette,
-                  onPress: () => {
-                    setShowHeaderMenu(false);
-                    setChatControlTab('syntax');
-                    setSettingsSubView('main');
-                    setShowChatControlModal(true);
+                  isNekoBento && {
+                    width: 38,
+                    height: 38,
+                    borderRadius: 14,
+                    backgroundColor: palette.bgSurfaceSubtle,
+                    borderWidth: 1,
+                    borderColor: 'rgba(255, 255, 255, 0.10)',
+                    borderBottomWidth: 2.5,
+                    borderBottomColor: 'rgba(0, 0, 0, 0.45)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 0,
                   },
-                },
-                {
-                  label: 'Saved Sessions',
-                  Icon: Layers,
-                  onPress: () => {
-                    setShowHeaderMenu(false);
-                    setShowSessionModal(true);
+                ]}
+                onPress={onBack}
+                accessibilityLabel="Back"
+              >
+                <ArrowLeft size={20} color={colors.textPrimary} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.headerProfileTouchable}
+                onPress={() => setShowCharacterCardModal(true)}
+                activeOpacity={0.8}
+                accessibilityLabel="Open Character Profile Card"
+              >
+                <Image source={{ uri: character.avatar }} style={styles.headerAvatar} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.charHeaderName} numberOfLines={1}>
+                    {chatCharName}
+                  </Text>
+                  <Text style={styles.costBadge}>
+                    {tokenPriceService.formatTokenCount(totalTokens)} tokens • {calculateCost(totalTokens, 'IDR')}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* 3-Dot Chat Control & Menu Button */}
+              <TouchableOpacity
+                style={[
+                  styles.headerMoreBtn,
+                  isIosGlass && {
+                    borderRadius: 18,
+                    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+                    borderColor: 'rgba(255, 255, 255, 0.22)',
+                    borderTopColor: 'rgba(255, 255, 255, 0.42)',
                   },
-                },
-                {
-                  label: 'New Chat',
-                  Icon: Plus,
-                  onPress: () => {
-                    setShowHeaderMenu(false);
-                    handleStartNewSession();
+                  isM3 && {
+                    width: 38,
+                    height: 38,
+                    borderRadius: 19,
+                    backgroundColor: getM3TonalContainer(palette, 'high'),
+                    borderWidth: 0,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 0,
                   },
-                },
-                {
-                  label: 'All Chats',
-                  Icon: ArrowLeft,
-                  onPress: () => {
-                    setShowHeaderMenu(false);
-                    onBack();
+                  isNekoBento && {
+                    width: 38,
+                    height: 38,
+                    borderRadius: 14,
+                    backgroundColor: palette.bgSurfaceSubtle,
+                    borderWidth: 1,
+                    borderColor: 'rgba(255, 255, 255, 0.10)',
+                    borderBottomWidth: 2.5,
+                    borderBottomColor: 'rgba(0, 0, 0, 0.45)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: 0,
                   },
-                },
-              ].map((item, idx) => (
-                <TouchableOpacity
-                  key={item.label}
-                  style={[styles.headerMenuItem, idx > 0 && styles.headerMenuItemBorder]}
-                  onPress={item.onPress}
-                  activeOpacity={0.75}
+                ]}
+                onPress={() => setShowHeaderMenu(prev => !prev)}
+                activeOpacity={0.8}
+                accessibilityLabel="Open Chat Menu"
+              >
+                <Animated.View
+                  style={{
+                    transform: [
+                      {
+                        rotate: headerMenuAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: ['0deg', '90deg'],
+                        }),
+                      },
+                      {
+                        scale: headerMenuAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [1, 0.92],
+                        }),
+                      },
+                    ],
+                  }}
                 >
-                  <item.Icon size={16} color={palette.accent} style={{ marginRight: 12 }} />
-                  <Text style={styles.headerMenuItemText}>{item.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </Animated.View>
-          </TouchableOpacity>
-        )}
+                  <MoreHorizontal size={20} color={palette.accent} />
+                </Animated.View>
+              </TouchableOpacity>
+            </View>
+          );
 
-        {/* Scenario & Alternate Greeting Sub-Header */}
-        {character.scenarios && character.scenarios.length > 0 && (
-          <View style={styles.subHeaderBar}>
+          const headerMenuElement = showHeaderMenu && (
             <TouchableOpacity
-              style={styles.scenarioPill}
-              onPress={() => setShowScenarioModal(true)}
+              style={styles.headerMenuBackdrop}
+              activeOpacity={1}
+              onPress={() => setShowHeaderMenu(false)}
             >
-              <Play size={12} color={palette.accent} style={{ marginRight: 5 }} />
-              <Text style={styles.scenarioPillText} numberOfLines={1}>
-                {currentScenario ? currentScenario.title : 'Select Scenario'}
-              </Text>
-              <ChevronDown size={14} color={palette.accent} style={{ marginLeft: 4 }} />
+              <Animated.View
+                style={[
+                  styles.headerMenuCard,
+                  getCardSurfaceStyle(palette, skin),
+                  isIosGlass && {
+                    top: 72,
+                    right: 12,
+                    borderRadius: 22,
+                    overflow: 'hidden',
+                    backgroundColor:
+                      Platform.OS === 'web' ? 'rgba(18, 20, 30, 0.54)' : 'rgba(18, 20, 30, 0.44)',
+                    borderColor: 'rgba(255, 255, 255, 0.28)',
+                    borderTopColor: 'rgba(255, 255, 255, 0.56)',
+                    borderBottomColor: 'rgba(0, 0, 0, 0.40)',
+                    ...(Platform.OS === 'web'
+                      ? ({ backdropFilter: 'blur(26px) saturate(190%)' } as any)
+                      : null),
+                  },
+                  isM3 && {
+                    borderRadius: 24,
+                    borderWidth: 0,
+                    backgroundColor: getM3TonalContainer(palette, 'high'),
+                  },
+                  isJanitor && {
+                    top: 66,
+                    borderRadius: 18,
+                    overflow: 'hidden',
+                    backgroundColor:
+                      Platform.OS === 'web' ? 'rgba(22, 22, 26, 0.62)' : 'rgba(22, 22, 26, 0.44)',
+                    borderColor: 'rgba(255, 255, 255, 0.14)',
+                    ...(Platform.OS === 'web'
+                      ? ({ backdropFilter: 'blur(22px) saturate(155%)' } as any)
+                      : null),
+                  },
+                  {
+                    opacity: headerMenuAnim,
+                    transform: [
+                      {
+                        translateY: headerMenuAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [-10, 0],
+                        }),
+                      },
+                      {
+                        scale: headerMenuAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.92, 1],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                {(isIosGlass || isJanitor) && Platform.OS !== 'web' && (
+                  <BlurView
+                    intensity={Platform.OS === 'android' ? 75 : 55}
+                    blurReductionFactor={3}
+                    tint="dark"
+                    blurMethod="dimezisBlurViewSdk31Plus"
+                    blurTarget={chatBlurTargetRef}
+                    style={[StyleSheet.absoluteFill, { borderRadius: isJanitor ? 18 : 22 }]}
+                    pointerEvents="none"
+                  />
+                )}
+                {isIosGlass && (
+                  <LinearGradient
+                    pointerEvents="none"
+                    colors={[
+                      'rgba(255, 255, 255, 0.18)',
+                      'rgba(255, 255, 255, 0.02)',
+                      'rgba(255, 255, 255, 0.08)',
+                    ]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={StyleSheet.absoluteFill}
+                  />
+                )}
+                {[
+                  {
+                    label: 'Settings',
+                    Icon: Cpu,
+                    onPress: () => {
+                      setShowHeaderMenu(false);
+                      setChatControlTab('model');
+                      setShowChatControlModal(true);
+                    },
+                  },
+                  {
+                    label: 'Chat Memory & Rules',
+                    Icon: Brain,
+                    onPress: () => {
+                      setShowHeaderMenu(false);
+                      setChatControlTab('memory');
+                      setShowChatControlModal(true);
+                    },
+                  },
+                  {
+                    label: 'Dynamic Cast',
+                    Icon: Users,
+                    onPress: () => handleOpenCastSheet(),
+                  },
+                  {
+                    label: 'Customize',
+                    Icon: Palette,
+                    onPress: () => {
+                      setShowHeaderMenu(false);
+                      setChatControlTab('syntax');
+                      setSettingsSubView('main');
+                      setShowChatControlModal(true);
+                    },
+                  },
+                  {
+                    label: 'Saved Sessions',
+                    Icon: Layers,
+                    onPress: () => {
+                      setShowHeaderMenu(false);
+                      setShowSessionModal(true);
+                    },
+                  },
+                  {
+                    label: 'New Chat',
+                    Icon: Plus,
+                    onPress: () => {
+                      setShowHeaderMenu(false);
+                      handleStartNewSession();
+                    },
+                  },
+                  {
+                    label: 'All Chats',
+                    Icon: ArrowLeft,
+                    onPress: () => {
+                      setShowHeaderMenu(false);
+                      onBack();
+                    },
+                  },
+                ].map((item, idx) => (
+                  <TouchableOpacity
+                    key={item.label}
+                    style={[styles.headerMenuItem, idx > 0 && styles.headerMenuItemBorder]}
+                    onPress={item.onPress}
+                    activeOpacity={0.75}
+                  >
+                    <item.Icon size={16} color={palette.accent} style={{ marginRight: 12 }} />
+                    <Text style={styles.headerMenuItemText}>{item.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </Animated.View>
             </TouchableOpacity>
-          </View>
-        )}
+          );
 
-        {/* Alternate Greetings Banner (When on opening turn only) */}
-        {messages.length === 1 && allGreetings.length > 1 && (
-          <View style={styles.greetingCyclerBar}>
-            <Text style={styles.greetingCyclerText}>
-              Greeting {greetingIndex + 1} of {allGreetings.length}
-            </Text>
-            <TouchableOpacity style={styles.greetingCycleBtn} onPress={handleCycleGreeting}>
-              <RotateCw size={12} color={palette.accent} style={{ marginRight: 4 }} />
-              <Text style={styles.greetingCycleBtnText}>Cycle Next</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+          const hasScenarioSubHeader = Boolean(character.scenarios && character.scenarios.length > 0);
+          const hasGreetingSubHeader = messages.length === 1 && allGreetings.length > 1;
+          const glassPillStyle = isIosGlass
+            ? {
+                borderRadius: 16,
+                backgroundColor: 'rgba(18, 20, 30, 0.62)',
+                borderWidth: 1,
+                borderColor: 'rgba(255, 255, 255, 0.22)',
+                borderTopColor: 'rgba(255, 255, 255, 0.42)',
+                borderBottomColor: 'rgba(255, 255, 255, 0.14)',
+              }
+            : null;
 
-        {/* Messages List (Virtualized FlatList + Memoized Rows) */}
-        {(() => {
+          const subHeaderInner = (
+            <>
+              {/* Scenario & Alternate Greeting Sub-Header */}
+              {hasScenarioSubHeader && (
+                <View style={[styles.subHeaderBar, glassPillStyle]}>
+                  <TouchableOpacity
+                    style={styles.scenarioPill}
+                    onPress={() => setShowScenarioModal(true)}
+                  >
+                    <Play size={12} color={palette.accent} style={{ marginRight: 5 }} />
+                    <Text style={styles.scenarioPillText} numberOfLines={1}>
+                      {currentScenario ? currentScenario.title : 'Select Scenario'}
+                    </Text>
+                    <ChevronDown size={14} color={palette.accent} style={{ marginLeft: 4 }} />
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Alternate Greetings Banner (When on opening turn only) */}
+              {hasGreetingSubHeader && (
+                <View style={[styles.greetingCyclerBar, glassPillStyle]}>
+                  <Text style={styles.greetingCyclerText}>
+                    Greeting {greetingIndex + 1} of {allGreetings.length}
+                  </Text>
+                  <TouchableOpacity style={styles.greetingCycleBtn} onPress={handleCycleGreeting}>
+                    <RotateCw size={12} color={palette.accent} style={{ marginRight: 4 }} />
+                    <Text style={styles.greetingCycleBtnText}>Cycle Next</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </>
+          );
+
+          const subHeaderElement =
+            hasScenarioSubHeader || hasGreetingSubHeader ? (
+              useFloatingBlurChrome ? (
+                <View
+                  pointerEvents="box-none"
+                  style={{
+                    position: 'absolute',
+                    top: isJanitor ? 68 : 76,
+                    left: 12,
+                    right: 12,
+                    zIndex: 26,
+                    gap: 6,
+                  }}
+                >
+                  {subHeaderInner}
+                </View>
+              ) : (
+                subHeaderInner
+              )
+            ) : null;
+
           const hiddenCount = Math.max(0, messages.length - visibleMessageCount);
           const visibleMessages = hiddenCount > 0 ? messages.slice(hiddenCount) : messages;
           const renderMessageRowItem = ({ item: msg, index: localIdx }: { item: ChatMessage; index: number }) => {
@@ -2807,7 +2972,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             const isLastAssistant = !isUser && idx === messages.length - 1;
             const isStreamingLast = isStreaming && isLastAssistant;
             const localRevealWords = !isUser && localReveal && localReveal.msgId === msg.id ? localReveal.shownWords : 0;
-            const isInspectorExpanded = Boolean(expandedInspectorIds[msg.id]);
+            const isInspectorExpanded = isLastAssistant && Boolean(expandedInspectorIds[msg.id]);
             const isTtsSpeakingThis = ttsState.isSpeaking && ttsState.currentMessageId === msg.id;
             const isCopiedThis = copiedId === msg.id;
             const isOpeningGreeting = idx === 0 && messages.length === 1;
@@ -2866,7 +3031,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                       </TouchableOpacity>
                       {isUser && (
                         <TouchableOpacity
-                          style={[styles.inlineEditSaveBtn, { backgroundColor: colors.lime }]}
+                          style={[styles.inlineEditSaveBtn, { backgroundColor: palette.accent }]}
                           onPress={() => handleSaveEdit(true)}
                         >
                           <RotateCcw size={13} color="#000" style={{ marginRight: 4 }} />
@@ -2941,7 +3106,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         )}
                       </View>
 
-                      {!isUser && renderInspectorDrawer(msg, liveThought)}
+                      {isLastAssistant && renderInspectorDrawer(msg, liveThought)}
                       {isWaitingPlaceholder ? (
                         <Text style={[styles.novelBotText, { color: 'rgba(226, 232, 240, 0.55)', fontStyle: 'italic' }]}>
                           Writing...
@@ -3139,7 +3304,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                       onPress={() => setSelectedMessageId(isSelected ? null : msg.id)}
                       activeOpacity={0.9}
                     >
-                      {!isUser && renderInspectorDrawer(msg, liveThought)}
+                      {isLastAssistant && renderInspectorDrawer(msg, liveThought)}
                       {isWaitingPlaceholder ? (
                         <Text style={[styles.bubbleBotText, { color: 'rgba(226, 232, 240, 0.55)', fontStyle: 'italic' }]}>
                           Writing...
@@ -3345,7 +3510,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             );
           };
 
-          return (
+          const messageListElement = (
             <Animated.View style={{ flex: 1, opacity: chatListOpacity }}>
               <FlatList
                 ref={scrollViewRef}
@@ -3354,7 +3519,17 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                 renderItem={renderMessageRowItem}
                 nestedScrollEnabled
                 keyboardShouldPersistTaps="handled"
-                contentContainerStyle={styles.scrollContent}
+                contentContainerStyle={[
+                  styles.scrollContent,
+                  isIosGlass && {
+                    paddingTop: hasScenarioSubHeader || hasGreetingSubHeader ? 132 : 88,
+                    paddingBottom: 148,
+                  },
+                  isJanitor && {
+                    paddingTop: hasScenarioSubHeader || hasGreetingSubHeader ? 124 : 78,
+                    paddingBottom: 132,
+                  },
+                ]}
                 initialNumToRender={10}
                 maxToRenderPerBatch={8}
                 windowSize={7}
@@ -3422,508 +3597,235 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               />
             </Animated.View>
           );
-        })()}
 
-        {/* Animated Quick Scroll-to-Bottom Button */}
-        <Animated.View
-          pointerEvents={showScrollBottom ? 'auto' : 'none'}
-          style={[
-            styles.scrollBottomFabWrap,
-            {
-              opacity: scrollBottomAnim,
-              transform: [
-                {
-                  scale: scrollBottomAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.8, 1],
-                  }),
-                },
-                {
-                  translateY: scrollBottomAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [12, 0],
-                  }),
-                },
-              ],
-            },
-          ]}
-        >
-          <TouchableOpacity
-            style={[
-              styles.scrollBottomFab,
-              {
-                backgroundColor: getSurfaceBg(palette, skin),
-                borderColor: `rgba(${palette.accentRgb}, 0.45)`,
-              },
-            ]}
-            onPress={() => {
-              isNearBottomRef.current = true;
-              setShowScrollBottom(false);
-              scrollViewRef.current?.scrollToEnd({ animated: true });
-              setTimeout(() => {
-                scrollViewRef.current?.scrollToEnd({ animated: false });
-              }, 140);
-            }}
-            activeOpacity={0.85}
-            accessibilityLabel="Scroll to latest message"
-          >
-            <ChevronDown size={18} color={palette.accent} />
-          </TouchableOpacity>
-        </Animated.View>
-
-        {/* Animated Refining / Write-for-Me Indicator */}
-        {isRefining && (
-          <View
-            style={[
-              styles.refiningBanner,
-              {
-                backgroundColor: palette.bgSurface,
-                borderColor: `rgba(${palette.accentRgb}, 0.35)`,
-              },
-            ]}
-          >
-            <NekoPulseLoader
-              size={24}
-              label={refineMode === 'write' ? 'Writing roleplay draft for you...' : 'Polishing your draft...'}
-            />
-          </View>
-        )}
-
-        {/* Refine / AI Writing Coach Preview Card */}
-        {refinePreview && (
-          <View style={[styles.refineCard, { borderColor: `rgba(${palette.accentRgb}, 0.4)` }]}>
-            <View style={styles.refineHeader}>
-              <Sparkles size={14} color={palette.accent} style={{ marginRight: 6 }} />
-              <Text style={[styles.refineTitle, { color: palette.accent }]}>
-                {refineMode === 'write' ? 'Written by AI Coach' : 'Polished by AI Coach'}
-              </Text>
-            </View>
-            <Text style={styles.refineBody}>{`"${refinePreview}"`}</Text>
-            <View style={styles.refineActionRow}>
-              <TouchableOpacity
-                style={[styles.refineActionUse, { backgroundColor: palette.accent }]}
-                onPress={() => {
-                  setInputText(refinePreview);
-                  setRefinePreview(null);
-                }}
+          const bottomInner = (
+            <>
+              {/* Animated Quick Scroll-to-Bottom Button */}
+              <Animated.View
+                pointerEvents={showScrollBottom ? 'auto' : 'none'}
+                style={[
+                  styles.scrollBottomFabWrap,
+                  {
+                    opacity: scrollBottomAnim,
+                    transform: [
+                      {
+                        scale: scrollBottomAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.8, 1],
+                        }),
+                      },
+                      {
+                        translateY: scrollBottomAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [12, 0],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
               >
-                <Check size={14} color="#000" style={{ marginRight: 4 }} />
-                <Text style={styles.refineActionUseText}>Use this</Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.scrollBottomFab,
+                    {
+                      backgroundColor: isIosGlass
+                        ? 'rgba(20, 22, 32, 0.56)'
+                        : isM3
+                          ? getM3TonalContainer(palette, 'highest')
+                          : getSurfaceBg(palette, skin),
+                      borderColor: isIosGlass
+                        ? 'rgba(255, 255, 255, 0.28)'
+                        : isM3
+                          ? 'transparent'
+                          : `rgba(${palette.accentRgb}, 0.45)`,
+                      ...(isM3
+                        ? {
+                            width: 44,
+                            height: 44,
+                            borderRadius: 14,
+                            borderWidth: 0,
+                            elevation: 6,
+                          }
+                        : null),
+                      ...(isNekoBento
+                        ? {
+                            borderRadius: 14,
+                            borderBottomWidth: 3,
+                            borderBottomColor: `rgba(${palette.accentRgb}, 0.55)`,
+                          }
+                        : null),
+                      ...(isIosGlass
+                        ? {
+                            borderTopColor: 'rgba(255, 255, 255, 0.56)',
+                            elevation: 10,
+                          }
+                        : null),
+                    },
+                  ]}
+                  onPress={() => {
+                    isNearBottomRef.current = true;
+                    setShowScrollBottom(false);
+                    scrollViewRef.current?.scrollToEnd({ animated: true });
+                    setTimeout(() => {
+                      scrollViewRef.current?.scrollToEnd({ animated: false });
+                    }, 140);
+                  }}
+                  activeOpacity={0.85}
+                  accessibilityLabel="Scroll to latest message"
+                >
+                  <ChevronDown size={18} color={palette.accent} />
+                </TouchableOpacity>
+              </Animated.View>
 
-              <TouchableOpacity style={styles.refineActionDiscard} onPress={() => setRefinePreview(null)}>
-                <X size={14} color={colors.textSecondary} style={{ marginRight: 4 }} />
-                <Text style={styles.refineActionDiscardText}>Discard</Text>
-              </TouchableOpacity>
+              {/* Animated Refining / Write-for-Me Indicator */}
+              {isRefining && (
+                <View
+                  style={[
+                    styles.refiningBanner,
+                    {
+                      backgroundColor: getSurfaceBg(palette, skin),
+                      borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+                    },
+                  ]}
+                >
+                  <NekoPulseLoader
+                    size={24}
+                    label={refineMode === 'write' ? 'Writing roleplay draft for you...' : 'Polishing your draft...'}
+                  />
+                </View>
+              )}
+
+              {/* Refine / AI Writing Coach Preview Card */}
+              {refinePreview && (
+                <View style={[styles.refineCard, { borderColor: `rgba(${palette.accentRgb}, 0.4)` }]}>
+                  <View style={styles.refineHeader}>
+                    <Sparkles size={14} color={palette.accent} style={{ marginRight: 6 }} />
+                    <Text style={[styles.refineTitle, { color: palette.accent }]}>
+                      {refineMode === 'write' ? 'Written by AI Coach' : 'Polished by AI Coach'}
+                    </Text>
+                  </View>
+                  <Text style={styles.refineBody}>{`"${refinePreview}"`}</Text>
+                  <View style={styles.refineActionRow}>
+                    <TouchableOpacity
+                      style={[styles.refineActionUse, { backgroundColor: palette.accent }]}
+                      onPress={() => {
+                        composerRef.current?.setText(refinePreview);
+                        setRefinePreview(null);
+                      }}
+                    >
+                      <Check size={14} color="#000" style={{ marginRight: 4 }} />
+                      <Text style={styles.refineActionUseText}>Use this</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={styles.refineActionDiscard} onPress={() => setRefinePreview(null)}>
+                      <X size={14} color={colors.textSecondary} style={{ marginRight: 4 }} />
+                      <Text style={styles.refineActionDiscardText}>Discard</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {/* Bottom Composer Area */}
+              {fidgetOpen && (() => {
+                const lastMsg = messages[messages.length - 1];
+                const rawLast = (lastMsg?.content || '').trim();
+                const lastTrimmed = stripThinkTags(rawLast);
+                const isPlaceholderActive =
+                  isStreaming &&
+                  lastMsg?.role === 'assistant' &&
+                  (lastTrimmed === '...' || lastTrimmed === '');
+                const isWaitingNow = isPlaceholderActive || isContinuingWait;
+                const isTypingNow = !isWaitingNow && isStreaming;
+
+                let liveThought = lastMsg?.thought || '';
+                const unclosedThink = rawLast.match(/<(?:think|thought|reasoning)>([\s\S]*)$/i);
+                const closedThink = rawLast.match(/<(?:think|thought|reasoning)>([\s\S]*?)<\/(?:think|thought|reasoning)>/i);
+                if (closedThink && closedThink[1]) {
+                  liveThought = closedThink[1].trim();
+                } else if (unclosedThink && unclosedThink[1]) {
+                  liveThought = unclosedThink[1].trim();
+                }
+
+                return (
+                  <InlineWaitFidget
+                    charName={chatCharName}
+                    isWaiting={isWaitingNow}
+                    isTypingReply={isTypingNow}
+                    liveThought={liveThought}
+                    score={fidgetScore}
+                    streak={fidgetStreak}
+                    onScoreChange={handleFidgetScoreChange}
+                    onReset={handleFidgetReset}
+                    onClose={() => setFidgetOpen(false)}
+                  />
+                );
+              })()}
+              <ChatComposerBar
+                ref={composerRef}
+                persona={persona}
+                blurTargetRef={useFloatingBlurChrome ? chatBlurTargetRef : undefined}
+                isStreaming={isStreaming}
+                isRefining={isRefining}
+                refineMode={refineMode}
+                fidgetOpen={fidgetOpen}
+                activeImageProvider={activeImageProvider}
+                castMembers={castMembers}
+                castCandidate={castCandidate}
+                onSend={handleSend}
+                onStopStreaming={() => {
+                  aiProviderService.abortGeneration();
+                  setIsStreaming(false);
+                  setIsContinuingWait(false);
+                }}
+                onRefine={handleRefine}
+                onOpenFidget={() => setFidgetOpen(true)}
+                onOpenSceneDepict={handleOpenSceneDepict}
+                onOpenCastSheet={handleOpenCastSheet}
+                onOpenPersonaModal={() => {
+                  loadPersonas();
+                  setShowPersonaModal(true);
+                }}
+              />
+            </>
+          );
+
+          const bottomStackElement = useFloatingBlurChrome ? (
+            <View
+              pointerEvents="box-none"
+              style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 25 }}
+            >
+              {bottomInner}
             </View>
-          </View>
-        )}
+          ) : (
+            bottomInner
+          );
 
-        {/* Bottom Composer Area */}
-        {fidgetOpen && (() => {
-          const lastMsg = messages[messages.length - 1];
-          const rawLast = (lastMsg?.content || '').trim();
-          const lastTrimmed = stripThinkTags(rawLast);
-          const isPlaceholderActive =
-            isStreaming &&
-            lastMsg?.role === 'assistant' &&
-            (lastTrimmed === '...' || lastTrimmed === '');
-          const isWaitingNow = isPlaceholderActive || isContinuingWait;
-          const isTypingNow = !isWaitingNow && isStreaming;
-
-          let liveThought = lastMsg?.thought || '';
-          const unclosedThink = rawLast.match(/<(?:think|thought|reasoning)>([\s\S]*)$/i);
-          const closedThink = rawLast.match(/<(?:think|thought|reasoning)>([\s\S]*?)<\/(?:think|thought|reasoning)>/i);
-          if (closedThink && closedThink[1]) {
-            liveThought = closedThink[1].trim();
-          } else if (unclosedThink && unclosedThink[1]) {
-            liveThought = unclosedThink[1].trim();
+          if (useFloatingBlurChrome) {
+            return (
+              <View style={{ flex: 1, position: 'relative' }}>
+                <BlurTargetView ref={chatBlurTargetRef} style={StyleSheet.absoluteFill}>
+                  {backgroundLayer}
+                  {messageListElement}
+                </BlurTargetView>
+                {headerElement}
+                {subHeaderElement}
+                {bottomStackElement}
+                {headerMenuElement}
+              </View>
+            );
           }
 
           return (
-            <InlineWaitFidget
-              charName={chatCharName}
-              isWaiting={isWaitingNow}
-              isTypingReply={isTypingNow}
-              liveThought={liveThought}
-              score={fidgetScore}
-              streak={fidgetStreak}
-              onScoreChange={handleFidgetScoreChange}
-              onReset={handleFidgetReset}
-              onClose={() => setFidgetOpen(false)}
-            />
+            <>
+              {backgroundLayer}
+              {headerElement}
+              {headerMenuElement}
+              {subHeaderElement}
+              {messageListElement}
+              {bottomStackElement}
+            </>
           );
         })()}
-        <View
-          style={styles.composerWrapper}
-          onLayout={e => {
-            const w = e.nativeEvent.layout.width;
-            if (w > 0) setComposerWidth(w);
-          }}
-        >
-          {!fidgetOpen && (
-            <DeskNekoWalker
-              containerWidth={composerWidth}
-              isTypingUser={inputText.trim().length > 0}
-              isAiWaiting={isStreaming}
-              onPress={() => setFidgetOpen(true)}
-            />
-          )}
-          {/* Action Deck Popup Card (Inside + Button — Clean Floating Card) */}
-          {showActionDeck && (
-            <Animated.View
-              style={[
-                styles.actionDeck,
-                getCardSurfaceStyle(palette, skin),
-                {
-                  opacity: actionDeckAnim,
-                  transform: [
-                    {
-                      translateY: actionDeckAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [14, 0],
-                      }),
-                    },
-                    {
-                      scale: actionDeckAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0.96, 1],
-                      }),
-                    },
-                  ],
-                },
-              ]}
-            >
-              {/* Compact 4-Tile Quick Action Grid inside + */}
-              <View style={styles.actionDeckGrid}>
-                {/* 1. OOC */}
-                <TouchableOpacity
-                  style={[
-                    styles.actionGridTile,
-                    inputText.trim().toLowerCase().startsWith('[ooc]') && {
-                      borderColor: `rgba(${palette.accentRgb}, 0.55)`,
-                      backgroundColor: `rgba(${palette.accentRgb}, 0.1)`,
-                    },
-                  ]}
-                  onPress={() => {
-                    setInputText(prev =>
-                      prev.trim().toLowerCase().startsWith('[ooc]')
-                        ? prev.replace(/^\[ooc\]\s*/i, '')
-                        : `[ooc] ${prev}`
-                    );
-                    setShowActionDeck(false);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.actionGridIconBox, { backgroundColor: `rgba(${palette.accentRgb}, 0.14)` }]}>
-                    <MessageCircle size={16} color={palette.accent} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.actionGridTitle}>OOC</Text>
-                    <Text style={styles.actionGridSub} numberOfLines={1}>
-                      {inputText.trim().toLowerCase().startsWith('[ooc]') ? 'Active in draft' : 'Note to AI'}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-
-                {/* 2. Refine Text */}
-                <TouchableOpacity
-                  style={[
-                    styles.actionGridTile,
-                    (!inputText.trim() || isRefining) && { opacity: 0.55 },
-                  ]}
-                  onPress={() => handleRefine('refine')}
-                  disabled={!inputText.trim() || isRefining}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.actionGridIconBox, { backgroundColor: `rgba(${palette.accentRgb}, 0.14)` }]}>
-                    <Sparkles size={16} color={palette.accent} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.actionGridTitle}>
-                      {isRefining && refineMode === 'refine' ? 'Refining...' : 'Refine Text'}
-                    </Text>
-                    <Text style={styles.actionGridSub} numberOfLines={1}>
-                      {inputText.trim() ? 'Polish your draft' : 'Type draft first'}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-
-                {/* 3. Write from Scratch */}
-                <TouchableOpacity
-                  style={[styles.actionGridTile, isRefining && { opacity: 0.55 }]}
-                  onPress={() => handleRefine('write')}
-                  disabled={isRefining}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.actionGridIconBox, { backgroundColor: `rgba(${palette.accentRgb}, 0.14)` }]}>
-                    <Edit2 size={15} color={palette.accent} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.actionGridTitle}>
-                      {isRefining && refineMode === 'write' ? 'Writing...' : 'Write from Scratch'}
-                    </Text>
-                    <Text style={styles.actionGridSub} numberOfLines={1}>Uses chat & memory</Text>
-                  </View>
-                </TouchableOpacity>
-
-                {/* 4. Image Generation */}
-                <TouchableOpacity
-                  style={styles.actionGridTile}
-                  onPress={() => {
-                    setShowActionDeck(false);
-                    handleOpenSceneDepict();
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.actionGridIconBox, { backgroundColor: `rgba(${palette.accentRgb}, 0.14)` }]}>
-                    <ImageIcon size={16} color={palette.accent} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.actionGridTitle}>Image Generation</Text>
-                    <Text style={[styles.actionGridSub, { opacity: 0.72 }]} numberOfLines={1}>
-                      {activeImageProvider ? `Provider: ${activeImageProvider}` : 'No provider set'}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-
-                {/* 5. Dynamic Cast & Scene */}
-                <TouchableOpacity
-                  style={[
-                    styles.actionGridTile,
-                    { width: '100%' },
-                    castCandidate && {
-                      borderColor: `rgba(${palette.accentRgb}, 0.5)`,
-                      backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
-                    },
-                  ]}
-                  onPress={() => {
-                    setShowActionDeck(false);
-                    handleOpenCastSheet(castCandidate?.name);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.actionGridIconBox, { backgroundColor: `rgba(${palette.accentRgb}, 0.14)` }]}>
-                    <Users size={16} color={palette.accent} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.actionGridTitle}>
-                      {castCandidate ? `+ Add ${castCandidate.name} to Cast` : 'Dynamic Cast & Scene'}
-                    </Text>
-                    <Text style={styles.actionGridSub} numberOfLines={1}>
-                      {castCandidate
-                        ? 'Suggested from chat • Tap to add'
-                        : castMembers.some(m => !m.isPrimary)
-                          ? castMembers
-                            .filter(m => !m.isPrimary)
-                            .map(m => `${m.name} · ${m.presence.charAt(0).toUpperCase() + m.presence.slice(1)}`)
-                            .join(', ')
-                          : 'Manage cast presence & traits'}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
-            </Animated.View>
-          )}
-
-          {/* Unified Expandable Composer Container */}
-          <Animated.View
-            style={[
-              styles.unifiedComposerCard,
-              {
-                borderRadius: skin.inputRadius,
-                borderWidth: skin.id === 'material' ? 0 : Math.max(0.75, skin.cardBorderWidth),
-                borderColor:
-                  skin.id === 'janitor'
-                    ? 'rgba(255, 255, 255, 0.1)'
-                    : 'rgba(255, 255, 255, 0.14)',
-                backgroundColor: getSurfaceBg(palette, skin),
-                shadowColor: skin.cardGlowOpacity > 0 ? palette.accent : '#000',
-                shadowOpacity: skin.cardGlowOpacity > 0 ? 0.2 : 0.15,
-              },
-              isInputExpanded && { borderColor: palette.accent },
-            ]}
-          >
-            <Animated.View
-              style={{
-                height: composerExpandAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [inputText ? composerInputHeight : 34, 196],
-                }),
-                overflow: 'hidden',
-              }}
-            >
-              <TextInput
-                ref={composerInputRef}
-                style={[
-                  styles.unifiedTextInput,
-                  { height: '100%', maxHeight: undefined },
-                ]}
-                placeholder='Type your roleplay action or dialogue (*actions in asterisks*, "dialogue")...'
-                placeholderTextColor="rgba(255, 255, 255, 0.4)"
-                value={inputText}
-                numberOfLines={Platform.OS === 'web' ? 1 : undefined}
-                onChangeText={setInputText}
-                onContentSizeChange={e => {
-                  if (Platform.OS === 'web') return;
-                  if (!inputText) {
-                    setComposerInputHeight(34);
-                    return;
-                  }
-                  const h = e.nativeEvent.contentSize?.height || 34;
-                  setComposerInputHeight(Math.max(34, Math.min(200, Math.ceil(h))));
-                }}
-                scrollEnabled={isInputExpanded || composerInputHeight >= 200}
-                multiline
-                textAlignVertical="top"
-              />
-            </Animated.View>
-
-            {/* Bottom Inner Control Dock (Clean Image-2 style: + | [Avatar Name v] ... [Expand] [Send]) */}
-            <View style={styles.composerControlRow}>
-              <View style={[styles.composerLeftControls, { flex: 1, gap: 8 }]}>
-                <TouchableOpacity
-                  style={[
-                    styles.composerActionBtn,
-                    showActionDeck && [styles.composerActionBtnActive, { backgroundColor: palette.accent }],
-                  ]}
-                  onPress={() => {
-                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-                    setShowActionDeck(prev => !prev);
-                  }}
-                  activeOpacity={0.8}
-                  accessibilityLabel="More chat tools"
-                >
-                  <Animated.View
-                    style={{
-                      transform: [
-                        {
-                          rotate: actionDeckAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: ['0deg', '45deg'],
-                          }),
-                        },
-                      ],
-                    }}
-                  >
-                    <Plus size={18} color={showActionDeck ? palette.bgDark : palette.accent} />
-                  </Animated.View>
-                  {Boolean(castCandidate) && !showActionDeck && (
-                    <View
-                      style={{
-                        position: 'absolute',
-                        top: 5,
-                        right: 5,
-                        width: 7,
-                        height: 7,
-                        borderRadius: 4,
-                        backgroundColor: palette.accent,
-                      }}
-                    />
-                  )}
-                </TouchableOpacity>
-
-                {/* Persona Selector Pill (Avatar + Name + Chevron) */}
-                <TouchableOpacity
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 8,
-                    paddingLeft: 4,
-                    paddingRight: 10,
-                    paddingVertical: 4,
-                    borderRadius: 12,
-                    backgroundColor: 'rgba(255, 255, 255, 0.055)',
-                    borderWidth: 1,
-                    borderColor: 'rgba(255, 255, 255, 0.1)',
-                    maxWidth: '72%',
-                  }}
-                  onPress={() => {
-                    setEditingPersonaName(persona.name);
-                    setEditingPersonaPersonality(persona.personality || persona.description || '');
-                    setShowPersonaModal(true);
-                  }}
-                  activeOpacity={0.8}
-                  accessibilityLabel="Switch or edit active persona"
-                >
-                  {persona.avatar ? (
-                    <Image
-                      source={{ uri: persona.avatar }}
-                      style={{ width: 24, height: 24, borderRadius: 7 }}
-                    />
-                  ) : (
-                    <View
-                      style={{
-                        width: 24,
-                        height: 24,
-                        borderRadius: 7,
-                        backgroundColor: `rgba(${palette.accentRgb}, 0.22)`,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '800' }}>
-                        {persona.name.charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
-                  )}
-                  <Text
-                    style={{ color: '#e2e8f0', fontSize: 12.5, fontWeight: '600', flexShrink: 1 }}
-                    numberOfLines={1}
-                  >
-                    {persona.name}
-                  </Text>
-                  <ChevronDown size={14} color="#94a3b8" />
-                </TouchableOpacity>
-              </View>
-
-              {/* Right Controls: Expand Button, Send / Stop */}
-              <View style={styles.composerRightControls}>
-                <TouchableOpacity
-                  style={styles.expandToggleBtn}
-                  onPress={handleToggleInputExpanded}
-                  activeOpacity={0.8}
-                  accessibilityLabel={isInputExpanded ? 'Minimize input' : 'Expand input'}
-                >
-                  {isInputExpanded ? (
-                    <Minimize2 size={16} color="#9ca3af" />
-                  ) : (
-                    <Maximize2 size={16} color="#9ca3af" />
-                  )}
-                </TouchableOpacity>
-
-                {isStreaming ? (
-                  <TouchableOpacity
-                    style={[styles.stopBtn, { borderRadius: skin.buttonRadius }]}
-                    onPress={() => {
-                      aiProviderService.abortGeneration();
-                      setIsStreaming(false);
-                      setIsContinuingWait(false);
-                    }}
-                    activeOpacity={0.8}
-                    accessibilityLabel="Stop response"
-                  >
-                    <Square size={16} color="#FFFFFF" fill="#FFFFFF" />
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={[
-                      styles.sendBtnLime,
-                      { backgroundColor: palette.accent, borderRadius: skin.buttonRadius },
-                      !inputText.trim() && styles.sendBtnDisabled,
-                    ]}
-                    onPress={handleSend}
-                    disabled={!inputText.trim()}
-                    activeOpacity={0.8}
-                    accessibilityLabel="Send message"
-                  >
-                    <Send size={16} color={palette.bgDark} />
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-          </Animated.View>
-        </View>
       </KeyboardAvoidingView>
 
       {/* ================= MODAL: DYNAMIC CAST & SCENE ================= */}
@@ -4196,7 +4098,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       >
         <View style={styles.modalHeader}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Layers size={18} color={colors.lime} />
+            <Layers size={18} color={palette.accent} />
             <Text style={styles.modalTitle}>Chat Sessions ({conversations.length})</Text>
           </View>
           <TouchableOpacity onPress={() => setShowSessionModal(false)}>
@@ -4217,7 +4119,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                   onPress={() => handleSwitchSession(conv)}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.sessionTitle, isActive && { color: colors.lime }]}>
+                  <Text style={[styles.sessionTitle, isActive && { color: palette.accent }]}>
                     {conv.parentConversationId ? `↳ ${conv.title || conv.scenarioTitle || 'Branch'}` : (conv.scenarioTitle || `Session #${conversations.length - idx}`)}
                   </Text>
                   <Text style={styles.sessionMeta}>
@@ -4226,7 +4128,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                 </TouchableOpacity>
 
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  {isActive && <Check size={16} color={colors.lime} />}
+                  {isActive && <Check size={16} color={palette.accent} />}
                   <TouchableOpacity
                     style={styles.sessionTrashBtn}
                     onPress={async () => {
@@ -4267,7 +4169,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       >
         <View style={styles.modalHeader}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Play size={18} color={colors.lime} />
+            <Play size={18} color={palette.accent} />
             <Text style={styles.modalTitle}>Choose Scenario</Text>
           </View>
           <TouchableOpacity onPress={() => setShowScenarioModal(false)}>
@@ -4284,7 +4186,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                 style={[styles.scenarioCard, isCurrent && styles.scenarioCardActive]}
                 onPress={() => handleStartNewSession(scen)}
               >
-                <Text style={[styles.scenarioCardTitle, isCurrent && { color: colors.lime }]}>
+                <Text style={[styles.scenarioCardTitle, isCurrent && { color: palette.accent }]}>
                   {scen.title}
                 </Text>
                 <Text style={styles.scenarioCardDesc} numberOfLines={3}>
@@ -4306,7 +4208,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       >
         <View style={styles.modalHeader}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <ImageIcon size={18} color={colors.lime} />
+            <ImageIcon size={18} color={palette.accent} />
             <Text style={styles.modalTitle}>Depict Scene Art</Text>
           </View>
           <TouchableOpacity onPress={() => setShowImageModal(false)}>
@@ -4402,7 +4304,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         </ScrollView>
       </BottomSheetModal>
 
-      {/* ================= MODAL: QUICK PERSONA SWITCHER & PERSONALITY EDITOR ================= */}
+      {/* ================= MODAL: QUICK PERSONA SWITCHER ================= */}
       <BottomSheetModal
         visible={showPersonaModal}
         onClose={() => setShowPersonaModal(false)}
@@ -4410,78 +4312,97 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         <View style={styles.appearanceHeader}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Smile size={18} color={palette.accent} />
-            <Text style={styles.modalTitle}>User Persona & Personality</Text>
+            <Text style={styles.modalTitle}>Switch Persona</Text>
           </View>
           <TouchableOpacity onPress={() => setShowPersonaModal(false)}>
             <X size={20} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
-          {/* Persona Name Field */}
-          <Text style={styles.personaEditorLabel}>PERSONA DISPLAY NAME</Text>
-          <TextInput
-            style={styles.personaNameInput}
-            value={editingPersonaName}
-            onChangeText={setEditingPersonaName}
-            placeholder="Your roleplay persona name (e.g. Ren)"
-            placeholderTextColor="rgba(255, 255, 255, 0.4)"
-          />
-
-          {/* Persona Personality & Mannerisms Field */}
-          <Text style={styles.personaEditorLabel}>PERSONALITY & BEHAVIORAL TRAITS</Text>
-          <TextInput
-            style={styles.personaPersonalityInput}
-            value={editingPersonaPersonality}
-            onChangeText={setEditingPersonaPersonality}
-            placeholder="Describe how your character acts, speaks, their traits, temperament, and roleplay persona..."
-            placeholderTextColor="rgba(255, 255, 255, 0.4)"
-            multiline
-            numberOfLines={3}
-            textAlignVertical="top"
-          />
-
-          {/* Switch Between Available Personas */}
-          <Text style={[styles.personaEditorLabel, { marginTop: 16 }]}>SWITCH ACTIVE PERSONA</Text>
-          <View style={styles.personaSwitchGrid}>
-            {allPersonas.map(p => {
+        <ScrollView
+          style={{ maxHeight: 420 }}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.personaSwitchGrid}
+        >
+          {(() => {
+            const personaList =
+              allPersonas.length > 0 ? allPersonas : personas.length > 0 ? personas : [persona];
+            return personaList.map((p, idx) => {
               const isCur = p.id === persona.id;
+              const isFirst = idx === 0;
+              const isLast = idx === personaList.length - 1;
+              const previewText = (p.personality || p.description || '').replace(/\s+/g, ' ').trim();
+              const m3CornerStyle = isM3
+                ? isCur
+                  ? { borderRadius: 20 }
+                  : personaList.length === 1
+                    ? { borderRadius: 22 }
+                    : isFirst
+                      ? { borderTopLeftRadius: 22, borderTopRightRadius: 22, borderBottomLeftRadius: 6, borderBottomRightRadius: 6 }
+                      : isLast
+                        ? { borderTopLeftRadius: 6, borderTopRightRadius: 6, borderBottomLeftRadius: 22, borderBottomRightRadius: 22 }
+                        : { borderRadius: 6 }
+                : null;
+
               return (
                 <TouchableOpacity
                   key={p.id}
-                  style={[styles.personaSwitchCard, isCur && styles.personaSwitchCardActive]}
+                  style={[styles.personaSwitchCard, isCur && styles.personaSwitchCardActive, m3CornerStyle]}
                   onPress={() => {
                     onSelectPersona(p);
-                    setEditingPersonaName(p.name);
-                    setEditingPersonaPersonality(p.personality || p.description || '');
+                    setShowPersonaModal(false);
                   }}
-                  activeOpacity={0.8}
+                  activeOpacity={0.78}
                 >
                   {p.avatar ? (
-                    <Image source={{ uri: p.avatar }} style={styles.personaSwitchAvatar} />
+                    <Image
+                      source={{ uri: p.avatar }}
+                      style={[styles.personaSwitchAvatar, isCur && styles.personaSwitchAvatarActive]}
+                    />
                   ) : (
-                    <View style={styles.personaSwitchAvatarPlaceholder}>
-                      <Text style={styles.personaSwitchInitial}>{p.name.charAt(0).toUpperCase()}</Text>
+                    <View style={[styles.personaSwitchAvatarPlaceholder, isCur && styles.personaSwitchAvatarActive]}>
+                      <Text style={styles.personaSwitchInitial}>
+                        {(p.name || '?').charAt(0).toUpperCase()}
+                      </Text>
                     </View>
                   )}
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.personaSwitchName, isCur && styles.personaSwitchNameActive]}>
+
+                  <View style={{ flex: 1, justifyContent: 'center' }}>
+                    <Text
+                      style={[styles.personaSwitchName, isCur && styles.personaSwitchNameActive]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
                       {p.name}
                     </Text>
-                    <Text style={styles.personaSwitchBio} numberOfLines={1}>
-                      {p.personality || p.description || 'Roleplay companion'}
+                    <Text
+                      style={[styles.personaSwitchBio, !previewText && styles.personaSwitchBioEmpty]}
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {previewText || 'No description'}
                     </Text>
                   </View>
-                  {isCur && <UserCheck size={16} color={palette.accent} />}
+
+                  <View style={styles.personaCheckSlot}>
+                    {isCur &&
+                      (isIosGlass ? (
+                        <Check size={19} color={palette.accent} strokeWidth={2.6} />
+                      ) : isJanitor ? (
+                        <View style={styles.personaCheckBadge}>
+                          <Check size={14} color={palette.accent} strokeWidth={2.8} />
+                        </View>
+                      ) : (
+                        <View style={styles.personaCheckBadge}>
+                          <Check size={14} color={palette.bgDark} strokeWidth={3} />
+                        </View>
+                      ))}
+                  </View>
                 </TouchableOpacity>
               );
-            })}
-          </View>
+            });
+          })()}
         </ScrollView>
-
-        <TouchableOpacity style={styles.appearanceDoneBtn} onPress={handleSaveActivePersonaPersonality}>
-          <Text style={styles.appearanceDoneText}>Save Personality & Update</Text>
-        </TouchableOpacity>
       </BottomSheetModal>
 
       {/* ================= MODAL: FULL CHARACTER PROFILE CARD (Header Name Tap) ================= */}
@@ -5248,69 +5169,69 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                       </TouchableOpacity>
 
                       <AnimatedCollapsible expanded={showAdvancedControls}>
-                          <View style={styles.settingsHairline} />
+                        <View style={styles.settingsHairline} />
 
-                          <TouchableOpacity
-                            style={styles.settingsDrillRow}
-                            onPress={() => setSettingsSubView('prefill')}
-                            activeOpacity={0.75}
-                          >
-                            <View style={{ flex: 1, paddingRight: 10 }}>
-                              <Text style={styles.settingsRowLabel}>Prefill</Text>
-                              <Text style={{ color: '#64748b', fontSize: 11, marginTop: 1 }}>
-                                Force how the AI starts its next reply
-                              </Text>
-                            </View>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                              <Text style={styles.settingsRowValue}>
-                                {prefillEnabled && prefillText.trim() ? 'On' : 'Off'}
-                              </Text>
-                              <ChevronRight size={15} color="#64748b" />
-                            </View>
-                          </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.settingsDrillRow}
+                          onPress={() => setSettingsSubView('prefill')}
+                          activeOpacity={0.75}
+                        >
+                          <View style={{ flex: 1, paddingRight: 10 }}>
+                            <Text style={styles.settingsRowLabel}>Prefill</Text>
+                            <Text style={{ color: '#64748b', fontSize: 11, marginTop: 1 }}>
+                              Force how the AI starts its next reply
+                            </Text>
+                          </View>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={styles.settingsRowValue}>
+                              {prefillEnabled && prefillText.trim() ? 'On' : 'Off'}
+                            </Text>
+                            <ChevronRight size={15} color="#64748b" />
+                          </View>
+                        </TouchableOpacity>
 
-                          <View style={styles.settingsHairline} />
+                        <View style={styles.settingsHairline} />
 
-                          <TouchableOpacity
-                            style={styles.settingsDrillRow}
-                            onPress={() => setSettingsSubView('forbidden_words')}
-                            activeOpacity={0.75}
-                          >
-                            <View style={{ flex: 1, paddingRight: 10 }}>
-                              <Text style={styles.settingsRowLabel}>Forbidden words</Text>
-                              <Text style={{ color: '#64748b', fontSize: 11, marginTop: 1 }}>
-                                Words or clichés the AI must avoid
-                              </Text>
-                            </View>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                              <Text style={styles.settingsRowValue}>{forbiddenWords.length}/10</Text>
-                              <ChevronRight size={15} color="#64748b" />
-                            </View>
-                          </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.settingsDrillRow}
+                          onPress={() => setSettingsSubView('forbidden_words')}
+                          activeOpacity={0.75}
+                        >
+                          <View style={{ flex: 1, paddingRight: 10 }}>
+                            <Text style={styles.settingsRowLabel}>Forbidden words</Text>
+                            <Text style={{ color: '#64748b', fontSize: 11, marginTop: 1 }}>
+                              Words or clichés the AI must avoid
+                            </Text>
+                          </View>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={styles.settingsRowValue}>{forbiddenWords.length}/10</Text>
+                            <ChevronRight size={15} color="#64748b" />
+                          </View>
+                        </TouchableOpacity>
 
-                          <View style={styles.settingsHairline} />
+                        <View style={styles.settingsHairline} />
 
-                          <TouchableOpacity
-                            style={styles.settingsDrillRow}
-                            onPress={() => setSettingsSubView('lorebooks')}
-                            activeOpacity={0.75}
-                          >
-                            <View style={{ flex: 1, paddingRight: 10 }}>
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                                <BookOpen size={15} color={palette.accent} />
-                                <Text style={styles.settingsRowLabel}>Attached Lorebooks</Text>
-                              </View>
-                              <Text style={{ color: '#64748b', fontSize: 11, marginTop: 1 }}>
-                                World info injected when keywords appear
-                              </Text>
+                        <TouchableOpacity
+                          style={styles.settingsDrillRow}
+                          onPress={() => setSettingsSubView('lorebooks')}
+                          activeOpacity={0.75}
+                        >
+                          <View style={{ flex: 1, paddingRight: 10 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                              <BookOpen size={15} color={palette.accent} />
+                              <Text style={styles.settingsRowLabel}>Attached Lorebooks</Text>
                             </View>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                              <Text style={styles.settingsRowValue}>
-                                {attachedLorebookIds.length > 0 ? `${attachedLorebookIds.length} active` : 'Global only'}
-                              </Text>
-                              <ChevronRight size={15} color="#64748b" />
-                            </View>
-                          </TouchableOpacity>
+                            <Text style={{ color: '#64748b', fontSize: 11, marginTop: 1 }}>
+                              World info injected when keywords appear
+                            </Text>
+                          </View>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            <Text style={styles.settingsRowValue}>
+                              {attachedLorebookIds.length > 0 ? `${attachedLorebookIds.length} active` : 'Global only'}
+                            </Text>
+                            <ChevronRight size={15} color="#64748b" />
+                          </View>
+                        </TouchableOpacity>
                       </AnimatedCollapsible>
                     </View>
                   </View>
@@ -6401,1540 +6322,1630 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   );
 };
 
-const createStyles = (palette: ThemePalette) => StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.bgDark,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: GLASS.bg,
-    borderBottomWidth: 1,
-    borderBottomColor: GLASS.border,
-    gap: 12,
-    ...GLASS.backdrop,
-  },
-  iconBtn: {
-    padding: 6,
-  },
-  headerAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.bgSurface,
-  },
-  charHeaderName: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  costBadge: {
-    color: colors.textMuted,
-    fontSize: 11,
-    marginTop: 1,
-  },
-  headerProfileTouchable: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  headerMoreBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: `rgba(${palette.accentRgb}, 0.1)`,
-    borderWidth: 1,
-    borderColor: `rgba(${palette.accentRgb}, 0.25)`,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerSessionBtn: {
-    padding: 8,
-    backgroundColor: `rgba(${palette.accentRgb}, 0.1)`,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: `rgba(${palette.accentRgb}, 0.25)`,
-  },
-  styleSwitcher: {
-    padding: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  subHeaderBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
-  },
-  scenarioPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: `rgba(${palette.accentRgb}, 0.2)`,
-  },
-  scenarioPillText: {
-    color: palette.accent,
-    fontSize: 11,
-    fontWeight: '600',
-    maxWidth: 240,
-  },
-  greetingCyclerBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: `rgba(${palette.accentRgb}, 0.06)`,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: `rgba(${palette.accentRgb}, 0.15)`,
-  },
-  greetingCyclerText: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 12,
-  },
-  greetingCycleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  greetingCycleBtnText: {
-    color: palette.accent,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 24,
-  },
-  bubbleRow: {
-    flexDirection: 'row',
-    marginBottom: 16,
-    gap: 8,
-  },
-  bubbleRowUser: {
-    justifyContent: 'flex-end',
-  },
-  bubbleRowBot: {
-    justifyContent: 'flex-start',
-  },
-  bubbleAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    marginTop: 2,
-  },
-  bubbleContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 18,
-  },
-  bubbleUser: {
-    backgroundColor: `rgba(${palette.accentRgb}, 0.14)`,
-    borderWidth: 1,
-    borderColor: `rgba(${palette.accentRgb}, 0.42)`,
-    borderBottomRightRadius: 4,
-  },
-  bubbleBot: {
-    backgroundColor: 'rgba(18, 21, 30, 0.88)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.09)',
-    borderBottomLeftRadius: 4,
-  },
-  bubbleSelected: {
-    borderColor: palette.accent,
-    borderWidth: 1.5,
-  },
-  bubbleUserText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '500',
-  },
-  bubbleBotText: {
-    color: colors.textPrimary,
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  thoughtBox: {
-    backgroundColor: 'rgba(56, 189, 248, 0.08)',
-    padding: 10,
-    borderRadius: 10,
-    marginBottom: 8,
-    borderLeftWidth: 2,
-    borderLeftColor: '#38BDF8',
-  },
-  thoughtText: {
-    color: '#38BDF8',
-    fontSize: 12,
-    fontStyle: 'italic',
-    lineHeight: 18,
-  },
-  bubbleActionRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    maxWidth: '100%',
-    backgroundColor: '#1C2232',
-    padding: 4,
-    borderRadius: 12,
-    marginTop: 6,
-    gap: 4,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  bubbleActionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    minHeight: 36,
-    minWidth: 36,
-    borderRadius: 10,
-  },
-  bubbleActionText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  novelRow: {
-    marginBottom: 20,
-    paddingHorizontal: 4,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  novelRowSelected: {
-    backgroundColor: `rgba(${palette.accentRgb}, 0.05)`,
-  },
-  novelSpeaker: {
-    color: colors.lime,
-    fontSize: 13,
-    fontWeight: '700',
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  novelAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: `rgba(${palette.accentRgb}, 0.35)`,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  novelAvatarFallback: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: `rgba(${palette.accentRgb}, 0.35)`,
-    backgroundColor: `rgba(${palette.accentRgb}, 0.14)`,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  novelAvatarFallbackText: {
-    color: palette.accent,
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  lightboxOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(5, 7, 12, 0.94)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  lightboxCloseBtn: {
-    position: 'absolute',
-    top: 48,
-    right: 20,
-    zIndex: 10,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(255, 255, 255, 0.14)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  lightboxImage: {
-    width: '100%',
-    height: '82%',
-    borderRadius: 14,
-  },
-  novelUserText: {
-    color: 'rgba(255, 255, 255, 0.95)',
-    fontSize: 15,
-    lineHeight: 23,
-    textShadowColor: 'rgba(0, 0, 0, 0.95)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  novelBotText: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    lineHeight: 23,
-    textShadowColor: 'rgba(0, 0, 0, 0.95)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-  },
-  inlineEditCard: {
-    backgroundColor: '#161B26',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: colors.lime,
-  },
-  inlineEditTitle: {
-    color: colors.lime,
-    fontSize: 12,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  inlineEditTextInput: {
-    color: '#FFFFFF',
-    backgroundColor: '#0F131D',
-    borderRadius: 10,
-    padding: 10,
-    fontSize: 14,
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  inlineEditBtnRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: 10,
-    gap: 8,
-  },
-  inlineEditCancelBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  inlineEditCancelText: {
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: 12,
-  },
-  inlineEditSaveBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-  },
-  inlineEditSaveText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  refineCard: {
-    backgroundColor: 'rgba(28, 34, 50, 0.95)',
-    borderTopWidth: 1,
-    borderTopColor: `rgba(${palette.accentRgb}, 0.3)`,
-    padding: 14,
-  },
-  refineHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  refineTitle: {
-    color: colors.lime,
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  refineBody: {
-    color: colors.textPrimary,
-    fontSize: 13,
-    lineHeight: 18,
-    fontStyle: 'italic',
-    marginBottom: 10,
-  },
-  refineActionRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  refineActionUse: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.lime,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  refineActionUseText: {
-    color: '#000000',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  refineActionDiscard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  refineActionDiscardText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-  },
-  composerWrapper: {
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.04)',
-    backgroundColor: 'rgba(10, 13, 20, 0.65)',
-    paddingTop: 6,
-    paddingBottom: Platform.OS === 'ios' ? 14 : 10,
-  },
-  actionDeck: {
-    backgroundColor: GLASS.bgModal,
-    borderWidth: 1,
-    borderColor: GLASS.borderBright,
-    padding: 10,
-    gap: 8,
-    marginHorizontal: 12,
-    marginBottom: 8,
-    borderRadius: 16,
-    ...GLASS.backdropStrong,
-    ...GLASS.shadow,
-  },
-  actionDeckItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-  },
-  actionDeckText: {
-    color: colors.textPrimary,
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  actionDeckTitle: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  actionDeckSub: {
-    color: '#9ca3af',
-    fontSize: 11,
-    marginTop: 1,
-  },
-  modeIndicatorBadge: {
-    backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
-    borderWidth: 1,
-    borderColor: palette.accent,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  modeIndicatorText: {
-    color: palette.accent,
-    fontSize: 10,
-    fontWeight: '800',
-    textTransform: 'uppercase',
-  },
-  actionDeckOoc: {
-    color: palette.accent,
-    fontWeight: '700',
-    fontSize: 13,
-    marginRight: 8,
-  },
-  unifiedComposerCard: {
-    backgroundColor: GLASS.bgModal,
-    borderRadius: 22,
-    borderWidth: 1.5,
-    borderColor: GLASS.borderBright,
-    paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: 8,
-    marginHorizontal: 12,
-    marginBottom: 4,
-    ...GLASS.backdropStrong,
-    ...GLASS.shadow,
-    shadowColor: palette.accent,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-  },
-  unifiedComposerCardExpanded: {
-    borderColor: palette.accent,
-    minHeight: 260,
-    justifyContent: 'space-between',
-  },
-  unifiedTextInput: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    lineHeight: 20,
-    minHeight: 34,
-    maxHeight: 200,
-    paddingVertical: 4,
-    paddingHorizontal: 2,
-    textAlignVertical: 'top',
-  },
-  unifiedTextInputExpanded: {
-    minHeight: 190,
-    maxHeight: 360,
-    ...(Platform.OS === 'web' ? { flex: 1 } : {}),
-  },
-  composerControlRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 6,
-    paddingTop: 6,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
-  },
-  composerLeftControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  composerActionBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  composerActionBtnActive: {
-    backgroundColor: palette.accent,
-    borderColor: palette.accent,
-  },
-  personaAvatarBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 1.5,
-    borderColor: palette.accent,
-    backgroundColor: palette.bgSurface,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  personaAvatarImg: {
-    width: '100%',
-    height: '100%',
-  },
-  personaAvatarPlaceholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#181c28',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  personaAvatarInitial: {
-    color: palette.accent,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  personaNameLabel: {
-    color: '#9ca3af',
-    fontSize: 11,
-    fontWeight: '600',
-    maxWidth: 90,
-  },
-  composerRightControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  expandToggleBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  fastForwardBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
-    borderWidth: 1,
-    borderColor: `rgba(${palette.accentRgb}, 0.35)`,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sendBtnLime: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: palette.accent,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: palette.accent,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  sessionTrashBtn: {
-    padding: 6,
-    borderRadius: 8,
-    backgroundColor: 'rgba(239, 68, 68, 0.12)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sendBtnDisabled: {
-    opacity: 0.4,
-  },
-  stopBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#ef4444',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  composerBar: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 8,
-  },
-  actionBtn: {
-    padding: 8,
-    marginBottom: 2,
-  },
-  textInput: {
-    flex: 1,
-    backgroundColor: colors.bgSurface,
-    color: colors.textPrimary,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 10,
-    fontSize: 14,
-    maxHeight: 120,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  sendBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: colors.lime,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(6, 8, 14, 0.68)',
-    justifyContent: 'flex-end',
-    ...GLASS.backdrop,
-    ...(Platform.OS === 'web'
-      ? ({
-        backgroundColor: 'transparent',
-        backgroundImage:
-          'linear-gradient(to bottom, rgba(6, 8, 14, 0.12) 0%, rgba(6, 8, 14, 0.48) 50%, rgba(6, 8, 14, 0.88) 100%)',
-      } as any)
-      : {}),
-  },
-  modalSheet: {
-    backgroundColor: '#121622',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  modalTitle: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  sessionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    marginBottom: 8,
-  },
-  sessionItemActive: {
-    backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
-    borderWidth: 1,
-    borderColor: `rgba(${palette.accentRgb}, 0.25)`,
-  },
-  sessionTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  sessionMeta: {
-    color: 'rgba(255, 255, 255, 0.45)',
-    fontSize: 11,
-    marginTop: 2,
-  },
-  newSessionBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.lime,
-    paddingVertical: 12,
-    borderRadius: 14,
-    marginTop: 8,
-  },
-  newSessionBtnText: {
-    color: '#000000',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  scenarioCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    padding: 14,
-    borderRadius: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  scenarioCardActive: {
-    borderColor: `rgba(${palette.accentRgb}, 0.3)`,
-    backgroundColor: `rgba(${palette.accentRgb}, 0.06)`,
-  },
-  scenarioCardTitle: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  scenarioCardDesc: {
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  scenarioCardAction: {
-    color: palette.accent,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  miniVoiceBtn: {
-    padding: 8,
-    minWidth: 34,
-    minHeight: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-  },
-  ttsPillActive: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.lime,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    marginTop: 4,
-    alignSelf: 'flex-start',
-  },
-  ttsPillText: {
-    color: '#000',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  msgImageContainer: {
-    marginTop: 8,
-    borderRadius: 14,
-    overflow: 'hidden',
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: `rgba(${palette.accentRgb}, 0.25)`,
-    maxWidth: 320,
-    width: '100%',
-  },
-  msgInlineImage: {
-    width: '100%',
-    aspectRatio: 1,
-    maxHeight: 280,
-    borderRadius: 14,
-  },
-  msgImageCaption: {
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: 11,
-    fontStyle: 'italic',
-    padding: 6,
-    textAlign: 'center',
-  },
-  imageModalLabel: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  styleChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: '#1b1e28',
-    marginRight: 6,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  styleChipActive: {
-    backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
-    borderColor: colors.lime,
-  },
-  styleChipText: {
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  styleChipTextActive: {
-    color: colors.lime,
-  },
-  imageErrorBox: {
-    backgroundColor: 'rgba(255, 107, 107, 0.15)',
-    padding: 10,
-    borderRadius: 10,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 107, 107, 0.3)',
-  },
-  imageErrorText: {
-    color: '#FF6B6B',
-    fontSize: 12,
-  },
-  generatedImageContainer: {
-    borderRadius: 14,
-    overflow: 'hidden',
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: `rgba(${palette.accentRgb}, 0.3)`,
-  },
-  generatedImagePreview: {
-    width: '100%',
-    height: 240,
-    backgroundColor: '#000',
-  },
-  generatedPromptCaption: {
-    color: 'rgba(255, 255, 255, 0.65)',
-    fontSize: 11,
-    padding: 8,
-    backgroundColor: palette.bgSurface,
-  },
-  generateArtBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.lime,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  generateArtBtnText: {
-    color: '#000',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  insertArtBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1E2330',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-  },
-  insertArtBtnText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
+const createStyles = (palette: ThemePalette, skin: UiSkinTokens) => {
+  const screenBg = getScreenBg(palette, skin);
+  const surfaceBg = getSurfaceBg(palette, skin);
+  const subtleSurfaceBg = getSubtleSurfaceBg(palette, skin);
+  return StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: screenBg,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      backgroundColor: surfaceBg,
+      borderBottomWidth: 1,
+      borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+      gap: 12,
+      ...GLASS.backdrop,
+    },
+    iconBtn: {
+      padding: 6,
+    },
+    headerAvatar: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor: subtleSurfaceBg,
+    },
+    charHeaderName: {
+      color: colors.textPrimary,
+      fontSize: 16,
+      fontWeight: '700',
+    },
+    costBadge: {
+      color: colors.textMuted,
+      fontSize: 11,
+      marginTop: 1,
+    },
+    headerProfileTouchable: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+    },
+    headerMoreBtn: {
+      width: 38,
+      height: 38,
+      borderRadius: 12,
+      backgroundColor: `rgba(${palette.accentRgb}, 0.1)`,
+      borderWidth: 1,
+      borderColor: `rgba(${palette.accentRgb}, 0.25)`,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    headerSessionBtn: {
+      padding: 8,
+      backgroundColor: `rgba(${palette.accentRgb}, 0.1)`,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: `rgba(${palette.accentRgb}, 0.25)`,
+    },
+    styleSwitcher: {
+      padding: 8,
+      backgroundColor: 'rgba(255, 255, 255, 0.06)',
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    subHeaderBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 16,
+      paddingVertical: 6,
+      backgroundColor: 'rgba(0, 0, 0, 0.4)',
+      borderBottomWidth: 1,
+      borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+    },
+    scenarioPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: `rgba(${palette.accentRgb}, 0.2)`,
+    },
+    scenarioPillText: {
+      color: palette.accent,
+      fontSize: 11,
+      fontWeight: '600',
+      maxWidth: 240,
+    },
+    greetingCyclerBar: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      backgroundColor: `rgba(${palette.accentRgb}, 0.06)`,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderBottomWidth: 1,
+      borderBottomColor: `rgba(${palette.accentRgb}, 0.15)`,
+    },
+    greetingCyclerText: {
+      color: 'rgba(255, 255, 255, 0.7)',
+      fontSize: 12,
+    },
+    greetingCycleBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 10,
+    },
+    greetingCycleBtnText: {
+      color: palette.accent,
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    scrollContent: {
+      padding: 16,
+      paddingBottom: 24,
+    },
+    bubbleRow: {
+      flexDirection: 'row',
+      marginBottom: 16,
+      gap: 8,
+    },
+    bubbleRowUser: {
+      justifyContent: 'flex-end',
+    },
+    bubbleRowBot: {
+      justifyContent: 'flex-start',
+    },
+    bubbleAvatar: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      marginTop: 2,
+    },
+    bubbleContainer: {
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderRadius: 18,
+    },
+    bubbleUser: {
+      backgroundColor: `rgba(${palette.accentRgb}, 0.14)`,
+      borderWidth: 1,
+      borderColor: `rgba(${palette.accentRgb}, 0.42)`,
+      borderBottomRightRadius: 4,
+    },
+    bubbleBot: {
+      backgroundColor: 'rgba(18, 21, 30, 0.88)',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.09)',
+      borderBottomLeftRadius: 4,
+    },
+    bubbleSelected: {
+      borderColor: palette.accent,
+      borderWidth: 1.5,
+    },
+    bubbleUserText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      lineHeight: 20,
+      fontWeight: '500',
+    },
+    bubbleBotText: {
+      color: colors.textPrimary,
+      fontSize: 14,
+      lineHeight: 21,
+    },
+    thoughtBox: {
+      backgroundColor: 'rgba(56, 189, 248, 0.08)',
+      padding: 10,
+      borderRadius: 10,
+      marginBottom: 8,
+      borderLeftWidth: 2,
+      borderLeftColor: '#38BDF8',
+    },
+    thoughtText: {
+      color: '#38BDF8',
+      fontSize: 12,
+      fontStyle: 'italic',
+      lineHeight: 18,
+    },
+    bubbleActionRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      maxWidth: '100%',
+      backgroundColor: '#1C2232',
+      padding: 4,
+      borderRadius: skin.id === 'ios' ? 20 : 12,
+      marginTop: 6,
+      gap: 4,
+      borderWidth: 1,
+      borderColor: skin.id === 'ios' ? 'rgba(255, 255, 255, 0.20)' : 'rgba(255, 255, 255, 0.1)',
+      ...(skin.id === 'ios'
+        ? {
+            backgroundColor: 'rgba(24, 26, 36, 0.72)',
+            borderTopColor: 'rgba(255, 255, 255, 0.36)',
+          }
+        : null),
+    },
+    bubbleActionBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      minHeight: 36,
+      minWidth: 36,
+      borderRadius: skin.id === 'ios' ? 999 : 10,
+    },
+    bubbleActionText: {
+      color: '#FFFFFF',
+      fontSize: 12,
+      fontWeight: '600',
+    },
+    novelRow: {
+      marginBottom: 20,
+      paddingHorizontal: 4,
+      paddingVertical: 6,
+      borderRadius: 8,
+    },
+    novelRowSelected: {
+      backgroundColor: `rgba(${palette.accentRgb}, 0.05)`,
+    },
+    novelSpeaker: {
+      color: palette.accent,
+      fontSize: 13,
+      fontWeight: '700',
+      marginBottom: 4,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    novelAvatar: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    },
+    novelAvatarFallback: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+      backgroundColor: `rgba(${palette.accentRgb}, 0.14)`,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    novelAvatarFallbackText: {
+      color: palette.accent,
+      fontSize: 12,
+      fontWeight: '800',
+    },
+    lightboxOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(5, 7, 12, 0.94)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 20,
+    },
+    lightboxCloseBtn: {
+      position: 'absolute',
+      top: 48,
+      right: 20,
+      zIndex: 10,
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor: 'rgba(255, 255, 255, 0.14)',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.2)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    lightboxImage: {
+      width: '100%',
+      height: '82%',
+      borderRadius: 14,
+    },
+    novelUserText: {
+      color: 'rgba(255, 255, 255, 0.95)',
+      fontSize: 15,
+      lineHeight: 23,
+      textShadowColor: 'rgba(0, 0, 0, 0.95)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 3,
+    },
+    novelBotText: {
+      color: colors.textPrimary,
+      fontSize: 15,
+      lineHeight: 23,
+      textShadowColor: 'rgba(0, 0, 0, 0.95)',
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 3,
+    },
+    inlineEditCard: {
+      backgroundColor: skin.id === 'ios' ? 'rgba(26, 28, 38, 0.78)' : '#161B26',
+      borderRadius: skin.id === 'ios' ? 22 : 16,
+      padding: 14,
+      marginBottom: 16,
+      borderWidth: 1,
+      borderColor: palette.accent,
+      ...(skin.id === 'ios'
+        ? { borderTopColor: 'rgba(255, 255, 255, 0.34)' }
+        : null),
+    },
+    inlineEditTitle: {
+      color: palette.accent,
+      fontSize: 12,
+      fontWeight: '700',
+      marginBottom: 8,
+    },
+    inlineEditTextInput: {
+      color: '#FFFFFF',
+      backgroundColor: '#0F131D',
+      borderRadius: 10,
+      padding: 10,
+      fontSize: 14,
+      minHeight: 80,
+      textAlignVertical: 'top',
+    },
+    inlineEditBtnRow: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      marginTop: 10,
+      gap: 8,
+    },
+    inlineEditCancelBtn: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 8,
+      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    },
+    inlineEditCancelText: {
+      color: 'rgba(255, 255, 255, 0.6)',
+      fontSize: 12,
+    },
+    inlineEditSaveBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 8,
+      backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    },
+    inlineEditSaveText: {
+      color: '#FFFFFF',
+      fontSize: 12,
+      fontWeight: '700',
+    },
+    refineCard: {
+      backgroundColor: skin.id === 'ios' ? 'rgba(24, 26, 36, 0.80)' : surfaceBg,
+      borderTopWidth: 1,
+      borderTopColor:
+        skin.id === 'ios' ? 'rgba(255, 255, 255, 0.28)' : `rgba(${palette.accentRgb}, 0.3)`,
+      padding: 14,
+    },
+    refineHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 6,
+    },
+    refineTitle: {
+      color: palette.accent,
+      fontSize: 12,
+      fontWeight: '700',
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    refineBody: {
+      color: colors.textPrimary,
+      fontSize: 13,
+      lineHeight: 18,
+      fontStyle: 'italic',
+      marginBottom: 10,
+    },
+    refineActionRow: {
+      flexDirection: 'row',
+      gap: 8,
+    },
+    refineActionUse: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: palette.accent,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 8,
+    },
+    refineActionUseText: {
+      color: '#000000',
+      fontSize: 12,
+      fontWeight: '700',
+    },
+    refineActionDiscard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 8,
+    },
+    refineActionDiscardText: {
+      color: colors.textSecondary,
+      fontSize: 12,
+    },
+    composerWrapper: {
+      borderTopWidth: 1,
+      borderTopColor: 'rgba(255, 255, 255, 0.04)',
+      backgroundColor: 'rgba(10, 13, 20, 0.65)',
+      paddingTop: 6,
+      paddingBottom: Platform.OS === 'ios' ? 14 : 10,
+    },
+    actionDeck: {
+      backgroundColor: GLASS.bgModal,
+      borderWidth: 1,
+      borderColor: GLASS.borderBright,
+      padding: 10,
+      gap: 8,
+      marginHorizontal: 12,
+      marginBottom: 8,
+      borderRadius: 16,
+      ...GLASS.backdropStrong,
+      ...GLASS.shadow,
+    },
+    actionDeckItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      borderRadius: 10,
+      backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    },
+    actionDeckText: {
+      color: colors.textPrimary,
+      fontSize: 13,
+      fontWeight: '500',
+    },
+    actionDeckTitle: {
+      color: '#FFFFFF',
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    actionDeckSub: {
+      color: '#9ca3af',
+      fontSize: 11,
+      marginTop: 1,
+    },
+    modeIndicatorBadge: {
+      backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
+      borderWidth: 1,
+      borderColor: palette.accent,
+      borderRadius: 8,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+    },
+    modeIndicatorText: {
+      color: palette.accent,
+      fontSize: 10,
+      fontWeight: '800',
+      textTransform: 'uppercase',
+    },
+    actionDeckOoc: {
+      color: palette.accent,
+      fontWeight: '700',
+      fontSize: 13,
+      marginRight: 8,
+    },
+    unifiedComposerCard: {
+      backgroundColor: GLASS.bgModal,
+      borderRadius: 22,
+      borderWidth: 1.5,
+      borderColor: GLASS.borderBright,
+      paddingHorizontal: 14,
+      paddingTop: 10,
+      paddingBottom: 8,
+      marginHorizontal: 12,
+      marginBottom: 4,
+      ...GLASS.backdropStrong,
+      ...GLASS.shadow,
+      shadowColor: palette.accent,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.15,
+      shadowRadius: 8,
+    },
+    unifiedComposerCardExpanded: {
+      borderColor: palette.accent,
+      minHeight: 260,
+      justifyContent: 'space-between',
+    },
+    unifiedTextInput: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      lineHeight: 20,
+      minHeight: 34,
+      maxHeight: 200,
+      paddingVertical: 4,
+      paddingHorizontal: 2,
+      textAlignVertical: 'top',
+    },
+    unifiedTextInputExpanded: {
+      minHeight: 190,
+      maxHeight: 360,
+      ...(Platform.OS === 'web' ? { flex: 1 } : {}),
+    },
+    composerControlRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginTop: 6,
+      paddingTop: 6,
+      borderTopWidth: 1,
+      borderTopColor: 'rgba(255, 255, 255, 0.06)',
+    },
+    composerLeftControls: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    composerActionBtn: {
+      width: 34,
+      height: 34,
+      borderRadius: Math.min(12, skin.buttonRadius),
+      backgroundColor: 'rgba(255, 255, 255, 0.08)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    composerActionBtnActive: {
+      backgroundColor: palette.accent,
+      borderColor: palette.accent,
+    },
+    personaAvatarBtn: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      overflow: 'hidden',
+      borderWidth: 1.5,
+      borderColor: palette.accent,
+      backgroundColor: surfaceBg,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    personaAvatarImg: {
+      width: '100%',
+      height: '100%',
+    },
+    personaAvatarPlaceholder: {
+      width: '100%',
+      height: '100%',
+      backgroundColor: subtleSurfaceBg,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    personaAvatarInitial: {
+      color: palette.accent,
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    personaNameLabel: {
+      color: '#9ca3af',
+      fontSize: 11,
+      fontWeight: '600',
+      maxWidth: 90,
+    },
+    composerRightControls: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    expandToggleBtn: {
+      width: 32,
+      height: 32,
+      borderRadius: 8,
+      backgroundColor: 'rgba(255, 255, 255, 0.06)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    fastForwardBtn: {
+      width: 34,
+      height: 34,
+      borderRadius: Math.min(12, skin.buttonRadius),
+      backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
+      borderWidth: 1,
+      borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    sendBtnLime: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor: palette.accent,
+      justifyContent: 'center',
+      alignItems: 'center',
+      ...(skin.cardGlowOpacity > 0
+        ? {
+          shadowColor: palette.accent,
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.45,
+        }
+        : {}),
+      shadowRadius: 6,
+      elevation: 4,
+    },
+    sessionTrashBtn: {
+      padding: 6,
+      borderRadius: 8,
+      backgroundColor: 'rgba(239, 68, 68, 0.12)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    sendBtnDisabled: {
+      opacity: 0.4,
+    },
+    stopBtn: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor: '#ef4444',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    composerBar: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      gap: 8,
+    },
+    actionBtn: {
+      padding: 8,
+      marginBottom: 2,
+    },
+    textInput: {
+      flex: 1,
+      backgroundColor: surfaceBg,
+      color: colors.textPrimary,
+      borderRadius: skin.inputRadius,
+      paddingHorizontal: 16,
+      paddingTop: 10,
+      paddingBottom: 10,
+      fontSize: 14,
+      maxHeight: 120,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.08)',
+    },
+    sendBtn: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      backgroundColor: palette.accent,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginBottom: 2,
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(6, 8, 14, 0.68)',
+      justifyContent: 'flex-end',
+      ...GLASS.backdrop,
+      ...(Platform.OS === 'web'
+        ? ({
+          backgroundColor: 'transparent',
+          backgroundImage:
+            'linear-gradient(to bottom, rgba(6, 8, 14, 0.12) 0%, rgba(6, 8, 14, 0.48) 50%, rgba(6, 8, 14, 0.88) 100%)',
+        } as any)
+        : {}),
+    },
+    modalSheet: {
+      backgroundColor: '#121622',
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      padding: 20,
+      borderTopWidth: 1,
+      borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    modalHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingBottom: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    },
+    modalTitle: {
+      color: '#FFFFFF',
+      fontSize: 16,
+      fontWeight: '700',
+    },
+    sessionItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 12,
+      borderRadius: 12,
+      backgroundColor: 'rgba(255, 255, 255, 0.04)',
+      marginBottom: 8,
+    },
+    sessionItemActive: {
+      backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
+      borderWidth: 1,
+      borderColor: `rgba(${palette.accentRgb}, 0.25)`,
+    },
+    sessionTitle: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    sessionMeta: {
+      color: 'rgba(255, 255, 255, 0.45)',
+      fontSize: 11,
+      marginTop: 2,
+    },
+    newSessionBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: palette.accent,
+      paddingVertical: 12,
+      borderRadius: 14,
+      marginTop: 8,
+    },
+    newSessionBtnText: {
+      color: '#000000',
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    scenarioCard: {
+      backgroundColor: 'rgba(255, 255, 255, 0.04)',
+      padding: 14,
+      borderRadius: 14,
+      marginBottom: 10,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.08)',
+    },
+    scenarioCardActive: {
+      borderColor: `rgba(${palette.accentRgb}, 0.3)`,
+      backgroundColor: `rgba(${palette.accentRgb}, 0.06)`,
+    },
+    scenarioCardTitle: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700',
+      marginBottom: 4,
+    },
+    scenarioCardDesc: {
+      color: 'rgba(255, 255, 255, 0.6)',
+      fontSize: 12,
+      lineHeight: 17,
+    },
+    scenarioCardAction: {
+      color: palette.accent,
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    miniVoiceBtn: {
+      padding: 8,
+      minWidth: 34,
+      minHeight: 34,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: skin.id === 'ios' ? 17 : 8,
+      backgroundColor: skin.id === 'ios' ? 'rgba(255, 255, 255, 0.10)' : 'rgba(255, 255, 255, 0.06)',
+      ...(skin.id === 'ios'
+        ? {
+            borderWidth: 1,
+            borderColor: 'rgba(255, 255, 255, 0.16)',
+            borderTopColor: 'rgba(255, 255, 255, 0.28)',
+          }
+        : null),
+    },
+    ttsPillActive: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: palette.accent,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 8,
+      marginTop: 4,
+      alignSelf: 'flex-start',
+    },
+    ttsPillText: {
+      color: '#000',
+      fontSize: 10,
+      fontWeight: '700',
+    },
+    msgImageContainer: {
+      marginTop: 8,
+      borderRadius: 14,
+      overflow: 'hidden',
+      backgroundColor: 'transparent',
+      borderWidth: 1,
+      borderColor: `rgba(${palette.accentRgb}, 0.25)`,
+      maxWidth: 320,
+      width: '100%',
+    },
+    msgInlineImage: {
+      width: '100%',
+      aspectRatio: 1,
+      maxHeight: 280,
+      borderRadius: 14,
+    },
+    msgImageCaption: {
+      color: 'rgba(255, 255, 255, 0.6)',
+      fontSize: 11,
+      fontStyle: 'italic',
+      padding: 6,
+      textAlign: 'center',
+    },
+    imageModalLabel: {
+      color: 'rgba(255, 255, 255, 0.7)',
+      fontSize: 12,
+      fontWeight: '600',
+      marginBottom: 6,
+    },
+    styleChip: {
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 20,
+      backgroundColor: '#1b1e28',
+      marginRight: 6,
+      borderWidth: 1,
+      borderColor: 'transparent',
+    },
+    styleChipActive: {
+      backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
+      borderColor: palette.accent,
+    },
+    styleChipText: {
+      color: 'rgba(255, 255, 255, 0.6)',
+      fontSize: 12,
+      fontWeight: '600',
+    },
+    styleChipTextActive: {
+      color: palette.accent,
+    },
+    imageErrorBox: {
+      backgroundColor: 'rgba(255, 107, 107, 0.15)',
+      padding: 10,
+      borderRadius: 10,
+      marginBottom: 10,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 107, 107, 0.3)',
+    },
+    imageErrorText: {
+      color: '#FF6B6B',
+      fontSize: 12,
+    },
+    generatedImageContainer: {
+      borderRadius: 14,
+      overflow: 'hidden',
+      marginBottom: 12,
+      borderWidth: 1,
+      borderColor: `rgba(${palette.accentRgb}, 0.3)`,
+    },
+    generatedImagePreview: {
+      width: '100%',
+      height: 240,
+      backgroundColor: '#000',
+    },
+    generatedPromptCaption: {
+      color: 'rgba(255, 255, 255, 0.65)',
+      fontSize: 11,
+      padding: 8,
+      backgroundColor: palette.bgSurface,
+    },
+    generateArtBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: palette.accent,
+      paddingVertical: 12,
+      borderRadius: 12,
+    },
+    generateArtBtnText: {
+      color: '#000',
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    insertArtBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#1E2330',
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.15)',
+    },
+    insertArtBtnText: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700',
+    },
 
-  // ── Appearance & Wallpaper Modal Styles (Blueprint Section D) ──
-  appearanceSheet: {
-    backgroundColor: palette.bgSurface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    maxHeight: '85%',
-    borderWidth: 1,
-    borderColor: `rgba(${palette.accentRgb}, 0.25)`,
-  },
-  appearanceHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  appearanceRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    marginBottom: 8,
-  },
-  appearanceLabel: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  appearanceSub: {
-    color: '#8E8E93',
-    fontSize: 11,
-    marginTop: 2,
-  },
-  appearanceSectionTitle: {
-    color: palette.accent,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1,
-    marginBottom: 6,
-  },
-  appearanceInput: {
-    backgroundColor: '#1a1d29',
-    color: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 13,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    marginBottom: 6,
-  },
-  uploadWallpaperBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: palette.accent,
-    paddingVertical: 10,
-    borderRadius: 12,
-    marginTop: 4,
-    marginBottom: 6,
-  },
-  uploadWallpaperText: {
-    color: palette.bgDark,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  resetWallpaperBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  resetWallpaperText: {
-    color: palette.accent,
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  sliderPillsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-  },
-  sliderPill: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  sliderPillActive: {
-    backgroundColor: palette.accent,
-    borderColor: palette.accent,
-  },
-  sliderPillText: {
-    color: '#9ca3af',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  sliderPillTextActive: {
-    color: palette.bgDark,
-    fontWeight: '800',
-  },
-  togglePill: {
-    width: 44,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    padding: 2,
-    justifyContent: 'center',
-  },
-  togglePillActive: {
-    backgroundColor: palette.accent,
-  },
-  toggleThumb: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
-  },
-  toggleThumbActive: {
-    alignSelf: 'flex-end',
-  },
-  appearanceDoneBtn: {
-    backgroundColor: palette.accent,
-    paddingVertical: 12,
-    borderRadius: 16,
-    alignItems: 'center',
-    marginTop: 14,
-  },
-  appearanceDoneText: {
-    color: palette.bgDark,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  personaEditorLabel: {
-    color: palette.accent,
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 1,
-    marginBottom: 6,
-  },
-  personaNameInput: {
-    backgroundColor: '#1a1d29',
-    color: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 13,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    marginBottom: 12,
-  },
-  personaPersonalityInput: {
-    backgroundColor: '#1a1d29',
-    color: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 13,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    minHeight: 70,
-    marginBottom: 12,
-  },
-  personaSwitchGrid: {
-    gap: 8,
-    marginTop: 6,
-    marginBottom: 10,
-  },
-  personaSwitchCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 10,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    gap: 10,
-  },
-  personaSwitchCardActive: {
-    borderColor: palette.accent,
-    backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
-  },
-  personaSwitchAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#181c28',
-  },
-  personaSwitchAvatarPlaceholder: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#181c28',
-    borderWidth: 1,
-    borderColor: `rgba(${palette.accentRgb}, 0.3)`,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  personaSwitchInitial: {
-    color: palette.accent,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  personaSwitchName: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  personaSwitchNameActive: {
-    color: palette.accent,
-  },
-  personaSwitchBio: {
-    color: '#9ca3af',
-    fontSize: 11,
-    marginTop: 1,
-  },
-  charProfileCardSheet: {
-    backgroundColor: '#10141f',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    overflow: 'hidden',
-    maxHeight: '88%',
-    borderTopWidth: 1,
-    borderTopColor: `rgba(${palette.accentRgb}, 0.3)`,
-  },
-  charProfileBannerBox: {
-    width: '100%',
-    height: 190,
-    position: 'relative',
-    backgroundColor: palette.bgDark,
-  },
-  charProfileBannerImg: {
-    width: '100%',
-    height: '100%',
-  },
-  charProfileCloseBtn: {
-    position: 'absolute',
-    top: 14,
-    right: 14,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
-  charProfileBadgeRow: {
-    position: 'absolute',
-    bottom: 12,
-    left: 14,
-    flexDirection: 'row',
-    gap: 6,
-    zIndex: 10,
-  },
-  charProfileBodyScroll: {
-    paddingHorizontal: 18,
-    paddingTop: 14,
-    paddingBottom: 32,
-  },
-  charProfileName: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  charProfileTagline: {
-    color: palette.accent,
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  charProfileCreator: {
-    color: '#9ca3af',
-    fontSize: 11,
-    marginTop: 2,
-    marginBottom: 10,
-  },
-  charProfileTagWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 14,
-  },
-  charProfileTagChip: {
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  charProfileTagText: {
-    color: '#cbd5e1',
-    fontSize: 10.5,
-    fontWeight: '600',
-  },
-  charProfileSectionTitle: {
-    color: '#9ca3af',
-    fontSize: 10.5,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    marginBottom: 6,
-    textTransform: 'uppercase',
-  },
-  charProfileDescText: {
-    color: '#e2e8f0',
-    fontSize: 12.5,
-    lineHeight: 18,
-  },
-  charProfileGreetingBox: {
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    marginTop: 4,
-    marginBottom: 20,
-  },
-  charProfileGreetingText: {
-    color: '#e2e8f0',
-    fontSize: 12,
-    lineHeight: 17,
-    fontStyle: 'italic',
-  },
-  tokenBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: `rgba(${palette.accentRgb}, 0.3)`,
-  },
-  tokenText: {
-    color: palette.accent,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  nsfwBadge: {
-    backgroundColor: 'rgba(239, 68, 68, 0.85)',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  sfwBadge: {
-    backgroundColor: 'rgba(34, 197, 94, 0.85)',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  badgeText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  // ── Warden AI Memory Checkpoint Styles ──
-  checkpointCardContainer: {
-    backgroundColor: 'rgba(16, 20, 30, 0.94)',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: `rgba(${palette.accentRgb}, 0.35)`,
-    padding: 14,
-    marginVertical: 6,
-    width: '100%',
-  },
-  checkpointCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
-    paddingBottom: 8,
-    marginBottom: 8,
-  },
-  checkpointCardTitle: {
-    color: palette.accent,
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  checkpointTagBadge: {
-    backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: `rgba(${palette.accentRgb}, 0.25)`,
-  },
-  checkpointTagBadgeText: {
-    color: palette.accent,
-    fontSize: 9.5,
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-    fontWeight: '700',
-  },
-  checkpointCardBody: {
-    gap: 4,
-    marginBottom: 8,
-  },
-  checkpointMilestoneTitle: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-    marginBottom: 3,
-  },
-  checkpointBulletRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-  },
-  checkpointBulletDot: {
-    color: palette.accent,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  checkpointBulletText: {
-    color: '#cbd5e1',
-    fontSize: 12,
-    lineHeight: 18,
-    flex: 1,
-  },
-  checkpointActionRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: 8,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
-    paddingTop: 8,
-  },
-  checkpointPinBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: palette.accent,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  checkpointPinBtnText: {
-    color: palette.bgDark,
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  checkpointCopyBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: `rgba(${palette.accentRgb}, 0.2)`,
-  },
-  checkpointCopyBtnText: {
-    color: palette.accent,
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  headerMenuBackdrop: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 999,
-  },
-  headerMenuCard: {
-    position: 'absolute',
-    top: 56,
-    right: 14,
-    width: 210,
-    borderRadius: 16,
-    borderWidth: 1,
-    paddingVertical: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.45,
-    shadowRadius: 18,
-    elevation: 14,
-  },
-  headerMenuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  headerMenuItemBorder: {
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.06)',
-  },
-  headerMenuItemText: {
-    color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '600',
-  },
-  scrollBottomFabWrap: {
-    position: 'absolute',
-    right: 16,
-    bottom: 116,
-    zIndex: 40,
-  },
-  scrollBottomFab: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  refiningBanner: {
-    marginHorizontal: 14,
-    marginBottom: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  toolbarPillBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255, 255, 255, 0.07)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    minHeight: 30,
-  },
-  toolbarPillText: {
-    color: '#cbd5e1',
-    fontSize: 11.5,
-    fontWeight: '700',
-  },
-  toolbarIconBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: 'rgba(255, 255, 255, 0.07)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionDeckGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  actionGridTile: {
-    width: '48.5%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 11,
-    paddingVertical: 10,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255, 255, 255, 0.045)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  actionGridIconBox: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  actionGridTitle: {
-    color: '#f8fafc',
-    fontSize: 12.5,
-    fontWeight: '700',
-  },
-  actionGridSub: {
-    color: '#94a3b8',
-    fontSize: 10.5,
-    marginTop: 1,
-  },
-  settingsBentoCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.035)',
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-  },
-  settingsCardTitle: {
-    color: '#f8fafc',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  settingsDrillRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 11,
-  },
-  settingsRowLabel: {
-    color: '#e2e8f0',
-    fontSize: 13.5,
-    fontWeight: '500',
-  },
-  settingsRowValue: {
-    color: '#94a3b8',
-    fontSize: 13,
-  },
-  settingsHairline: {
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.07)',
-  },
-  settingsSubHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-    paddingVertical: 2,
-  },
-  settingsSubHeaderTitle: {
-    color: '#f8fafc',
-    fontSize: 15.5,
-    fontWeight: '700',
-  },
-  settingsValueBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    minWidth: 52,
-    alignItems: 'center',
-  },
-  settingsValueBadgeText: {
-    color: '#f8fafc',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  settingsHelperText: {
-    color: '#94a3b8',
-    fontSize: 11.5,
-    lineHeight: 16,
-    marginTop: 4,
-  },
-});
+    // ── Appearance & Wallpaper Modal Styles (Blueprint Section D) ──
+    appearanceSheet: {
+      backgroundColor: palette.bgSurface,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      padding: 20,
+      maxHeight: '85%',
+      borderWidth: 1,
+      borderColor: `rgba(${palette.accentRgb}, 0.25)`,
+    },
+    appearanceHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 16,
+    },
+    appearanceRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingVertical: 10,
+      marginBottom: 8,
+    },
+    appearanceLabel: {
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    appearanceSub: {
+      color: '#8E8E93',
+      fontSize: 11,
+      marginTop: 2,
+    },
+    appearanceSectionTitle: {
+      color: palette.accent,
+      fontSize: 10,
+      fontWeight: '800',
+      letterSpacing: 1,
+      marginBottom: 6,
+    },
+    appearanceInput: {
+      backgroundColor: '#1a1d29',
+      color: '#FFFFFF',
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      fontSize: 13,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.1)',
+      marginBottom: 6,
+    },
+    uploadWallpaperBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: palette.accent,
+      paddingVertical: 10,
+      borderRadius: 12,
+      marginTop: 4,
+      marginBottom: 6,
+    },
+    uploadWallpaperText: {
+      color: palette.bgDark,
+      fontSize: 13,
+      fontWeight: '800',
+    },
+    resetWallpaperBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 4,
+    },
+    resetWallpaperText: {
+      color: palette.accent,
+      fontSize: 11,
+      fontWeight: '600',
+    },
+    sliderPillsRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 8,
+    },
+    sliderPill: {
+      flex: 1,
+      paddingVertical: 8,
+      borderRadius: 10,
+      backgroundColor: 'rgba(255, 255, 255, 0.06)',
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    sliderPillActive: {
+      backgroundColor: palette.accent,
+      borderColor: palette.accent,
+    },
+    sliderPillText: {
+      color: '#9ca3af',
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    sliderPillTextActive: {
+      color: palette.bgDark,
+      fontWeight: '800',
+    },
+    togglePill: {
+      width: 44,
+      height: 24,
+      borderRadius: 12,
+      backgroundColor: 'rgba(255, 255, 255, 0.15)',
+      padding: 2,
+      justifyContent: 'center',
+    },
+    togglePillActive: {
+      backgroundColor: palette.accent,
+    },
+    toggleThumb: {
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      backgroundColor: '#FFFFFF',
+    },
+    toggleThumbActive: {
+      alignSelf: 'flex-end',
+    },
+    appearanceDoneBtn: {
+      backgroundColor: palette.accent,
+      paddingVertical: 12,
+      borderRadius: skin.buttonRadius,
+      alignItems: 'center',
+      marginTop: 14,
+    },
+    appearanceDoneText: {
+      color: palette.bgDark,
+      fontSize: 14,
+      fontWeight: '800',
+    },
+    personaNameInput: {
+      backgroundColor: '#1a1d29',
+      color: '#FFFFFF',
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      fontSize: 13,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.1)',
+      marginBottom: 12,
+    },
+    personaPersonalityInput: {
+      backgroundColor: '#1a1d29',
+      color: '#FFFFFF',
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      fontSize: 13,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.1)',
+      minHeight: 70,
+      marginBottom: 12,
+    },
+    personaSwitchGrid: {
+      gap: skin.id === 'material' ? 3 : skin.id === 'bento' ? 10 : 8,
+      paddingTop: 4,
+      paddingBottom: 6,
+    },
+    personaSwitchCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 12,
+      paddingVertical: 11,
+      gap: 12,
+      ...(skin.id === 'bento'
+        ? getCardSurfaceStyle(palette, skin)
+        : skin.id === 'ios'
+          ? {
+              borderRadius: 18,
+              backgroundColor: 'rgba(255, 255, 255, 0.06)',
+              borderWidth: 1,
+              borderColor: 'rgba(255, 255, 255, 0.14)',
+              borderTopColor: 'rgba(255, 255, 255, 0.28)',
+            }
+          : skin.id === 'material'
+            ? {
+                borderRadius: 16,
+                borderWidth: 0,
+                backgroundColor: getM3TonalContainer(palette, 'container'),
+              }
+            : {
+                borderRadius: skin.cardRadius,
+                backgroundColor: 'rgba(255, 255, 255, 0.045)',
+                borderWidth: 1,
+                borderColor: 'rgba(255, 255, 255, 0.09)',
+                borderTopColor: 'rgba(255, 255, 255, 0.14)',
+              }),
+    },
+    personaSwitchCardActive:
+      skin.id === 'bento'
+        ? {
+            backgroundColor: `rgba(${palette.accentRgb}, 0.13)`,
+            borderColor: `rgba(${palette.accentRgb}, 0.55)`,
+            borderTopColor: `rgba(${palette.accentRgb}, 0.65)`,
+            borderBottomWidth: 3.5,
+            borderBottomColor: `rgba(${palette.accentRgb}, 0.72)`,
+          }
+        : skin.id === 'ios'
+          ? {
+              backgroundColor: `rgba(${palette.accentRgb}, 0.16)`,
+              borderColor: `rgba(${palette.accentRgb}, 0.45)`,
+              borderTopColor: `rgba(${palette.accentRgb}, 0.65)`,
+            }
+          : skin.id === 'material'
+            ? {
+                backgroundColor: getM3TonalContainer(palette, 'primaryContainer'),
+              }
+            : {
+                backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
+                borderColor: `rgba(${palette.accentRgb}, 0.48)`,
+                borderTopColor: `rgba(${palette.accentRgb}, 0.60)`,
+              },
+    personaSwitchAvatar: {
+      width: 44,
+      height: 44,
+      borderRadius: skin.id === 'bento' ? 14 : 22,
+      backgroundColor: skin.id === 'material' ? getM3TonalContainer(palette, 'high') : subtleSurfaceBg,
+      borderWidth: 1.5,
+      borderColor: 'rgba(255, 255, 255, 0.12)',
+    },
+    personaSwitchAvatarActive: {
+      borderColor: palette.accent,
+    },
+    personaSwitchAvatarPlaceholder: {
+      width: 44,
+      height: 44,
+      borderRadius: skin.id === 'bento' ? 14 : 22,
+      backgroundColor: `rgba(${palette.accentRgb}, 0.14)`,
+      borderWidth: 1.5,
+      borderColor: `rgba(${palette.accentRgb}, 0.3)`,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    personaSwitchInitial: {
+      color: palette.accent,
+      fontSize: 16,
+      fontWeight: '800',
+    },
+    personaSwitchName: {
+      color: colors.textPrimary,
+      fontSize: 15,
+      fontWeight: '700',
+    },
+    personaSwitchNameActive: {
+      color: palette.accent,
+    },
+    personaSwitchBio: {
+      color: colors.textMuted,
+      fontSize: 12,
+      marginTop: 2,
+    },
+    personaSwitchBioEmpty: {
+      opacity: 0.55,
+      fontStyle: 'italic',
+    },
+    personaCheckSlot: {
+      width: 28,
+      height: 28,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    personaCheckBadge: {
+      width: 26,
+      height: 26,
+      borderRadius: skin.id === 'bento' ? 10 : 13,
+      alignItems: 'center',
+      justifyContent: 'center',
+      ...(skin.id === 'janitor'
+        ? {
+            backgroundColor: `rgba(${palette.accentRgb}, 0.16)`,
+            borderWidth: 1,
+            borderColor: `rgba(${palette.accentRgb}, 0.45)`,
+          }
+        : {
+            backgroundColor: palette.accent,
+          }),
+    },
+    charProfileCardSheet: {
+      backgroundColor: '#10141f',
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      overflow: 'hidden',
+      maxHeight: '88%',
+      borderTopWidth: 1,
+      borderTopColor: `rgba(${palette.accentRgb}, 0.3)`,
+    },
+    charProfileBannerBox: {
+      width: '100%',
+      height: 190,
+      position: 'relative',
+      backgroundColor: palette.bgDark,
+    },
+    charProfileBannerImg: {
+      width: '100%',
+      height: '100%',
+    },
+    charProfileCloseBtn: {
+      position: 'absolute',
+      top: 14,
+      right: 14,
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: 'rgba(0, 0, 0, 0.65)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 10,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.2)',
+    },
+    charProfileBadgeRow: {
+      position: 'absolute',
+      bottom: 12,
+      left: 14,
+      flexDirection: 'row',
+      gap: 6,
+      zIndex: 10,
+    },
+    charProfileBodyScroll: {
+      paddingHorizontal: 18,
+      paddingTop: 14,
+      paddingBottom: 32,
+    },
+    charProfileName: {
+      color: '#FFFFFF',
+      fontSize: 18,
+      fontWeight: '800',
+    },
+    charProfileTagline: {
+      color: palette.accent,
+      fontSize: 12,
+      fontWeight: '600',
+      marginTop: 2,
+    },
+    charProfileCreator: {
+      color: '#9ca3af',
+      fontSize: 11,
+      marginTop: 2,
+      marginBottom: 10,
+    },
+    charProfileTagWrap: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+      marginBottom: 14,
+    },
+    charProfileTagChip: {
+      backgroundColor: 'rgba(255, 255, 255, 0.06)',
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.08)',
+    },
+    charProfileTagText: {
+      color: '#cbd5e1',
+      fontSize: 10.5,
+      fontWeight: '600',
+    },
+    charProfileSectionTitle: {
+      color: '#9ca3af',
+      fontSize: 10.5,
+      fontWeight: '800',
+      letterSpacing: 0.8,
+      marginBottom: 6,
+      textTransform: 'uppercase',
+    },
+    charProfileDescText: {
+      color: '#e2e8f0',
+      fontSize: 12.5,
+      lineHeight: 18,
+    },
+    charProfileGreetingBox: {
+      backgroundColor: 'rgba(255, 255, 255, 0.04)',
+      padding: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.08)',
+      marginTop: 4,
+      marginBottom: 20,
+    },
+    charProfileGreetingText: {
+      color: '#e2e8f0',
+      fontSize: 12,
+      lineHeight: 17,
+      fontStyle: 'italic',
+    },
+    tokenBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: 'rgba(0, 0, 0, 0.7)',
+      paddingHorizontal: 7,
+      paddingVertical: 3,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: `rgba(${palette.accentRgb}, 0.3)`,
+    },
+    tokenText: {
+      color: palette.accent,
+      fontSize: 10,
+      fontWeight: '700',
+    },
+    nsfwBadge: {
+      backgroundColor: 'rgba(239, 68, 68, 0.85)',
+      paddingHorizontal: 7,
+      paddingVertical: 3,
+      borderRadius: 6,
+    },
+    sfwBadge: {
+      backgroundColor: 'rgba(34, 197, 94, 0.85)',
+      paddingHorizontal: 7,
+      paddingVertical: 3,
+      borderRadius: 6,
+    },
+    badgeText: {
+      color: '#FFFFFF',
+      fontSize: 10,
+      fontWeight: '800',
+    },
+    // ── Warden AI Memory Checkpoint Styles ──
+    checkpointCardContainer: {
+      backgroundColor: 'rgba(16, 20, 30, 0.94)',
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+      padding: 14,
+      marginVertical: 6,
+      width: '100%',
+    },
+    checkpointCardHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      borderBottomWidth: 1,
+      borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+      paddingBottom: 8,
+      marginBottom: 8,
+    },
+    checkpointCardTitle: {
+      color: palette.accent,
+      fontSize: 11,
+      fontWeight: '800',
+      letterSpacing: 1,
+    },
+    checkpointTagBadge: {
+      backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: `rgba(${palette.accentRgb}, 0.25)`,
+    },
+    checkpointTagBadgeText: {
+      color: palette.accent,
+      fontSize: 9.5,
+      fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+      fontWeight: '700',
+    },
+    checkpointCardBody: {
+      gap: 4,
+      marginBottom: 8,
+    },
+    checkpointMilestoneTitle: {
+      color: '#FFFFFF',
+      fontSize: 13,
+      fontWeight: '800',
+      letterSpacing: 0.3,
+      marginBottom: 3,
+    },
+    checkpointBulletRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 6,
+    },
+    checkpointBulletDot: {
+      color: palette.accent,
+      fontSize: 13,
+      lineHeight: 18,
+    },
+    checkpointBulletText: {
+      color: '#cbd5e1',
+      fontSize: 12,
+      lineHeight: 18,
+      flex: 1,
+    },
+    checkpointActionRow: {
+      flexDirection: 'row',
+      justifyContent: 'flex-end',
+      alignItems: 'center',
+      gap: 8,
+      borderTopWidth: 1,
+      borderTopColor: 'rgba(255, 255, 255, 0.06)',
+      paddingTop: 8,
+    },
+    checkpointPinBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: palette.accent,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 8,
+    },
+    checkpointPinBtnText: {
+      color: palette.bgDark,
+      fontSize: 11,
+      fontWeight: '800',
+    },
+    checkpointCopyBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: 'rgba(255, 255, 255, 0.06)',
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: `rgba(${palette.accentRgb}, 0.2)`,
+    },
+    checkpointCopyBtnText: {
+      color: palette.accent,
+      fontSize: 11,
+      fontWeight: '700',
+    },
+    headerMenuBackdrop: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      zIndex: 999,
+    },
+    headerMenuCard: {
+      position: 'absolute',
+      top: 56,
+      right: 14,
+      width: 210,
+      borderRadius: 16,
+      borderWidth: 1,
+      paddingVertical: 4,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.45,
+      shadowRadius: 18,
+      elevation: 14,
+    },
+    headerMenuItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+    },
+    headerMenuItemBorder: {
+      borderTopWidth: 1,
+      borderTopColor: 'rgba(255, 255, 255, 0.06)',
+    },
+    headerMenuItemText: {
+      color: '#FFFFFF',
+      fontSize: 13.5,
+      fontWeight: '600',
+    },
+    scrollBottomFabWrap: {
+      position: 'absolute',
+      right: 16,
+      bottom: 116,
+      zIndex: 40,
+    },
+    scrollBottomFab: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.35,
+      shadowRadius: 8,
+      elevation: 8,
+    },
+    refiningBanner: {
+      marginHorizontal: 14,
+      marginBottom: 8,
+      paddingVertical: 8,
+      paddingHorizontal: 14,
+      borderRadius: 14,
+      borderWidth: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    toolbarPillBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 14,
+      backgroundColor: 'rgba(255, 255, 255, 0.07)',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.12)',
+      minHeight: 30,
+    },
+    toolbarPillText: {
+      color: '#cbd5e1',
+      fontSize: 11.5,
+      fontWeight: '700',
+    },
+    toolbarIconBtn: {
+      width: 30,
+      height: 30,
+      borderRadius: 15,
+      backgroundColor: 'rgba(255, 255, 255, 0.07)',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.12)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    actionDeckGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    actionGridTile: {
+      width: '48.5%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingHorizontal: 11,
+      paddingVertical: 10,
+      borderRadius: 14,
+      backgroundColor: 'rgba(255, 255, 255, 0.045)',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.08)',
+    },
+    actionGridIconBox: {
+      width: 34,
+      height: 34,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    actionGridTitle: {
+      color: '#f8fafc',
+      fontSize: 12.5,
+      fontWeight: '700',
+    },
+    actionGridSub: {
+      color: '#94a3b8',
+      fontSize: 10.5,
+      marginTop: 1,
+    },
+    settingsBentoCard: {
+      backgroundColor: subtleSurfaceBg,
+      borderRadius: skin.cardRadius,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      borderWidth: skin.cardBorderWidth,
+      borderColor: 'rgba(255, 255, 255, 0.08)',
+    },
+    settingsCardTitle: {
+      color: '#f8fafc',
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    settingsDrillRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 11,
+    },
+    settingsRowLabel: {
+      color: '#e2e8f0',
+      fontSize: 13.5,
+      fontWeight: '500',
+    },
+    settingsRowValue: {
+      color: '#94a3b8',
+      fontSize: 13,
+    },
+    settingsHairline: {
+      height: 1,
+      backgroundColor: 'rgba(255, 255, 255, 0.07)',
+    },
+    settingsSubHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginBottom: 12,
+      paddingVertical: 2,
+    },
+    settingsSubHeaderTitle: {
+      color: '#f8fafc',
+      fontSize: 15.5,
+      fontWeight: '700',
+    },
+    settingsValueBadge: {
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 8,
+      backgroundColor: 'rgba(255, 255, 255, 0.06)',
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.12)',
+      minWidth: 52,
+      alignItems: 'center',
+    },
+    settingsValueBadgeText: {
+      color: '#f8fafc',
+      fontSize: 13,
+      fontWeight: '600',
+    },
+    settingsHelperText: {
+      color: '#94a3b8',
+      fontSize: 11.5,
+      lineHeight: 16,
+      marginTop: 4,
+    },
+  });
+};
