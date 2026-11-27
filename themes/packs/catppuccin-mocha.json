@@ -1,22 +1,47 @@
 {
   "schemaVersion": 1,
   "id": "catppuccin-mocha",
-  "name": "Catppuccin Mocha",
+  "name": "Catppuccin Studio",
   "author": "NekoChat",
-  "version": "1.0.0",
-  "description": "Soothing pastel mauve & lavender accents on warm espresso Bento surfaces with soft spring motion.",
-  "badge": "Mocha",
+  "version": "1.1.0",
+  "description": "Soothing pastel Bento pack with Mocha & Frappé color schemes, keycap depth, and soft spring physics.",
+  "badge": "Catp",
   "baseSkin": "bento",
+  "supportsBuiltInPalettes": true,
+  "defaultPaletteId": "catppuccin-mocha",
   "tags": ["Pastel", "Cozy", "OLED"],
-  "palette": {
-    "accent": "#CBA6F7",
-    "accentMuted": "#B4BEFE",
-    "accentRgb": "203, 166, 247",
-    "bgDark": "#11111B",
-    "bgSurface": "#1E1E2E",
-    "bgSurfaceSubtle": "#313244",
-    "webFrameBg": "#0B0B12",
-    "dockBg": "rgba(24, 24, 37, 0.92)"
+  "palettes": [
+    {
+      "id": "catppuccin-mocha",
+      "name": "Catppuccin Mocha",
+      "desc": "Espresso OLED dark + Pastel Mauve (#CBA6F7)",
+      "accent": "#CBA6F7",
+      "accentMuted": "#B4BEFE",
+      "accentRgb": "203, 166, 247",
+      "bgDark": "#11111B",
+      "bgSurface": "#1E1E2E",
+      "bgSurfaceSubtle": "#313244",
+      "webFrameBg": "#0B0B12",
+      "dockBg": "rgba(24, 24, 37, 0.92)"
+    },
+    {
+      "id": "catppuccin-frappe",
+      "name": "Catppuccin Frappé",
+      "desc": "Cool twilight slate + Soft Flamingo Rose (#F4B8E4)",
+      "accent": "#F4B8E4",
+      "accentMuted": "#CA9EE6",
+      "accentRgb": "244, 184, 228",
+      "bgDark": "#232634",
+      "bgSurface": "#303446",
+      "bgSurfaceSubtle": "#414559",
+      "webFrameBg": "#1A1C26",
+      "dockBg": "rgba(41, 44, 60, 0.92)"
+    }
+  ],
+  "layout": {
+    "navBarStyle": "floating_capsule",
+    "settingsLayout": "bento_grid",
+    "switchStyle": "neko"
   },
   "surfaces": {
     "surfaceMode": "oled",

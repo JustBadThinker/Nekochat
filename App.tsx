@@ -20,6 +20,7 @@ import { getScreenBg, resolvePaletteWithPack, resolveSkinWithPack } from './src/
 import { ThemeProvider } from './src/theme/ThemeContext';
 import { runScreenEnterAnimation, runScreenExitAnimation } from './src/theme/animations';
 import {
+  getAllInstalledPalettesSync,
   getInstalledThemePackByIdSync,
   hydrateInstalledThemePacks,
 } from './src/services/themeStoreService';
@@ -165,7 +166,9 @@ function AppContent() {
       ]);
       setSettings(appSet);
       const bootPack = getInstalledThemePackByIdSync(appSet.activeThemePackId);
-      applyThemePalette(appSet.theme || 'midnight', bootPack ? resolvePaletteWithPack(appSet.theme, bootPack) : null);
+      const bootInstalledPalettes = getAllInstalledPalettesSync();
+      const bootPalette = resolvePaletteWithPack(appSet.theme, bootPack, bootInstalledPalettes);
+      applyThemePalette(bootPalette.id, bootPalette);
 
       // 1. Load local characters, personas, and configs in parallel (non-blocking startup)
       const [chars, persList, provCfg] = await Promise.all([
@@ -421,11 +424,12 @@ function AppContent() {
   const currentTheme = settings?.theme || 'midnight';
   const currentSkin = settings?.uiSkin || 'bento';
   const activeThemePack = getInstalledThemePackByIdSync(settings?.activeThemePackId);
+  const installedPalettes = getAllInstalledPalettesSync();
   const activePalette = applyThemePalette(
     currentTheme,
-    activeThemePack ? resolvePaletteWithPack(currentTheme, activeThemePack) : null
+    resolvePaletteWithPack(currentTheme, activeThemePack, installedPalettes)
   );
-  const activeSkinTokens = resolveSkinWithPack(currentSkin, activeThemePack);
+  const activeSkinTokens = resolveSkinWithPack(currentSkin, activeThemePack, activePalette.id);
   const themeBg = getScreenBg(activePalette, activeSkinTokens);
   const webFrameBg = activePalette.webFrameBg;
 
@@ -764,7 +768,12 @@ function AppContent() {
 
   return (
     <SafeAreaProvider>
-      <ThemeProvider themeId={currentTheme} uiSkin={currentSkin} activeThemePack={activeThemePack}>
+      <ThemeProvider
+        themeId={currentTheme}
+        uiSkin={currentSkin}
+        activeThemePack={activeThemePack}
+        installedPalettes={installedPalettes}
+      >
         <LanguageProvider language={settings?.uiLanguage || 'en'}>
           {body}
         </LanguageProvider>

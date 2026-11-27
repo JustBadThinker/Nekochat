@@ -438,7 +438,7 @@ export interface SyntaxColorConfig {
 }
 
 export interface AppSettings {
-  theme?: ThemeId;
+  theme?: ThemeId | string;
   uiSkin?: UiSkinId;
   activeThemePackId?: string | null;
   chatStyle: ChatStyleMode;

@@ -16,9 +16,11 @@ export type ThemeId =
   | 'sunset';
 
 export interface ThemePalette {
-  id: ThemeId;
+  id: string;
   name: string;
   desc: string;
+  packId?: string;
+  packName?: string;
   accent: string;
   accentMuted: string;
   accentRgb: string;
@@ -138,7 +140,7 @@ export const THEME_PALETTES: Record<ThemeId, ThemePalette> = {
 
 export const colors = {
   // Active theme ID
-  themeId: 'midnight' as ThemeId,
+  themeId: 'midnight' as string,
 
   // Backgrounds
   bgDark: '#0c0e14',

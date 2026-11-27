@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo } from 'react';
-import { ThemeId, ThemePalette, THEME_PALETTES, applyThemePalette } from './colors';
+import { ThemePalette, THEME_PALETTES, applyThemePalette } from './colors';
 import {
   UiSkinId,
   UiSkinTokens,
@@ -10,7 +10,7 @@ import {
 import type { NekoThemePack } from './themePackSchema';
 
 interface ThemeContextValue {
-  themeId: ThemeId;
+  themeId: string;
   palette: ThemePalette;
   skinId: UiSkinId;
   skin: UiSkinTokens;
@@ -26,37 +26,42 @@ const ThemeContext = createContext<ThemeContextValue>({
 });
 
 export const ThemeProvider: React.FC<{
-  themeId?: ThemeId | string;
+  themeId?: string;
   uiSkin?: UiSkinId | string;
   activeThemePack?: NekoThemePack | null;
+  installedPalettes?: ThemePalette[];
   children: React.ReactNode;
-}> = ({ themeId = 'midnight', uiSkin = 'bento', activeThemePack = null, children }) => {
-  const resolvedId = (
-    themeId && themeId in THEME_PALETTES ? themeId : 'midnight'
-  ) as ThemeId;
-  const resolvedSkin = useMemo(
-    () => resolveSkinWithPack(uiSkin, activeThemePack),
-    [uiSkin, activeThemePack]
-  );
+}> = ({
+  themeId = 'midnight',
+  uiSkin = 'bento',
+  activeThemePack = null,
+  installedPalettes = [],
+  children,
+}) => {
   const resolvedPalette = useMemo(
-    () => resolvePaletteWithPack(resolvedId, activeThemePack),
-    [resolvedId, activeThemePack]
+    () => resolvePaletteWithPack(themeId, activeThemePack, installedPalettes),
+    [themeId, activeThemePack, installedPalettes]
+  );
+
+  const resolvedSkin = useMemo(
+    () => resolveSkinWithPack(uiSkin, activeThemePack, resolvedPalette.id),
+    [uiSkin, activeThemePack, resolvedPalette.id]
   );
 
   useEffect(() => {
-    applyThemePalette(resolvedId, activeThemePack ? resolvedPalette : null);
-  }, [resolvedId, activeThemePack, resolvedPalette]);
+    applyThemePalette(resolvedPalette.id, resolvedPalette);
+  }, [resolvedPalette]);
 
   const value = useMemo<ThemeContextValue>(() => {
-    const palette = applyThemePalette(resolvedId, activeThemePack ? resolvedPalette : null);
+    const palette = applyThemePalette(resolvedPalette.id, resolvedPalette);
     return {
-      themeId: resolvedId,
+      themeId: resolvedPalette.id,
       palette,
       skinId: resolvedSkin.id,
       skin: resolvedSkin,
       activePack: activeThemePack || null,
     };
-  }, [resolvedId, resolvedSkin, activeThemePack, resolvedPalette]);
+  }, [resolvedPalette, resolvedSkin, activeThemePack]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 };

@@ -61,7 +61,7 @@ import { aiProviderService } from '../services/aiProviderService';
 import { wardenVaultService } from '../services/wardenVaultService';
 import { ttsService, VOICE_PROFILES, TtsConfig, DEFAULT_TTS_CONFIG } from '../services/ttsService';
 import { imageGenService, IMAGE_STYLE_OPTIONS, ImageGenConfig, DEFAULT_IMAGE_GEN_CONFIG } from '../services/imageGenService';
-import { colors, applyThemePalette, ThemeId, ThemePalette, THEME_PALETTES } from '../theme/colors';
+import { colors, applyThemePalette, ThemePalette, THEME_PALETTES } from '../theme/colors';
 import {
   UI_SKINS,
   UiSkinId,
@@ -75,7 +75,11 @@ import {
 } from '../theme/skins';
 import { APP_VERSION, APP_VERSION_LABEL } from '../constants/appInfo';
 import { checkForGitHubUpdate, GITHUB_REPO_URL, UpdateCheckResult } from '../services/githubUpdateService';
-import { getInstalledThemePacksSync } from '../services/themeStoreService';
+import {
+  findInstalledPaletteByIdSync,
+  getAllInstalledPalettesSync,
+  getInstalledThemePacksSync,
+} from '../services/themeStoreService';
 import type { NekoThemePack } from '../theme/themePackSchema';
 import { openSafeExternalUrl } from '../utils/safeExternalUrl';
 import { useTheme } from '../theme/ThemeContext';
@@ -221,8 +225,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [aiModalTab, setAiModalTab] = useState<'llm' | 'image' | 'voice'>('llm');
 
   // Theming State
-  const [selectedTheme, setSelectedTheme] = useState<ThemeId>(
-    (settings?.theme as ThemeId) || 'midnight'
+  const [selectedTheme, setSelectedTheme] = useState<string>(
+    (settings?.theme as string) || 'midnight'
   );
   const [selectedSkin, setSelectedSkin] = useState<UiSkinId>(
     (settings?.uiSkin as UiSkinId) || 'bento'
@@ -541,10 +545,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     }
   };
 
-  const handleSelectThemeInstant = async (themeId: ThemeId) => {
+  const handleSelectThemeInstant = async (themeId: string) => {
     setSelectedTheme(themeId);
-    applyThemePalette(themeId, null);
-    const updated: AppSettings = { ...settings, theme: themeId, activeThemePackId: null };
+    const nextPalette = resolvePaletteWithPack(themeId, activePack, getAllInstalledPalettesSync());
+    applyThemePalette(nextPalette.id, nextPalette);
+    const updated: AppSettings = { ...settings, theme: themeId };
     await storageService.saveSettings(updated);
     onUpdateSettings(updated);
   };
@@ -557,19 +562,33 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   };
 
   const handleApplyTheme = async () => {
-    applyThemePalette(selectedTheme, null);
-    const updated: AppSettings = { ...settings, theme: selectedTheme as any, activeThemePackId: null };
+    const nextPalette = resolvePaletteWithPack(selectedTheme, activePack, getAllInstalledPalettesSync());
+    applyThemePalette(nextPalette.id, nextPalette);
+    const updated: AppSettings = { ...settings, theme: selectedTheme };
     await storageService.saveSettings(updated);
     onUpdateSettings(updated);
     setActiveModal(null);
   };
 
-  const handleApplyThemePack = async (pack: NekoThemePack) => {
+  const handleApplyThemePack = async (
+    pack: NekoThemePack,
+    options?: { keepCurrentColors?: boolean }
+  ) => {
+    const keepColors = options?.keepCurrentColors === true;
+    const nextThemeId =
+      keepColors
+        ? selectedTheme
+        : pack.defaultPaletteId || pack.palettes[0]?.id || selectedTheme || 'midnight';
+
     setSelectedSkin(pack.baseSkin);
-    applyThemePalette(settings.theme || 'midnight', resolvePaletteWithPack(settings.theme, pack));
+    setSelectedTheme(nextThemeId);
+    const nextPalette = resolvePaletteWithPack(nextThemeId, pack, getAllInstalledPalettesSync());
+    applyThemePalette(nextPalette.id, nextPalette);
+
     const updated: AppSettings = {
       ...settings,
       uiSkin: pack.baseSkin,
+      theme: nextThemeId,
       activeThemePackId: pack.id,
     };
     await storageService.saveSettings(updated);
@@ -577,11 +596,27 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   };
 
   const handlePackUninstalled = async (packId: string) => {
-    if (settings.activeThemePackId !== packId) return;
-    applyThemePalette(selectedTheme, null);
+    const installedPalettes = getAllInstalledPalettesSync();
+    const isBuiltInColor = selectedTheme in THEME_PALETTES;
+    const stillExistsCustom = Boolean(findInstalledPaletteByIdSync(selectedTheme));
+    const fallbackTheme = isBuiltInColor || stillExistsCustom ? selectedTheme : 'midnight';
+
+    const nextActivePackId = settings.activeThemePackId === packId ? null : settings.activeThemePackId;
+    if (fallbackTheme !== selectedTheme) {
+      setSelectedTheme(fallbackTheme);
+    }
+
+    const nextPalette = resolvePaletteWithPack(
+      fallbackTheme,
+      nextActivePackId ? activePack : null,
+      installedPalettes
+    );
+    applyThemePalette(nextPalette.id, nextPalette);
+
     const updated: AppSettings = {
       ...settings,
-      activeThemePackId: null,
+      theme: fallbackTheme,
+      activeThemePackId: nextActivePackId,
     };
     await storageService.saveSettings(updated);
     onUpdateSettings(updated);
@@ -1955,9 +1990,100 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 );
               })}
 
+              {getInstalledThemePacksSync().map(pk => {
+                const isSelected = activePack?.id === pk.id;
+                const cardR = pk.geometry?.cardRadius ?? 20;
+                return (
+                  <TouchableOpacity
+                    key={`pack-skin-${pk.id}`}
+                    style={[
+                      styles.themeOptionCard,
+                      { borderRadius: cardR },
+                      isSelected && [styles.themeOptionActive, { borderColor: palette.accent }],
+                    ]}
+                    onPress={() => handleApplyThemePack(pk, { keepCurrentColors: true })}
+                    activeOpacity={0.8}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                      <View
+                        style={{
+                          width: 44,
+                          height: 44,
+                          borderRadius: cardR > 20 ? 16 : Math.max(6, cardR * 0.65),
+                          backgroundColor: pk.palette?.bgDark || palette.bgDark,
+                          borderWidth: 1.25,
+                          borderColor: isSelected ? palette.accent : `rgba(${palette.accentRgb}, 0.45)`,
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <Text style={{ color: pk.palette?.accent || palette.accent, fontSize: 10.5, fontWeight: '800' }}>
+                          {pk.badge}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.themeOptionName, isSelected && { color: palette.accent }]}>
+                          {pk.name} (Pack)
+                        </Text>
+                        <Text style={styles.themeOptionDesc} numberOfLines={2}>
+                          {pk.description}
+                        </Text>
+                      </View>
+                    </View>
+                    {isSelected && <Check size={16} color={palette.accent} />}
+                  </TouchableOpacity>
+                );
+              })}
+
+              {getInstalledThemePacksSync().some(p => p.palettes.length > 0) && (
+                <>
+                  <Text style={[styles.sectionSub, { marginTop: 14 }]}>Installed Pack Color Schemes</Text>
+                  {getAllInstalledPalettesSync().map(th => {
+                    const isSelected = palette.id === th.id;
+                    return (
+                      <TouchableOpacity
+                        key={`pack-pal-${th.id}`}
+                        style={[
+                          styles.themeOptionCard,
+                          isSelected && [styles.themeOptionActive, { borderColor: th.accent }],
+                        ]}
+                        onPress={() => handleSelectThemeInstant(th.id)}
+                        activeOpacity={0.8}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                          <View
+                            style={{
+                              width: 44,
+                              height: 44,
+                              borderRadius: 12,
+                              backgroundColor: th.bgDark,
+                              borderWidth: 1.5,
+                              borderColor: th.accent,
+                              justifyContent: 'center',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <NekoLogoSvg size={30} color={th.accent} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.themeOptionName, isSelected && { color: th.accent }]}>
+                              {th.name}
+                            </Text>
+                            <Text style={styles.themeOptionDesc} numberOfLines={2}>
+                              {th.packName ? `From ${th.packName} • ` : ''}{th.desc}
+                            </Text>
+                          </View>
+                        </View>
+                        {isSelected && <Check size={16} color={th.accent} />}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </>
+              )}
+
               <Text style={[styles.sectionSub, { marginTop: 14 }]}>{t('settings.selectThemeSub')}</Text>
               {Object.values(THEME_PALETTES).map(th => {
-                const isSelected = !activePack && selectedTheme === th.id;
+                const isSelected = palette.id === th.id;
                 return (
                   <TouchableOpacity
                     key={th.id}

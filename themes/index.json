@@ -4,15 +4,15 @@
   "themes": [
     {
       "id": "catppuccin-mocha",
-      "name": "Catppuccin Mocha",
+      "name": "Catppuccin Studio",
       "author": "NekoChat",
-      "version": "1.0.0",
-      "description": "Soothing pastel mauve & lavender accents on warm espresso Bento surfaces with soft spring motion.",
-      "badge": "Mocha",
+      "version": "1.1.0",
+      "description": "Soothing pastel Bento pack with 2 color schemes (Mocha & Frappé), keycap depth, and soft spring physics.",
+      "badge": "Catp",
       "baseSkin": "bento",
       "tags": ["Pastel", "Cozy"],
-      "previewSwatches": ["#11111B", "#1E1E2E", "#CBA6F7", "#B4BEFE"],
-      "motionSummary": "Soft spring • 1.0x",
+      "previewSwatches": ["#11111B", "#1E1E2E", "#CBA6F7", "#F4B8E4"],
+      "motionSummary": "Soft spring • 2 palettes",
       "packUrl": "https://raw.githubusercontent.com/JustBadThinker/Nekochat/main/themes/packs/catppuccin-mocha.json"
     },
     {
@@ -58,13 +58,13 @@
       "id": "crt-phosphor",
       "name": "CRT Phosphor 84",
       "author": "NekoChat",
-      "version": "1.0.0",
-      "description": "Sharp retro monochrome phosphor green with tight boxy corners, glowing borders, and zero-lag snappy timing.",
+      "version": "1.1.0",
+      "description": "Sharp retro terminal skin with Green & Amber palettes, tight boxy geometry, and ultra-snappy timing.",
       "badge": "CRT",
       "baseSkin": "janitor",
       "tags": ["Retro", "Neon"],
-      "previewSwatches": ["#060B06", "#0C140C", "#39FF14", "#22C55E"],
-      "motionSummary": "Ultra-snappy timing • 0.65x",
+      "previewSwatches": ["#060B06", "#0C140C", "#39FF14", "#FFB000"],
+      "motionSummary": "0.65x snappy • 2 palettes",
       "packUrl": "https://raw.githubusercontent.com/JustBadThinker/Nekochat/main/themes/packs/crt-phosphor.json"
     },
     {

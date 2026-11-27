@@ -42,7 +42,7 @@ interface ThemeStoreModalProps {
   visible: boolean;
   activePackId?: string | null;
   onClose: () => void;
-  onApplyPack: (pack: NekoThemePack) => Promise<void> | void;
+  onApplyPack: (pack: NekoThemePack, options?: { keepCurrentColors?: boolean }) => Promise<void> | void;
   onPackUninstalled?: (packId: string) => Promise<void> | void;
 }
 
@@ -63,11 +63,11 @@ const ThemeLivePreview: React.FC<{
 }> = ({ item, packDetail, large = false }) => {
   const [imgFailed, setImgFailed] = useState(false);
 
-  const bgDark = packDetail?.palette.bgDark || item.previewSwatches[0] || '#0c0e14';
-  const bgSurface = packDetail?.palette.bgSurface || item.previewSwatches[1] || '#12151e';
-  const accent = packDetail?.palette.accent || item.previewSwatches[2] || '#D4FF00';
-  const accentMuted = packDetail?.palette.accentMuted || item.previewSwatches[3] || accent;
-  const dockBg = packDetail?.palette.dockBg || bgSurface;
+  const bgDark = packDetail?.palettes[0]?.bgDark || packDetail?.palette?.bgDark || item.previewSwatches[0] || '#0c0e14';
+  const bgSurface = packDetail?.palettes[0]?.bgSurface || packDetail?.palette?.bgSurface || item.previewSwatches[1] || '#12151e';
+  const accent = packDetail?.palettes[0]?.accent || packDetail?.palette?.accent || item.previewSwatches[2] || '#D4FF00';
+  const accentMuted = packDetail?.palettes[0]?.accentMuted || packDetail?.palette?.accentMuted || item.previewSwatches[3] || accent;
+  const dockBg = packDetail?.palettes[0]?.dockBg || packDetail?.palette?.dockBg || bgSurface;
   const userBubbleBg = packDetail?.surfaces?.userBubbleBg || `${accent}33`;
   const aiBubbleBg = packDetail?.surfaces?.aiBubbleBg || bgSurface;
 
@@ -250,7 +250,11 @@ export const ThemeStoreModal: React.FC<ThemeStoreModalProps> = ({
     }
   };
 
-  const handleInstallOrApply = async (item: ThemePackManifestItem, applyAfter: boolean) => {
+  const handleInstallOrApply = async (
+    item: ThemePackManifestItem,
+    applyAfter: boolean,
+    keepCurrentColors = false
+  ) => {
     setBusyPackId(item.id);
     setNotice(null);
     try {
@@ -258,8 +262,12 @@ export const ThemeStoreModal: React.FC<ThemeStoreModalProps> = ({
       const pack = existing || (await installThemePack(item));
       setInstalledIds(getInstalledThemePacksSync().map(p => p.id));
       if (applyAfter) {
-        await onApplyPack(pack);
-        setNotice(`${pack.name} applied.`);
+        await onApplyPack(pack, { keepCurrentColors });
+        setNotice(
+          keepCurrentColors
+            ? `${pack.name} skin applied (keeping your current color scheme).`
+            : `${pack.name} applied.`
+        );
       } else {
         setNotice(`${pack.name} installed.`);
       }
@@ -577,76 +585,131 @@ export const ThemeStoreModal: React.FC<ThemeStoreModalProps> = ({
                 </View>
               </View>
 
-              {/* Swatches Row */}
-              <Text style={[styles.specLabel, { marginTop: 14, marginBottom: 8 }]}>PALETTE SWATCHES</Text>
-              <View style={styles.detailSwatches}>
-                {selectedItem.previewSwatches.map((hex, i) => (
-                  <View key={`d-sw-${i}`} style={[styles.detailSwatchItem, { backgroundColor: palette.bgSurfaceSubtle }]}>
-                    <View style={[styles.detailSwatchColor, { backgroundColor: hex }]} />
-                    <Text style={styles.detailSwatchHex}>{hex}</Text>
+              {/* Bundled Color Schemes & Swatches */}
+              {detailPack && detailPack.palettes.length > 0 ? (
+                <>
+                  <Text style={[styles.specLabel, { marginTop: 14, marginBottom: 8 }]}>
+                    INCLUDED COLOR SCHEMES ({detailPack.palettes.length})
+                  </Text>
+                  <View style={{ gap: 6 }}>
+                    {detailPack.palettes.map(pal => (
+                      <View
+                        key={pal.id}
+                        style={[
+                          styles.detailSwatchItem,
+                          {
+                            backgroundColor: palette.bgSurfaceSubtle,
+                            justifyContent: 'space-between',
+                            paddingVertical: 8,
+                            paddingHorizontal: 10,
+                          },
+                        ]}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                          <View style={[styles.detailSwatchColor, { backgroundColor: pal.bgDark }]} />
+                          <View style={[styles.detailSwatchColor, { backgroundColor: pal.bgSurface }]} />
+                          <View style={[styles.detailSwatchColor, { backgroundColor: pal.accent }]} />
+                          <Text style={[styles.detailSwatchHex, { fontWeight: '700' }]} numberOfLines={1}>
+                            {pal.name}
+                          </Text>
+                        </View>
+                        <Text style={[styles.detailSwatchHex, { color: pal.accent }]}>{pal.accent}</Text>
+                      </View>
+                    ))}
                   </View>
-                ))}
-              </View>
+                </>
+              ) : (
+                <>
+                  <Text style={[styles.specLabel, { marginTop: 14, marginBottom: 8 }]}>PALETTE SWATCHES</Text>
+                  <View style={styles.detailSwatches}>
+                    {selectedItem.previewSwatches.map((hex, i) => (
+                      <View key={`d-sw-${i}`} style={[styles.detailSwatchItem, { backgroundColor: palette.bgSurfaceSubtle }]}>
+                        <View style={[styles.detailSwatchColor, { backgroundColor: hex }]} />
+                        <Text style={styles.detailSwatchHex}>{hex}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              )}
             </View>
 
-            {/* Primary Install / Apply / Uninstall Controls */}
-            <View style={styles.detailActions}>
+            {/* Primary Install / Apply / Skin-Only / Uninstall Controls */}
+            <View style={{ gap: 8, marginTop: 4 }}>
+              <View style={styles.detailActions}>
+                <TouchableOpacity
+                  disabled={busyPackId === selectedItem.id || isDetailActive}
+                  onPress={() => void handleInstallOrApply(selectedItem, true, false)}
+                  activeOpacity={0.85}
+                  style={[
+                    styles.primaryDetailBtn,
+                    {
+                      borderRadius: skin.buttonRadius,
+                      backgroundColor: isDetailActive
+                        ? `rgba(${palette.accentRgb}, 0.2)`
+                        : palette.accent,
+                      borderWidth: isDetailActive ? 1 : 0,
+                      borderColor: palette.accent,
+                    },
+                  ]}
+                >
+                  {busyPackId === selectedItem.id ? (
+                    <ActivityIndicator size="small" color={isDetailActive ? palette.accent : '#0A0D12'} />
+                  ) : isDetailActive ? (
+                    <>
+                      <Check size={16} color={palette.accent} />
+                      <Text style={[styles.primaryDetailBtnText, { color: palette.accent }]}>
+                        Currently Active
+                      </Text>
+                    </>
+                  ) : isDetailInstalled ? (
+                    <>
+                      <Check size={16} color="#0A0D12" />
+                      <Text style={[styles.primaryDetailBtnText, { color: '#0A0D12' }]}>
+                        Apply Full Theme
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <Download size={16} color="#0A0D12" />
+                      <Text style={[styles.primaryDetailBtnText, { color: '#0A0D12' }]}>
+                        Install & Apply Theme
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                {isDetailInstalled && (
+                  <TouchableOpacity
+                    disabled={busyPackId === selectedItem.id}
+                    onPress={() => void handleUninstall(selectedItem)}
+                    activeOpacity={0.8}
+                    style={[
+                      styles.uninstallBtn,
+                      { borderRadius: skin.buttonRadius },
+                    ]}
+                  >
+                    <Trash2 size={16} color="#FB7185" />
+                    <Text style={styles.uninstallBtnText}>Remove</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
               <TouchableOpacity
-                disabled={busyPackId === selectedItem.id || isDetailActive}
-                onPress={() => void handleInstallOrApply(selectedItem, true)}
-                activeOpacity={0.85}
+                disabled={busyPackId === selectedItem.id}
+                onPress={() => void handleInstallOrApply(selectedItem, true, true)}
+                activeOpacity={0.8}
                 style={[
-                  styles.primaryDetailBtn,
+                  styles.skinOnlyBtn,
                   {
                     borderRadius: skin.buttonRadius,
-                    backgroundColor: isDetailActive
-                      ? `rgba(${palette.accentRgb}, 0.2)`
-                      : palette.accent,
-                    borderWidth: isDetailActive ? 1 : 0,
-                    borderColor: palette.accent,
+                    backgroundColor: palette.bgSurfaceSubtle,
                   },
                 ]}
               >
-                {busyPackId === selectedItem.id ? (
-                  <ActivityIndicator size="small" color={isDetailActive ? palette.accent : '#0A0D12'} />
-                ) : isDetailActive ? (
-                  <>
-                    <Check size={16} color={palette.accent} />
-                    <Text style={[styles.primaryDetailBtnText, { color: palette.accent }]}>
-                      Currently Active
-                    </Text>
-                  </>
-                ) : isDetailInstalled ? (
-                  <>
-                    <Check size={16} color="#0A0D12" />
-                    <Text style={[styles.primaryDetailBtnText, { color: '#0A0D12' }]}>
-                      Apply Theme Now
-                    </Text>
-                  </>
-                ) : (
-                  <>
-                    <Download size={16} color="#0A0D12" />
-                    <Text style={[styles.primaryDetailBtnText, { color: '#0A0D12' }]}>
-                      Install & Apply Theme
-                    </Text>
-                  </>
-                )}
+                <Text style={styles.skinOnlyBtnText}>
+                  Use Skin & Animations Only (Keep My Color Scheme)
+                </Text>
               </TouchableOpacity>
-
-              {isDetailInstalled && (
-                <TouchableOpacity
-                  disabled={busyPackId === selectedItem.id}
-                  onPress={() => void handleUninstall(selectedItem)}
-                  activeOpacity={0.8}
-                  style={[
-                    styles.uninstallBtn,
-                    { borderRadius: skin.buttonRadius },
-                  ]}
-                >
-                  <Trash2 size={16} color="#FB7185" />
-                  <Text style={styles.uninstallBtnText}>Remove</Text>
-                </TouchableOpacity>
-              )}
             </View>
           </BottomSheetScrollView>
         )}
@@ -977,6 +1040,19 @@ const styles = StyleSheet.create({
   uninstallBtnText: {
     color: '#FB7185',
     fontSize: 13,
+    fontWeight: '700',
+  },
+  skinOnlyBtn: {
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  skinOnlyBtnText: {
+    color: '#CBD5E1',
+    fontSize: 12.5,
     fontWeight: '700',
   },
 });

@@ -1,92 +1,25 @@
-# NekoChat Theme Pack Template (`schemaVersion: 1`)
+# Creating a NekoChat Community Theme Pack
 
-NekoChat supports optional, downloadable **Theme Packs** hosted right in this repository (`themes/packs/*.json`). Theme Packs are pure validated JSON (no executable code) and can customize **Colors**, **Surfaces**, **Geometry**, and **Every App Animation**.
+NekoChat supports **Decoupled Full Theme Packs** hosted in this repository (`themes/packs/*.json`). A single Theme Pack can customize **layout**, **surfaces**, **geometry**, and **every app animation**, AND optionally ship **1–12 custom color schemes** (`palettes`) while still working cleanly with all built-in NekoChat color schemes!
 
-## 1. JSON Structure
+## Quick 3-Step Guide
 
-```json
-{
-  "schemaVersion": 1,
-  "id": "my-theme-id",
-  "name": "My Custom Theme",
-  "author": "YourHandle",
-  "version": "1.0.0",
-  "description": "Short summary shown in the Theme Store detail modal.",
-  "badge": "Badge",
-  "baseSkin": "bento",
-  "tags": ["Pastel", "Neon"],
-  "previewImage": "https://raw.githubusercontent.com/.../preview.png",
-  "palette": {
-    "accent": "#CBA6F7",
-    "accentMuted": "#B4BEFE",
-    "accentRgb": "203, 166, 247",
-    "bgDark": "#11111B",
-    "bgSurface": "#1E1E2E",
-    "bgSurfaceSubtle": "#313244",
-    "webFrameBg": "#0B0B12",
-    "dockBg": "rgba(24, 24, 37, 0.92)"
-  },
-  "surfaces": {
-    "surfaceMode": "oled",
-    "cardBorderAccentMix": 0.16,
-    "cardGlowOpacity": 0.14,
-    "cardGlowRadius": 12,
-    "keycapLipWidth": 3.5,
-    "specularRimOpacity": 0.5,
-    "userBubbleBg": "rgba(203, 166, 247, 0.18)",
-    "aiBubbleBg": "#1E1E2E"
-  },
-  "geometry": {
-    "cardRadius": 22,
-    "cardBorderWidth": 1.25,
-    "buttonRadius": 16,
-    "pillRadius": 999,
-    "inputRadius": 24,
-    "sheetRadius": 28,
-    "grabberWidth": 38,
-    "grabberHeight": 4.5,
-    "bubbleRadius": 20,
-    "bubbleTailRadius": 6,
-    "bubbleBorderWidth": 1.25,
-    "dockRadius": 30,
-    "dockBorderWidth": 1.25,
-    "pressScale": 0.95
-  },
-  "animation": {
-    "mode": "spring",
-    "speedScale": 1.0,
-    "easing": "cubicOut",
-    "enterDuration": 240,
-    "enterTranslateY": 12,
-    "enterScaleFrom": 0.94,
-    "springFriction": 6,
-    "springTension": 145,
-    "pressScale": 0.95,
-    "pressFriction": 5.5,
-    "pressTension": 210,
-    "pressDuration": 120,
-    "dockSpringFriction": 6.5,
-    "dockSpringTension": 150,
-    "sheetOpenDuration": 260,
-    "sheetCloseDuration": 210,
-    "sheetSnapFriction": 8,
-    "sheetSnapTension": 120,
-    "screenEnterFriction": 9,
-    "screenEnterTension": 90,
-    "screenExitDuration": 210,
-    "switchFriction": 7,
-    "switchTension": 130,
-    "tabFadeDuration": 170,
-    "composerDuration": 210,
-    "collapsibleDuration": 160
-  }
-}
-```
+1. **Copy the annotated starter template:**
+   Start from [`themes/STARTER_TEMPLATE.jsonc`](./STARTER_TEMPLATE.jsonc) — every field (`palettes`, `layout`, `surfaces`, `geometry`, and every `animation` slot) is documented inline with valid options and safe value ranges.
+2. **Create your clean `.json` pack:**
+   Save your finished theme (without `//` comments) to `themes/packs/<your-theme-id>.json`.
+   - Include `palettes: [...]` to add 1 or more new color schemes into **Settings → Appearance → Color Scheme**.
+   - Or omit `palettes` completely to publish a **Skin-Only Pack** (pure shapes, surfaces, layout & animations that pair with NekoChat's built-in colors).
+3. **Register it in the catalog & validate:**
+   Add a manifest entry in [`themes/index.json`](./index.json) pointing `packUrl` to:
+   `https://raw.githubusercontent.com/JustBadThinker/Nekochat/main/themes/packs/<your-theme-id>.json`
 
-## 2. Field Reference & Clamps
+   Then verify everything passes the strict validator:
+   ```bash
+   node --test tests/theme-pack-schema.test.mjs
+   ```
 
-- **`baseSkin`**: `"bento" | "janitor" | "material" | "ios"` (controls layout architecture & fallback tokens).
-- **`animation.easing`**: `"cubicOut" | "quadOut" | "expoOut" | "backOut" | "iosStandard" | "m3Emphasized" | "linear"` OR a 4-number cubic bezier array `[x1, y1, x2, y2]`.
-- **`animation.speedScale`**: `0.4` (very fast) to `1.6` (relaxed), default `1.0`.
-- **Radii**: `0`–`999`; **Durations**: `40`–`700` ms; **Spring friction**: `3`–`20`; **Spring tension**: `40`–`320`.
-- **`previewImage`**: Optional `https://` screenshot URL shown above the live miniature preview in the Theme Store modal.
+## Safety Clamps (Applied Automatically)
+- **CSS colors:** Hex `#RGB`, `#RRGGBB`, `#RRGGBBAA`, `rgb(...)`, or `rgba(...)`. (`accentRgb` is auto-derived if you use hex for `accent`.)
+- **URLs:** Only `https://` URLs are allowed for `previewImage` and `packUrl`.
+- **Bounds:** Radii `0–999`, border widths `0–6`, opacities `0–1`, glow radius `0–32`, durations `40–700ms`, `speedScale` `0.4–1.6`, spring friction `3–20`, spring tension `40–320`.

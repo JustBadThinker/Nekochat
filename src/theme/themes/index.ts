@@ -1,7 +1,7 @@
 import { Platform, type ViewStyle } from 'react-native';
-import { getThemePalette, type ThemeId, type ThemePalette } from '../colors';
+import { THEME_PALETTES, getThemePalette, type ThemeId, type ThemePalette } from '../colors';
 import { resolveEasing } from '../animations';
-import type { NekoThemePack } from '../themePackSchema';
+import type { NekoThemePack, ThemePackNamedPalette } from '../themePackSchema';
 import type { UiSkinId, UiSkinTokens } from './types';
 import { nekoTheme } from './neko';
 import { classicJanitorTheme } from './classic';
@@ -23,29 +23,60 @@ export function getUiSkin(skinId?: string): UiSkinTokens {
   return UI_SKINS[key] || UI_SKINS.bento;
 }
 
+function namedPaletteToThemePalette(
+  p: ThemePackNamedPalette,
+  pack: NekoThemePack
+): ThemePalette {
+  return {
+    id: p.id,
+    name: p.name,
+    desc: p.desc || pack.description || `Color scheme from ${pack.name}`,
+    packId: pack.id,
+    packName: pack.name,
+    accent: p.accent,
+    accentMuted: p.accentMuted,
+    accentRgb: p.accentRgb,
+    bgDark: p.bgDark,
+    bgSurface: p.bgSurface,
+    bgSurfaceSubtle: p.bgSurfaceSubtle,
+    webFrameBg: p.webFrameBg || p.bgDark,
+    dockBg: p.dockBg,
+  };
+}
+
 export function resolvePaletteWithPack(
   themeId?: string,
-  pack?: NekoThemePack | null
+  pack?: NekoThemePack | null,
+  installedPalettes: ThemePalette[] = []
 ): ThemePalette {
-  if (!pack) return getThemePalette(themeId);
-  return {
-    id: (pack.id as ThemeId) || 'midnight',
-    name: pack.name,
-    desc: pack.description || `${pack.baseSkin} pack by ${pack.author}`,
-    accent: pack.palette.accent,
-    accentMuted: pack.palette.accentMuted,
-    accentRgb: pack.palette.accentRgb,
-    bgDark: pack.palette.bgDark,
-    bgSurface: pack.palette.bgSurface,
-    bgSurfaceSubtle: pack.palette.bgSurfaceSubtle,
-    webFrameBg: pack.palette.webFrameBg || pack.palette.bgDark,
-    dockBg: pack.palette.dockBg,
-  };
+  if (themeId && themeId in THEME_PALETTES) {
+    return THEME_PALETTES[themeId as ThemeId];
+  }
+  if (themeId && pack) {
+    const inActivePack = pack.palettes.find(p => p.id === themeId);
+    if (inActivePack) return namedPaletteToThemePalette(inActivePack, pack);
+  }
+  if (themeId) {
+    const inInstalled = installedPalettes.find(p => p.id === themeId);
+    if (inInstalled) return inInstalled;
+  }
+  if (pack?.defaultPaletteId) {
+    if (pack.defaultPaletteId in THEME_PALETTES) {
+      return THEME_PALETTES[pack.defaultPaletteId as ThemeId];
+    }
+    const defInPack = pack.palettes.find(p => p.id === pack.defaultPaletteId);
+    if (defInPack) return namedPaletteToThemePalette(defInPack, pack);
+  }
+  if (pack?.palettes[0]) {
+    return namedPaletteToThemePalette(pack.palettes[0], pack);
+  }
+  return getThemePalette(themeId);
 }
 
 export function resolveSkinWithPack(
   skinId?: string,
-  pack?: NekoThemePack | null
+  pack?: NekoThemePack | null,
+  activePaletteId?: string | null
 ): UiSkinTokens {
   const base = getUiSkin(pack ? pack.baseSkin : skinId);
   if (!pack) return base;
@@ -85,6 +116,11 @@ export function resolveSkinWithPack(
 
   const s = pack.surfaces;
   const g = pack.geometry;
+  const l = pack.layout;
+  const isUsingPackOwnPalette = Boolean(
+    activePaletteId && pack.palettes.some(p => p.id === activePaletteId)
+  );
+  const applyFixedColors = isUsingPackOwnPalette || pack.palettes.length === 0;
 
   return {
     ...base,
@@ -93,17 +129,31 @@ export function resolveSkinWithPack(
     name: pack.name,
     badge: pack.badge || base.badge,
     desc: pack.description || base.desc,
+    ...(l?.navBarStyle ? { navBarStyle: l.navBarStyle } : {}),
+    ...(l?.settingsLayout ? { settingsLayout: l.settingsLayout } : {}),
+    ...(l?.switchStyle ? { switchStyle: l.switchStyle } : {}),
     ...(s?.surfaceMode ? { surfaceMode: s.surfaceMode } : {}),
-    screenBg: s?.screenBg ?? pack.palette.bgDark,
-    surfaceBg: s?.surfaceBg ?? pack.palette.bgSurface,
-    surfaceSubtleBg: s?.surfaceSubtleBg ?? pack.palette.bgSurfaceSubtle,
-    ...(s && (s.keycapLipWidth !== undefined || s.specularRimOpacity !== undefined || s.userBubbleBg || s.aiBubbleBg)
+    ...(applyFixedColors
+      ? {
+          screenBg: s?.screenBg ?? (pack.palettes.find(p => p.id === activePaletteId)?.bgDark || pack.palette?.bgDark),
+          surfaceBg: s?.surfaceBg ?? (pack.palettes.find(p => p.id === activePaletteId)?.bgSurface || pack.palette?.bgSurface),
+          surfaceSubtleBg: s?.surfaceSubtleBg ?? (pack.palettes.find(p => p.id === activePaletteId)?.bgSurfaceSubtle || pack.palette?.bgSurfaceSubtle),
+        }
+      : {
+          screenBg: undefined,
+          surfaceBg: undefined,
+          surfaceSubtleBg: undefined,
+        }),
+    ...(s &&
+    (s.keycapLipWidth !== undefined ||
+      s.specularRimOpacity !== undefined ||
+      (applyFixedColors && (s.userBubbleBg || s.aiBubbleBg)))
       ? {
           surfaceOverrides: {
             ...(s.keycapLipWidth !== undefined ? { keycapLipWidth: s.keycapLipWidth } : {}),
             ...(s.specularRimOpacity !== undefined ? { specularRimOpacity: s.specularRimOpacity } : {}),
-            ...(s.userBubbleBg ? { userBubbleBg: s.userBubbleBg } : {}),
-            ...(s.aiBubbleBg ? { aiBubbleBg: s.aiBubbleBg } : {}),
+            ...(applyFixedColors && s.userBubbleBg ? { userBubbleBg: s.userBubbleBg } : {}),
+            ...(applyFixedColors && s.aiBubbleBg ? { aiBubbleBg: s.aiBubbleBg } : {}),
           },
         }
       : {}),

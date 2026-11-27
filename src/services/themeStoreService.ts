@@ -5,6 +5,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { ThemePalette } from '../theme/colors';
 import {
   NekoThemePack,
   ThemePackManifestItem,
@@ -108,6 +109,38 @@ export function getInstalledThemePacksSync(): NekoThemePack[] {
 export function getInstalledThemePackByIdSync(id?: string | null): NekoThemePack | null {
   if (!id) return null;
   return installedPacksCache.get(id) || null;
+}
+
+export function getAllInstalledPalettesSync(): ThemePalette[] {
+  const result: ThemePalette[] = [];
+  const seen = new Set<string>();
+  for (const pack of installedPacksCache.values()) {
+    for (const p of pack.palettes) {
+      if (seen.has(p.id)) continue;
+      seen.add(p.id);
+      result.push({
+        id: p.id,
+        name: p.name,
+        desc: p.desc || pack.description || `Color scheme from ${pack.name}`,
+        packId: pack.id,
+        packName: pack.name,
+        accent: p.accent,
+        accentMuted: p.accentMuted,
+        accentRgb: p.accentRgb,
+        bgDark: p.bgDark,
+        bgSurface: p.bgSurface,
+        bgSurfaceSubtle: p.bgSurfaceSubtle,
+        webFrameBg: p.webFrameBg || p.bgDark,
+        dockBg: p.dockBg,
+      });
+    }
+  }
+  return result;
+}
+
+export function findInstalledPaletteByIdSync(paletteId?: string | null): ThemePalette | null {
+  if (!paletteId) return null;
+  return getAllInstalledPalettesSync().find(p => p.id === paletteId) || null;
 }
 
 export function getPreviewPackSync(id: string): NekoThemePack | null {

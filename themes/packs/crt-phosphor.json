@@ -3,20 +3,45 @@
   "id": "crt-phosphor",
   "name": "CRT Phosphor 84",
   "author": "NekoChat",
-  "version": "1.0.0",
-  "description": "Sharp retro monochrome phosphor green with tight boxy corners, glowing borders, and zero-lag snappy timing.",
+  "version": "1.1.0",
+  "description": "Sharp retro terminal skin with Phosphor Green & Amber palettes, tight boxy geometry, and ultra-snappy timing.",
   "badge": "CRT",
   "baseSkin": "janitor",
+  "supportsBuiltInPalettes": true,
+  "defaultPaletteId": "crt-phosphor",
   "tags": ["Retro", "Neon", "Minimal"],
-  "palette": {
-    "accent": "#39FF14",
-    "accentMuted": "#22C55E",
-    "accentRgb": "57, 255, 20",
-    "bgDark": "#060B06",
-    "bgSurface": "#0C140C",
-    "bgSurfaceSubtle": "#121E12",
-    "webFrameBg": "#030603",
-    "dockBg": "rgba(10, 18, 10, 0.94)"
+  "palettes": [
+    {
+      "id": "crt-phosphor",
+      "name": "Phosphor P1 Green",
+      "desc": "Pitch-black bezel + Glowing CRT Green (#39FF14)",
+      "accent": "#39FF14",
+      "accentMuted": "#22C55E",
+      "accentRgb": "57, 255, 20",
+      "bgDark": "#060B06",
+      "bgSurface": "#0C140C",
+      "bgSurfaceSubtle": "#121E12",
+      "webFrameBg": "#030603",
+      "dockBg": "rgba(10, 18, 10, 0.94)"
+    },
+    {
+      "id": "crt-amber",
+      "name": "Amber P3 Terminal",
+      "desc": "Warm CRT dark + Vintage Amber Glow (#FFB000)",
+      "accent": "#FFB000",
+      "accentMuted": "#F59E0B",
+      "accentRgb": "255, 176, 0",
+      "bgDark": "#0C0904",
+      "bgSurface": "#161108",
+      "bgSurfaceSubtle": "#221A0C",
+      "webFrameBg": "#070502",
+      "dockBg": "rgba(22, 17, 8, 0.94)"
+    }
+  ],
+  "layout": {
+    "navBarStyle": "classic_bar",
+    "settingsLayout": "bento_grid",
+    "switchStyle": "neko"
   },
   "surfaces": {
     "surfaceMode": "glass",

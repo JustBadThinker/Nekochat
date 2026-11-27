@@ -1,7 +1,7 @@
 /**
  * Pure, framework-agnostic Theme Pack Schema & Validator.
  * Zero React Native imports so Node unit tests and CI checks can validate
- * downloadable JSON theme packs directly without Metro shims.
+ * downloadable JSON/JSONC theme packs directly without Metro shims.
  */
 
 export type ThemeEasingSpec =
@@ -25,6 +25,18 @@ export interface ThemePackPalette {
   bgSurfaceSubtle: string;
   webFrameBg?: string;
   dockBg: string;
+}
+
+export interface ThemePackNamedPalette extends ThemePackPalette {
+  id: string;
+  name: string;
+  desc?: string;
+}
+
+export interface ThemePackLayout {
+  navBarStyle?: 'floating_capsule' | 'classic_bar' | 'm3_nav_bar' | 'ios_tab_bar';
+  settingsLayout?: 'bento_grid' | 'm3_list' | 'ios_inset_grouped';
+  switchStyle?: 'neko' | 'm3' | 'ios';
 }
 
 export interface ThemePackSurfaces {
@@ -96,9 +108,13 @@ export interface NekoThemePack {
   description: string;
   badge: string;
   baseSkin: ThemePackBaseSkin;
+  supportsBuiltInPalettes: boolean;
+  defaultPaletteId?: string;
   tags: string[];
   previewImage?: string;
-  palette: ThemePackPalette;
+  palette?: ThemePackPalette;
+  palettes: ThemePackNamedPalette[];
+  layout?: ThemePackLayout;
   surfaces?: ThemePackSurfaces;
   geometry?: ThemePackGeometry;
   animation?: ThemePackAnimation;
@@ -126,6 +142,9 @@ const RGB_CSV_RE = /^\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*$/;
 
 const VALID_BASE_SKINS = new Set<ThemePackBaseSkin>(['bento', 'janitor', 'material', 'ios']);
 const VALID_SURFACE_MODES = new Set(['oled', 'glass', 'tonal', 'frosted']);
+const VALID_NAV_STYLES = new Set(['floating_capsule', 'classic_bar', 'm3_nav_bar', 'ios_tab_bar']);
+const VALID_SETTINGS_LAYOUTS = new Set(['bento_grid', 'm3_list', 'ios_inset_grouped']);
+const VALID_SWITCH_STYLES = new Set(['neko', 'm3', 'ios']);
 const VALID_EASING_NAMES = new Set([
   'cubicOut',
   'quadOut',
@@ -135,6 +154,73 @@ const VALID_EASING_NAMES = new Set([
   'm3Emphasized',
   'linear',
 ]);
+
+/**
+ * Strips `//` line comments and block comments from JSONC community templates
+ * without corrupting URLs like `"https://..."` inside string literals.
+ */
+export function stripJsonComments(input: string): string {
+  let out = '';
+  let inString = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+  let escaped = false;
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    const next = input[i + 1];
+
+    if (inLineComment) {
+      if (ch === '\n' || ch === '\r') {
+        inLineComment = false;
+        out += ch;
+      }
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (ch === '*' && next === '/') {
+        inBlockComment = false;
+        i++;
+      }
+      continue;
+    }
+
+    if (inString) {
+      out += ch;
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      continue;
+    }
+
+    if (ch === '/' && next === '/') {
+      inLineComment = true;
+      i++;
+      continue;
+    }
+
+    if (ch === '/' && next === '*') {
+      inBlockComment = true;
+      i++;
+      continue;
+    }
+
+    out += ch;
+  }
+
+  return out;
+}
 
 function clampNum(value: unknown, min: number, max: number): number | undefined {
   if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
@@ -188,6 +274,36 @@ function normalizeRgbCsv(raw: unknown, fallbackHex: string): string | null {
   return hexToRgbCsv(fallbackHex);
 }
 
+function validatePaletteFields(rawPal: unknown): ThemePackPalette | null {
+  if (!rawPal || typeof rawPal !== 'object') return null;
+  const p = rawPal as Record<string, any>;
+  if (
+    !isValidCssColor(p.accent) ||
+    !isValidCssColor(p.bgDark) ||
+    !isValidCssColor(p.bgSurface) ||
+    !isValidCssColor(p.bgSurfaceSubtle) ||
+    !isValidCssColor(p.dockBg)
+  ) {
+    return null;
+  }
+
+  const accent = p.accent.trim();
+  const accentMuted = isValidCssColor(p.accentMuted) ? p.accentMuted.trim() : accent;
+  const accentRgb = normalizeRgbCsv(p.accentRgb, accent);
+  if (!accentRgb) return null;
+
+  return {
+    accent,
+    accentMuted,
+    accentRgb,
+    bgDark: p.bgDark.trim(),
+    bgSurface: p.bgSurface.trim(),
+    bgSurfaceSubtle: p.bgSurfaceSubtle.trim(),
+    dockBg: p.dockBg.trim(),
+    ...(isValidCssColor(p.webFrameBg) ? { webFrameBg: p.webFrameBg.trim() } : {}),
+  };
+}
+
 function validateEasingSpec(raw: unknown): ThemeEasingSpec | undefined {
   if (typeof raw === 'string' && VALID_EASING_NAMES.has(raw)) {
     return raw as ThemeEasingSpec;
@@ -230,7 +346,10 @@ function pickDefined<T extends Record<string, any>>(obj: T): Partial<T> {
 
 /**
  * Validates and clamps an untrusted JSON Theme Pack object.
- * Returns null if required fields, colors, or identifiers are invalid.
+ * Supports:
+ * - Full Packs with multiple custom color schemes (`palettes: [...]`)
+ * - Legacy / Lite Packs with a single `palette` object (auto-normalized into `palettes[0]`)
+ * - Skin-Only Packs omitting `palette`/`palettes` (works purely with built-in color schemes)
  */
 export function validateThemePack(raw: unknown): NekoThemePack | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -248,33 +367,80 @@ export function validateThemePack(raw: unknown): NekoThemePack | null {
   const baseSkin = obj.baseSkin as ThemePackBaseSkin;
   if (!VALID_BASE_SKINS.has(baseSkin)) return null;
 
-  const rawPal = obj.palette;
-  if (!rawPal || typeof rawPal !== 'object') return null;
-  if (
-    !isValidCssColor(rawPal.accent) ||
-    !isValidCssColor(rawPal.bgDark) ||
-    !isValidCssColor(rawPal.bgSurface) ||
-    !isValidCssColor(rawPal.bgSurfaceSubtle) ||
-    !isValidCssColor(rawPal.dockBg)
-  ) {
-    return null;
+  const description = cleanStr(obj.description, 280);
+
+  // If `palette` was explicitly supplied, it must be valid.
+  let primaryPalette: ThemePackPalette | undefined;
+  if (obj.palette !== undefined) {
+    const validatedSingle = validatePaletteFields(obj.palette);
+    if (!validatedSingle) return null;
+    primaryPalette = validatedSingle;
   }
 
-  const accent = rawPal.accent.trim();
-  const accentMuted = isValidCssColor(rawPal.accentMuted) ? rawPal.accentMuted.trim() : accent;
-  const accentRgb = normalizeRgbCsv(rawPal.accentRgb, accent);
-  if (!accentRgb) return null;
+  const palettes: ThemePackNamedPalette[] = [];
+  const seenPalIds = new Set<string>();
+  if (Array.isArray(obj.palettes)) {
+    for (const rawEntry of obj.palettes) {
+      if (!rawEntry || typeof rawEntry !== 'object') continue;
+      const e = rawEntry as Record<string, any>;
+      const palId = cleanStr(e.id, 49).toLowerCase();
+      const palName = cleanStr(e.name, 48);
+      const palFields = validatePaletteFields(e);
+      if (!SLUG_RE.test(palId) || seenPalIds.has(palId) || !palName || !palFields) {
+        continue;
+      }
+      seenPalIds.add(palId);
+      const palDesc = cleanStr(e.desc, 160);
+      palettes.push({
+        id: palId,
+        name: palName,
+        ...(palDesc ? { desc: palDesc } : {}),
+        ...palFields,
+      });
+      if (palettes.length >= 12) break;
+    }
+  }
 
-  const palette: ThemePackPalette = {
-    accent,
-    accentMuted,
-    accentRgb,
-    bgDark: rawPal.bgDark.trim(),
-    bgSurface: rawPal.bgSurface.trim(),
-    bgSurfaceSubtle: rawPal.bgSurfaceSubtle.trim(),
-    dockBg: rawPal.dockBg.trim(),
-    ...(isValidCssColor(rawPal.webFrameBg) ? { webFrameBg: rawPal.webFrameBg.trim() } : {}),
-  };
+  if (primaryPalette && palettes.length === 0) {
+    palettes.push({
+      id,
+      name,
+      ...(description ? { desc: description } : {}),
+      ...primaryPalette,
+    });
+  } else if (!primaryPalette && palettes.length > 0) {
+    const first = palettes[0];
+    primaryPalette = {
+      accent: first.accent,
+      accentMuted: first.accentMuted,
+      accentRgb: first.accentRgb,
+      bgDark: first.bgDark,
+      bgSurface: first.bgSurface,
+      bgSurfaceSubtle: first.bgSurfaceSubtle,
+      dockBg: first.dockBg,
+      ...(first.webFrameBg ? { webFrameBg: first.webFrameBg } : {}),
+    };
+  }
+
+  const rawDefaultPalId = cleanStr(obj.defaultPaletteId, 49).toLowerCase();
+  const defaultPaletteId = SLUG_RE.test(rawDefaultPalId)
+    ? rawDefaultPalId
+    : palettes[0]?.id;
+
+  const supportsBuiltInPalettes = obj.supportsBuiltInPalettes !== false;
+
+  let layout: ThemePackLayout | undefined;
+  if (obj.layout && typeof obj.layout === 'object') {
+    const l = obj.layout as Record<string, any>;
+    const cleanedLayout = pickDefined<ThemePackLayout>({
+      navBarStyle: VALID_NAV_STYLES.has(l.navBarStyle) ? l.navBarStyle : undefined,
+      settingsLayout: VALID_SETTINGS_LAYOUTS.has(l.settingsLayout) ? l.settingsLayout : undefined,
+      switchStyle: VALID_SWITCH_STYLES.has(l.switchStyle) ? l.switchStyle : undefined,
+    });
+    if (Object.keys(cleanedLayout).length > 0) {
+      layout = cleanedLayout;
+    }
+  }
 
   let surfaces: ThemePackSurfaces | undefined;
   if (obj.surfaces && typeof obj.surfaces === 'object') {
@@ -363,12 +529,16 @@ export function validateThemePack(raw: unknown): NekoThemePack | null {
     name,
     author: cleanStr(obj.author, 40) || 'Community',
     version: cleanStr(obj.version, 20) || '1.0.0',
-    description: cleanStr(obj.description, 280),
+    description,
     badge: cleanStr(obj.badge, 12) || 'Pack',
     baseSkin,
+    supportsBuiltInPalettes,
+    ...(defaultPaletteId ? { defaultPaletteId } : {}),
     tags: normalizeTags(obj.tags),
     ...(isSafeHttpsUrl(obj.previewImage) ? { previewImage: obj.previewImage.trim() } : {}),
-    palette,
+    ...(primaryPalette ? { palette: primaryPalette } : {}),
+    palettes,
+    ...(layout ? { layout } : {}),
     ...(surfaces ? { surfaces } : {}),
     ...(geometry ? { geometry } : {}),
     ...(animation ? { animation } : {}),

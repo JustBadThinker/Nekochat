@@ -1,0 +1,187 @@
+{
+  // ============================================================================
+  // NEKOCHAT COMMUNITY THEME PACK STARTER TEMPLATE (schemaVersion: 1)
+  // ============================================================================
+  // HOW TO USE THIS TEMPLATE:
+  // 1. Copy this file to `themes/packs/<your-theme-id>.json`.
+  // 2. Delete all `//` comment lines (JSON does not allow comments).
+  // 3. Customize colors, palettes, layout, surfaces, geometry & animations below.
+  // 4. Add your entry to `themes/index.json` and run:
+  //    node --test tests/theme-pack-schema.test.mjs
+  // ============================================================================
+
+  "schemaVersion": 1,
+
+  // Unique URL-safe ID: lowercase letters, digits, hyphens (-), or underscores (_), 2..49 chars.
+  "id": "my-custom-theme",
+
+  // Display name shown in Theme Store and Settings.
+  "name": "My Custom Theme",
+
+  // Your handle / creator name.
+  "author": "YourHandle",
+
+  // Semantic version string.
+  "version": "1.0.0",
+
+  // Short summary shown on Theme Store cards (max 280 chars).
+  "description": "Custom surfaces, color schemes, corner geometry, and animations.",
+
+  // Short 1-word badge shown on previews (max 12 chars).
+  "badge": "Custom",
+
+  // Base UI architecture fallback:
+  //   "bento"    -> Neko Bento (3.5px keycap lip, Bento Settings grid, Macro-Pad composer)
+  //   "ios"      -> HIG Liquid Glass (frosted translucent glass, specular rims, lens bar)
+  //   "material" -> Material 3 Expressive (borderless dynamic tonal surfaces)
+  //   "janitor"  -> Classic (charcoal glass bubbles & docked bottom bar)
+  "baseSkin": "bento",
+
+  // Set `true` (default) so users can freely mix your skin/animations with NekoChat's built-in color schemes too.
+  "supportsBuiltInPalettes": true,
+
+  // Which color scheme ID to activate automatically when a user clicks "Install & Apply":
+  // Can be one of your own `palettes[].id` below OR a built-in ID ("midnight", "sakura", "slate", "cyan", "crimson", "amethyst", "emerald", "sunset").
+  "defaultPaletteId": "my-palette-dark",
+
+  // Up to 6 discovery filter tags (e.g. "Pastel", "Neon", "Minimal", "Retro", "Cozy", "Glass").
+  "tags": ["Neon", "Cozy"],
+
+  // Optional: HTTPS screenshot URL shown inside the Theme Store preview banner & detail page.
+  // "previewImage": "https://raw.githubusercontent.com/JustBadThinker/Nekochat/main/themes/previews/my-custom-theme.png",
+
+  // ============================================================================
+  // 1. CUSTOM COLOR SCHEMES (`palettes`)
+  // - Omit `palettes` entirely if you want a "Skin-Only Pack" that uses built-in colors!
+  // - Or include 1 to 12 named color schemes here; all of them appear in Settings -> Color Scheme!
+  // ============================================================================
+  "palettes": [
+    {
+      "id": "my-palette-dark",          // Unique slug ID
+      "name": "Velvet Neon",            // Shown in Settings -> Color Scheme
+      "desc": "Deep obsidian + Violet glow",
+      "accent": "#A78BFA",              // Primary brand highlight (hex or rgb/rgba)
+      "accentMuted": "#8B5CF6",         // Secondary highlight
+      "accentRgb": "167, 139, 250",     // Optional RGB numbers for `rgba(...)` overlays (auto-derived from hex `accent` if omitted)
+      "bgDark": "#0C0B12",              // Main canvas / screen background
+      "bgSurface": "#161422",           // Cards, modal sheets, AI bubbles
+      "bgSurfaceSubtle": "#211E33",     // Nested controls, chips, inputs
+      "webFrameBg": "#07060B",          // Desktop browser outer frame background
+      "dockBg": "rgba(22, 20, 34, 0.92)"// Floating or docked bottom navigation bar
+    },
+    {
+      "id": "my-palette-mint",
+      "name": "Cyber Mint Variant",
+      "desc": "Same skin & motion paired with crisp Mint (#34D399)",
+      "accent": "#34D399",
+      "accentMuted": "#10B981",
+      "accentRgb": "52, 211, 153",
+      "bgDark": "#08120E",
+      "bgSurface": "#102019",
+      "bgSurfaceSubtle": "#172E24",
+      "webFrameBg": "#040A07",
+      "dockBg": "rgba(16, 32, 25, 0.92)"
+    }
+  ],
+
+  // ============================================================================
+  // 2. LAYOUT ENGINES (Optional — mix & match built-in structural layouts!)
+  // ============================================================================
+  "layout": {
+    // Bottom nav bar: "floating_capsule" | "classic_bar" | "m3_nav_bar" | "ios_tab_bar"
+    "navBarStyle": "floating_capsule",
+    // Settings page layout: "bento_grid" | "m3_list" | "ios_inset_grouped"
+    "settingsLayout": "bento_grid",
+    // Toggle switch style: "neko" | "m3" | "ios"
+    "switchStyle": "neko"
+  },
+
+  // ============================================================================
+  // 3. SURFACES (Optional — glass, keycap depth, glow, & bubble overrides)
+  // Note: `userBubbleBg`, `aiBubbleBg`, and `screenBg` apply when one of THIS pack's
+  // palettes is active; when the user pairs your skin with a built-in color scheme, colors adapt automatically!
+  // ============================================================================
+  "surfaces": {
+    "surfaceMode": "oled",              // "oled" | "glass" | "tonal" | "frosted"
+    "cardBorderAccentMix": 0.18,        // 0..1: how much `accent` tints card borders
+    "cardGlowOpacity": 0.14,            // 0..1: subtle ambient glow behind cards
+    "cardGlowRadius": 10,               // 0..32: blur radius of card glow
+    "keycapLipWidth": 3.5,              // 0..6: bottom 3D tactile lip thickness (when baseSkin is "bento")
+    "specularRimOpacity": 0.48,         // 0..1: top glass highlight opacity (when baseSkin is "ios")
+    "userBubbleBg": "rgba(167, 139, 250, 0.18)",
+    "aiBubbleBg": "#161422"
+  },
+
+  // ============================================================================
+  // 4. GEOMETRY (Optional — every corner radius & border width in px, clamped 0..999)
+  // ============================================================================
+  "geometry": {
+    "cardRadius": 22,                   // Bento cards, character cards
+    "cardBorderWidth": 1.25,            // 0..6
+    "buttonRadius": 16,                 // Primary buttons & action tiles (999 = full pill)
+    "pillRadius": 999,                  // Chips & status badges
+    "inputRadius": 24,                  // Message composer & text inputs
+    "sheetRadius": 28,                  // Bottom sheets & modals top corners
+    "grabberWidth": 38,                 // 16..100: top swipe-down handle width
+    "grabberHeight": 4.5,               // 2..10: top swipe-down handle thickness
+    "bubbleRadius": 20,                 // Chat message bubbles
+    "bubbleTailRadius": 6,              // Bottom inner tail corner of chat bubbles
+    "bubbleBorderWidth": 1.25,          // 0..6
+    "dockRadius": 30,                   // Navigation dock corner radius
+    "dockBorderWidth": 1.25,            // 0..6
+    "pressScale": 0.95                  // 0.85..1: shrink scale while holding a button
+  },
+
+  // ============================================================================
+  // 5. ANIMATIONS (Optional — wires EVERY animation in NekoChat to your template!)
+  // ============================================================================
+  "animation": {
+    // "spring" (physical bounce) or "timing" (clean eased duration curves)
+    "mode": "spring",
+
+    // Global speed multiplier (0.4 = ultra-fast snappy, 1.0 = normal, 1.6 = slow dreamy)
+    "speedScale": 1.0,
+
+    // Easing curve used by sheets, composer, tabs, collapsibles, and timing animations:
+    // Named presets: "cubicOut" | "quadOut" | "expoOut" | "backOut" | "iosStandard" | "m3Emphasized" | "linear"
+    // OR custom cubic bezier array: [0.22, 1.0, 0.36, 1.0]
+    "easing": "cubicOut",
+
+    // Card / list item entrance (Discover cards, My Chats cards, rows)
+    "enterDuration": 240,               // 40..700 ms (used in "timing" mode)
+    "enterTranslateY": 12,              // 0..40 px
+    "enterScaleFrom": 0.94,             // 0.8..1
+    "springFriction": 6,                // 3..20 (lower = bouncier)
+    "springTension": 145,               // 40..320 (higher = snappier)
+
+    // Press feedback (cards, chips, macro-pad keys)
+    "pressScale": 0.95,                 // 0.85..1
+    "pressFriction": 5.5,               // 3..20
+    "pressTension": 210,                // 40..320
+    "pressDuration": 120,               // 40..700 ms
+
+    // Navigation Capsule Dock active indicator & Action Deck toggles
+    "dockSpringFriction": 6.5,          // 3..20
+    "dockSpringTension": 150,           // 40..320
+
+    // Bottom sheets & character/creator modals (open, close, drag release snap-back)
+    "sheetOpenDuration": 260,           // 40..700 ms
+    "sheetCloseDuration": 210,          // 40..700 ms
+    "sheetSnapFriction": 8,             // 3..20
+    "sheetSnapTension": 120,            // 40..320
+
+    // Chat Room screen entrance & back exit
+    "screenEnterFriction": 9,           // 3..20
+    "screenEnterTension": 90,           // 40..320
+    "screenExitDuration": 210,          // 40..700 ms
+
+    // NekoSwitch toggles
+    "switchFriction": 7,                // 3..20
+    "switchTension": 130,               // 40..320
+
+    // Tab crossfades, composer expand/merge, and accordion collapsibles
+    "tabFadeDuration": 170,             // 40..700 ms
+    "composerDuration": 210,            // 40..700 ms
+    "collapsibleDuration": 160          // 40..700 ms
+  }
+}
