@@ -89,6 +89,55 @@ const KEYS = {
   DYNAMIC_CAST: '@nekochat:dynamic_cast_',
 };
 
+const MAX_PERSISTED_BACKEND_PROMPT_CHARS = 8000;
+
+function isQuotaExceededError(err: unknown): boolean {
+  const e = err as { name?: string; message?: string } | null;
+  if (e?.name === 'QuotaExceededError') return true;
+  return /quota|exceeded|storage full/i.test(String(e?.message || err || ''));
+}
+
+function sanitizeMessagesForStorage(
+  messages: ChatMessage[],
+  options?: { stripAllBackendPrompts?: boolean }
+): ChatMessage[] {
+  if (!Array.isArray(messages)) return [];
+  let lastAssistantPromptIdx = -1;
+  if (!options?.stripAllBackendPrompts) {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]?.role === 'assistant' && messages[i]?.backendPrompt) {
+        lastAssistantPromptIdx = i;
+        break;
+      }
+    }
+  }
+  return messages.map((msg, idx) => {
+    if (!msg?.backendPrompt) return msg;
+    if (idx === lastAssistantPromptIdx && !options?.stripAllBackendPrompts) {
+      const promptText =
+        msg.backendPrompt.length > MAX_PERSISTED_BACKEND_PROMPT_CHARS
+          ? msg.backendPrompt.slice(0, MAX_PERSISTED_BACKEND_PROMPT_CHARS)
+          : msg.backendPrompt;
+      return promptText === msg.backendPrompt ? msg : { ...msg, backendPrompt: promptText };
+    }
+    const { backendPrompt: _dropped, ...rest } = msg;
+    return rest as ChatMessage;
+  });
+}
+
+function sanitizeConversationsForStorage(
+  conversations: Conversation[],
+  options?: { stripAllBackendPrompts?: boolean }
+): Conversation[] {
+  if (!Array.isArray(conversations)) return [];
+  return conversations.map(conv => ({
+    ...conv,
+    messages: Array.isArray(conv.messages)
+      ? sanitizeMessagesForStorage(conv.messages, options)
+      : [],
+  }));
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   chatStyle: 'bubble',
   syntaxColors: {
@@ -238,6 +287,44 @@ export const INITIAL_BOT_RULES: BotRulePreset[] = [
 ];
 
 export const storageService = {
+  async reclaimWebStorageQuota(incomingConversations?: Conversation[]): Promise<void> {
+    try {
+      const allKeys = await AsyncStorage.getAllKeys();
+      let convList: Conversation[] = Array.isArray(incomingConversations) ? incomingConversations : [];
+      if (!Array.isArray(incomingConversations)) {
+        try {
+          const rawConvs = await AsyncStorage.getItem(KEYS.CONVERSATIONS);
+          const parsed = rawConvs ? JSON.parse(rawConvs) : [];
+          if (Array.isArray(parsed)) convList = parsed;
+        } catch {
+          convList = [];
+        }
+      }
+      const convCharIds = new Set(convList.map(c => c.characterId).filter(Boolean));
+      const legacyMsgPrefix = `${KEYS.MESSAGES}:`;
+      const keysToRemove = allKeys.filter(k => {
+        if (k.startsWith(KEYS.COMMENT_CACHE)) return true;
+        if (k.startsWith(legacyMsgPrefix)) {
+          const charId = k.slice(legacyMsgPrefix.length);
+          return convCharIds.has(charId);
+        }
+        return false;
+      });
+      if (keysToRemove.length > 0) {
+        await AsyncStorage.multiRemove(keysToRemove).catch(() => {});
+      }
+      if (!Array.isArray(incomingConversations) && convList.length > 0) {
+        const hasPersistedPrompts = convList.some(
+          c => Array.isArray(c.messages) && c.messages.some(m => Boolean(m?.backendPrompt))
+        );
+        if (hasPersistedPrompts) {
+          const compact = sanitizeConversationsForStorage(convList, { stripAllBackendPrompts: true });
+          await AsyncStorage.setItem(KEYS.CONVERSATIONS, JSON.stringify(compact)).catch(() => {});
+        }
+      }
+    } catch {}
+  },
+
   // ═══════════════════════════════════════════════════════════════════════
   // 1. CHARACTERS (MY LIBRARY)
   // ═══════════════════════════════════════════════════════════════════════
@@ -266,7 +353,14 @@ export const storageService = {
   },
 
   async saveCharacters(characters: Character[]): Promise<void> {
-    await AsyncStorage.setItem(KEYS.CHARACTERS, JSON.stringify(characters));
+    const payload = JSON.stringify(characters);
+    try {
+      await AsyncStorage.setItem(KEYS.CHARACTERS, payload);
+    } catch (err) {
+      if (!isQuotaExceededError(err)) throw err;
+      await this.reclaimWebStorageQuota();
+      await AsyncStorage.setItem(KEYS.CHARACTERS, payload);
+    }
   },
 
   async upsertCharacter(character: Character): Promise<void> {
@@ -346,7 +440,15 @@ export const storageService = {
       await repo.saveAllConversations(conversations);
       return;
     }
-    await AsyncStorage.setItem(KEYS.CONVERSATIONS, JSON.stringify(conversations));
+    const sanitized = sanitizeConversationsForStorage(conversations);
+    try {
+      await AsyncStorage.setItem(KEYS.CONVERSATIONS, JSON.stringify(sanitized));
+    } catch (err) {
+      if (!isQuotaExceededError(err)) throw err;
+      await this.reclaimWebStorageQuota(sanitized);
+      const compacted = sanitizeConversationsForStorage(sanitized, { stripAllBackendPrompts: true });
+      await AsyncStorage.setItem(KEYS.CONVERSATIONS, JSON.stringify(compacted));
+    }
   },
 
   async createConversation(
@@ -405,9 +507,6 @@ export const storageService = {
     list.unshift(newConv);
     await this.saveConversations(list);
 
-    // Also mirror to legacy message key for backwards compatibility when SQLite is inactive
-    await AsyncStorage.setItem(`${KEYS.MESSAGES}:${character.id}`, JSON.stringify([firstMsg]));
-
     return newConv;
   },
 
@@ -460,8 +559,8 @@ export const storageService = {
 
     await this.saveConversations(list);
 
-    // Also sync to legacy message cache
-    await AsyncStorage.setItem(`${KEYS.MESSAGES}:${conv.characterId}`, JSON.stringify(conv.messages));
+    // Clean up any legacy duplicate message key for this character
+    AsyncStorage.removeItem(`${KEYS.MESSAGES}:${conv.characterId}`).catch(() => {});
 
     // Update character's lastActive and totalChats
     const chars = await this.getCharacters();
@@ -660,23 +759,33 @@ export const storageService = {
   },
 
   async saveMessages(characterId: string, messages: ChatMessage[]): Promise<void> {
-    await AsyncStorage.setItem(`${KEYS.MESSAGES}:${characterId}`, JSON.stringify(messages));
+    const sanitized = sanitizeMessagesForStorage(messages);
 
     // Mirror to active conversation if exists
     const allConvs = await this.getConversations();
     const convIndex = allConvs.findIndex(c => c.characterId === characterId);
     if (convIndex >= 0) {
-      allConvs[convIndex].messages = messages;
-      allConvs[convIndex].messageCount = messages.length;
+      allConvs[convIndex].messages = sanitized;
+      allConvs[convIndex].messageCount = sanitized.length;
       allConvs[convIndex].updatedAt = new Date().toISOString();
       await this.saveConversations(allConvs);
+      AsyncStorage.removeItem(`${KEYS.MESSAGES}:${characterId}`).catch(() => {});
+    } else {
+      try {
+        await AsyncStorage.setItem(`${KEYS.MESSAGES}:${characterId}`, JSON.stringify(sanitized));
+      } catch (err) {
+        if (!isQuotaExceededError(err)) throw err;
+        await this.reclaimWebStorageQuota();
+        const compacted = sanitizeMessagesForStorage(sanitized, { stripAllBackendPrompts: true });
+        await AsyncStorage.setItem(`${KEYS.MESSAGES}:${characterId}`, JSON.stringify(compacted));
+      }
     }
 
     const chars = await this.getCharacters();
     const char = chars.find(c => c.id === characterId);
     if (char) {
       char.lastActive = Date.now();
-      char.totalChats = messages.length;
+      char.totalChats = sanitized.length;
       await this.saveCharacters(chars);
     }
   },

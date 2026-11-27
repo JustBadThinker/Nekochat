@@ -26,7 +26,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { SafeBlurView } from './SafeBlurView';
 import {
   ChevronDown,
   Edit2,
@@ -68,6 +68,7 @@ interface ChatComposerBarProps {
   onStopStreaming: () => void;
   onRefine: (mode: 'refine' | 'write', draftText: string) => void;
   onOpenFidget: () => void;
+  onNekoGrabChange?: (grabbed: boolean) => void;
   onOpenSceneDepict: () => void;
   onOpenCastSheet: (candidateName?: string) => void;
   onOpenPersonaModal: () => void;
@@ -89,6 +90,7 @@ export const ChatComposerBar = React.memo(
       onStopStreaming,
       onRefine,
       onOpenFidget,
+      onNekoGrabChange,
       onOpenSceneDepict,
       onOpenCastSheet,
       onOpenPersonaModal,
@@ -236,6 +238,34 @@ export const ChatComposerBar = React.memo(
 
     return (
       <View
+        pointerEvents="box-none"
+        style={{
+          position: 'relative',
+          zIndex: 30,
+          marginTop: !fidgetOpen && !(isIosGlass || isJanitor) ? -39 : 0,
+        }}
+      >
+        {!fidgetOpen && (
+          <View
+            pointerEvents="box-none"
+            style={{
+              height: 39,
+              zIndex: 35,
+              elevation: 35,
+              overflow: 'visible',
+            }}
+          >
+            <DeskNekoWalker
+              containerWidth={composerWidth}
+              isTypingUser={inputText.trim().length > 0}
+              isAiWaiting={isStreaming}
+              onPress={onOpenFidget}
+              onGrabChange={onNekoGrabChange}
+            />
+          </View>
+        )}
+
+      <View
         style={[
           styles.composerWrapper,
           isIosGlass && { backgroundColor: 'transparent', borderTopWidth: 0 },
@@ -263,14 +293,6 @@ export const ChatComposerBar = React.memo(
           if (w > 0) setComposerWidth(w);
         }}
       >
-        {!fidgetOpen && (
-          <DeskNekoWalker
-            containerWidth={composerWidth}
-            isTypingUser={inputText.trim().length > 0}
-            isAiWaiting={isStreaming}
-            onPress={onOpenFidget}
-          />
-        )}
 
         {/* Action Deck Popup Card (Inside + Button — Clean Floating Card) */}
         {showActionDeck && (
@@ -335,7 +357,7 @@ export const ChatComposerBar = React.memo(
             ]}
           >
             {(isIosGlass || isJanitor) && Platform.OS !== 'web' && (
-              <BlurView
+              <SafeBlurView
                 intensity={Platform.OS === 'android' ? 75 : 55}
                 blurReductionFactor={3}
                 tint="dark"
@@ -581,7 +603,7 @@ export const ChatComposerBar = React.memo(
                 pointerEvents="none"
                 style={[StyleSheet.absoluteFill, { opacity: janitorMergeAnim }]}
               >
-                <BlurView
+                <SafeBlurView
                   intensity={Platform.OS === 'android' ? 75 : 55}
                   blurReductionFactor={3}
                   tint="dark"
@@ -632,7 +654,7 @@ export const ChatComposerBar = React.memo(
                     pointerEvents="none"
                     style={[StyleSheet.absoluteFill, { opacity: janitorSeparateOpacity }]}
                   >
-                    <BlurView
+                    <SafeBlurView
                       intensity={Platform.OS === 'android' ? 75 : 55}
                       blurReductionFactor={3}
                       tint="dark"
@@ -722,7 +744,7 @@ export const ChatComposerBar = React.memo(
                     pointerEvents="none"
                     style={[StyleSheet.absoluteFill, { opacity: janitorSeparateOpacity }]}
                   >
-                    <BlurView
+                    <SafeBlurView
                       intensity={Platform.OS === 'android' ? 75 : 55}
                       blurReductionFactor={3}
                       tint="dark"
@@ -746,12 +768,17 @@ export const ChatComposerBar = React.memo(
                     ref={composerInputRef}
                     style={[
                       styles.unifiedTextInput,
-                      { height: '100%', maxHeight: undefined, paddingVertical: 9 },
+                      {
+                        height: '100%',
+                        maxHeight: undefined,
+                        paddingVertical: 9,
+                        textAlignVertical: isInputExpanded || composerInputHeight > 44 ? 'top' : 'center',
+                      },
                     ]}
                     placeholder="Message here..."
                     placeholderTextColor="rgba(255, 255, 255, 0.45)"
                     value={inputText}
-                    numberOfLines={Platform.OS === 'web' ? 1 : undefined}
+                    numberOfLines={Platform.OS === 'web' && !isInputExpanded ? 1 : undefined}
                     onFocus={() => {
                       cancelComposerBlur();
                       setIsInputFocused(true);
@@ -769,7 +796,7 @@ export const ChatComposerBar = React.memo(
                     }}
                     scrollEnabled={isInputExpanded || composerInputHeight >= 200}
                     multiline
-                    textAlignVertical="center"
+                    textAlignVertical={isInputExpanded || composerInputHeight > 44 ? 'top' : 'center'}
                   />
                 </Animated.View>
               </Animated.View>
@@ -988,12 +1015,17 @@ export const ChatComposerBar = React.memo(
                     ref={composerInputRef}
                     style={[
                       styles.unifiedTextInput,
-                      { height: '100%', maxHeight: undefined, paddingVertical: 7 },
+                      {
+                        height: '100%',
+                        maxHeight: undefined,
+                        paddingVertical: 7,
+                        textAlignVertical: isInputExpanded || composerInputHeight > 44 ? 'top' : 'center',
+                      },
                     ]}
                     placeholder="Message or *action*..."
                     placeholderTextColor="rgba(255, 255, 255, 0.42)"
                     value={inputText}
-                    numberOfLines={Platform.OS === 'web' ? 1 : undefined}
+                    numberOfLines={Platform.OS === 'web' && !isInputExpanded ? 1 : undefined}
                     onFocus={() => {
                       cancelComposerBlur();
                       setIsInputFocused(true);
@@ -1011,7 +1043,7 @@ export const ChatComposerBar = React.memo(
                     }}
                     scrollEnabled={isInputExpanded || composerInputHeight >= 200}
                     multiline
-                    textAlignVertical="center"
+                    textAlignVertical={isInputExpanded || composerInputHeight > 44 ? 'top' : 'center'}
                   />
                 </Animated.View>
               </View>
@@ -1203,7 +1235,7 @@ export const ChatComposerBar = React.memo(
           ]}
         >
           {isIosGlass && Platform.OS !== 'web' && (
-            <BlurView
+            <SafeBlurView
               intensity={Platform.OS === 'android' ? 75 : 55}
               blurReductionFactor={3}
               tint="dark"
@@ -1257,7 +1289,7 @@ export const ChatComposerBar = React.memo(
               placeholder='Type your roleplay action or dialogue (*actions in asterisks*, "dialogue")...'
               placeholderTextColor="rgba(255, 255, 255, 0.4)"
               value={inputText}
-              numberOfLines={Platform.OS === 'web' ? 1 : undefined}
+              numberOfLines={Platform.OS === 'web' && !isInputExpanded ? 1 : undefined}
               onChangeText={setInputText}
               onContentSizeChange={e => {
                 if (Platform.OS === 'web') return;
@@ -1448,6 +1480,7 @@ export const ChatComposerBar = React.memo(
           </View>
         </Animated.View>
         )}
+      </View>
       </View>
     );
   })

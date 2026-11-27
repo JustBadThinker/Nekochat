@@ -37,7 +37,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView, BlurTargetView } from 'expo-blur';
+import { BlurTargetView } from 'expo-blur';
+import { SafeBlurView } from '../components/SafeBlurView';
 import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SmoothSlider } from '../components/SmoothSlider';
@@ -145,6 +146,7 @@ interface ChatRoomScreenProps {
   persona: Persona;
   personas: Persona[];
   onSelectPersona: (p: Persona) => void;
+  onUpdateCharacter?: (updated: Character) => void;
   config: ProviderConfig;
   onBack: () => void;
   initialConversationId?: string;
@@ -200,6 +202,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   persona,
   personas,
   onSelectPersona,
+  onUpdateCharacter,
   config,
   onBack,
   initialConversationId,
@@ -213,6 +216,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [fidgetOpen, setFidgetOpen] = useState(false);
+  const [isNekoGrabbed, setIsNekoGrabbed] = useState(false);
   const [isContinuingWait, setIsContinuingWait] = useState(false);
   const [fidgetScore, setFidgetScore] = useState(0);
   const [fidgetStreak, setFidgetStreak] = useState(0);
@@ -321,6 +325,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [isSummarizingMemory, setIsSummarizingMemory] = useState(false);
   const [memoryNoticeText, setMemoryNoticeText] = useState('');
   const [lastCheckpointIndex, setLastCheckpointIndex] = useState<number>(-1);
+  const autoMemoryBackoffUntilRef = useRef<number>(0);
 
   // Phase 7: Dynamic Cast & Scene Continuity State
   const [castMembers, setCastMembers] = useState<DynamicCastMember[]>([]);
@@ -348,12 +353,49 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const initialScrollSettledRef = useRef(false);
   const chatListOpacity = useRef(new Animated.Value(0)).current;
 
-  const chatCharName = extractCleanCharacterName(
+  const [customChatNameOverride, setCustomChatNameOverride] = useState<string>(character.customChatName || '');
+  const [editingCharName, setEditingCharName] = useState(false);
+  const [charNameDraft, setCharNameDraft] = useState('');
+
+  useEffect(() => {
+    setCustomChatNameOverride(character.customChatName || '');
+    setEditingCharName(false);
+  }, [character.id, character.customChatName]);
+
+  const autoChatCharName = extractCleanCharacterName(
     character.chatName || character.name,
-    character.subtitle || character.tagline,
+    character.subtitle || character.name || character.tagline,
     character.firstMessage,
     character.personality || character.description
   );
+  const chatCharName = customChatNameOverride.trim() || autoChatCharName;
+
+  const handleSaveCustomCharName = async (nextValue?: string) => {
+    const trimmed = (nextValue !== undefined ? nextValue : charNameDraft).trim();
+    setCustomChatNameOverride(trimmed);
+    setEditingCharName(false);
+
+    const updatedChar: Character = {
+      ...character,
+      customChatName: trimmed || undefined,
+    };
+    onUpdateCharacter?.(updatedChar);
+    await storageService.upsertCharacter(updatedChar).catch(() => {});
+
+    if (!isWorldOrRpgCard(character)) {
+      const resolvedDisplayName = trimmed || autoChatCharName;
+      const existingPrimary = castMembers.find(m => m.isPrimary);
+      if (existingPrimary && existingPrimary.name !== resolvedDisplayName) {
+        const updatedPrimary: DynamicCastMember = {
+          ...existingPrimary,
+          name: resolvedDisplayName,
+          updatedAt: Date.now(),
+        };
+        setCastMembers(prev => prev.map(m => (m.id === updatedPrimary.id ? updatedPrimary : m)));
+        await storageService.saveCastMember(updatedPrimary).catch(() => {});
+      }
+    }
+  };
 
   const allGreetings = [
     character.firstMessage,
@@ -483,9 +525,21 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 
   const persistSessionMemory = async (convId: string | null, memText: string, checkpointIdx?: number) => {
     if (!convId) return;
-    await AsyncStorage.setItem(getSessionMemoryKey(convId), memText);
-    if (typeof checkpointIdx === 'number') {
-      await AsyncStorage.setItem(getSessionCheckpointKey(convId), String(checkpointIdx));
+    const write = async () => {
+      await AsyncStorage.setItem(getSessionMemoryKey(convId), memText);
+      if (typeof checkpointIdx === 'number') {
+        await AsyncStorage.setItem(getSessionCheckpointKey(convId), String(checkpointIdx));
+      }
+    };
+    try {
+      await write();
+    } catch (err) {
+      try {
+        await storageService.reclaimWebStorageQuota();
+        await write();
+      } catch (retryErr) {
+        console.warn('[ChatRoomScreen] Failed to persist session memory:', retryErr || err);
+      }
     }
   };
 
@@ -615,6 +669,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
    */
   const runIncrementalCheckpointForList = async (targetMessages: ChatMessage[], silent = false) => {
     if (isSummarizingMemory || targetMessages.length === 0) return;
+    if (silent && Date.now() < autoMemoryBackoffUntilRef.current) return;
 
     const existingHasContent = hasValidMemory(chatMemory);
     const isFirstRun = !existingHasContent || lastCheckpointIndex < 0;
@@ -648,7 +703,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       const sliceForLlm = isFirstRun ? targetMessages : targetMessages.slice(contextPrefixIdx);
 
       const newCheckpoint = await aiProviderService.summarizeChatToCheckpoint(
-        character,
+        { ...character, name: chatCharName, customChatName: customChatNameOverride.trim() || undefined },
         sliceForLlm,
         persona,
         activeConfig,
@@ -659,6 +714,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         }
       );
 
+      autoMemoryBackoffUntilRef.current = 0;
       const cleanExisting = chatMemory.replace(/<memory>\s*<\/memory>/gi, '').trim();
       const updated = cleanExisting && !isFirstRun ? `${cleanExisting}\n\n${newCheckpoint}` : newCheckpoint;
       setChatMemory(updated);
@@ -675,13 +731,14 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         );
       }
     } catch (err: any) {
+      autoMemoryBackoffUntilRef.current = Date.now() + 2 * 60 * 1000;
       if (!silent) {
-        setMemoryNoticeText(`⚠️ Incremental summary failed: ${err.message || 'Error'}`);
+        setMemoryNoticeText(`⚠️ Summary failed (${err?.message || 'Error'}) — memory & turn count kept unchanged.`);
       }
     } finally {
       setIsSummarizingMemory(false);
       if (!silent) {
-        setTimeout(() => setMemoryNoticeText(''), 3500);
+        setTimeout(() => setMemoryNoticeText(''), 5000);
       }
     }
   };
@@ -701,7 +758,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     try {
       const activeConfig = await resolveActiveConfig();
       const masterCheckpoint = await aiProviderService.summarizeChatToCheckpoint(
-        character,
+        { ...character, name: chatCharName, customChatName: customChatNameOverride.trim() || undefined },
         messages,
         persona,
         activeConfig,
@@ -711,6 +768,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         }
       );
 
+      autoMemoryBackoffUntilRef.current = 0;
       setChatMemory(masterCheckpoint);
       const newLastIdx = messages.length - 1;
       setLastCheckpointIndex(newLastIdx);
@@ -719,10 +777,10 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
 
       setMemoryNoticeText(`✓ Master Checkpoint synthesized from start to finish!`);
     } catch (err: any) {
-      setMemoryNoticeText(`⚠️ Full summary failed: ${err.message || 'Error'}`);
+      setMemoryNoticeText(`⚠️ Full summary failed: ${err?.message || 'Error'} — existing memory & turn count kept unchanged.`);
     } finally {
       setIsSummarizingMemory(false);
-      setTimeout(() => setMemoryNoticeText(''), 3500);
+      setTimeout(() => setMemoryNoticeText(''), 5000);
     }
   };
 
@@ -1379,10 +1437,14 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     const updated = [...messages, userMsg];
     setMessages(updated);
 
-    if (activeConversationId) {
-      await storageService.appendMessageToConversation(activeConversationId, userMsg);
-    } else {
-      await storageService.appendMessage(character.id, userMsg);
+    try {
+      if (activeConversationId) {
+        await storageService.appendMessageToConversation(activeConversationId, userMsg);
+      } else {
+        await storageService.appendMessage(character.id, userMsg);
+      }
+    } catch (err) {
+      console.warn('[ChatRoomScreen] Failed to persist user message:', err);
     }
 
     const candidates = detectCastCandidates({
@@ -1401,13 +1463,17 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   };
 
   const persistMessagesList = async (updatedList: ChatMessage[]) => {
-    if (activeConversationId) {
-      const conv = await storageService.getConversation(activeConversationId);
-      if (conv) {
-        await storageService.updateConversation({ ...conv, messages: updatedList });
+    try {
+      if (activeConversationId) {
+        const conv = await storageService.getConversation(activeConversationId);
+        if (conv) {
+          await storageService.updateConversation({ ...conv, messages: updatedList });
+        }
+      } else {
+        await storageService.saveMessages(character.id, updatedList);
       }
-    } else {
-      await storageService.saveMessages(character.id, updatedList);
+    } catch (err) {
+      console.warn('[ChatRoomScreen] Failed to persist messages list:', err);
     }
   };
 
@@ -1439,6 +1505,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     if (freshLorebooks.length !== lorebooks.length) setLorebooks(freshLorebooks);
     const effectiveChar: Character = {
       ...character,
+      customChatName: customChatNameOverride.trim() || undefined,
       lorebookIds: Array.from(new Set([...(character.lorebookIds || []), ...attachedLorebookIds])),
     };
 
@@ -1488,16 +1555,42 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           setIsStreaming(false);
           setIsContinuingWait(false);
           setLocalReveal(null);
-          setMessages(prev =>
-            prev.map(m =>
-              m.id === assistantPlaceholderId
-                ? { ...m, content: `⚠️ Error: ${err.message}` }
-                : m
-            )
-          );
+          const partialVisible = stripThinkTags(incomingAssistantText).trim();
+          if (partialVisible.length > 0) {
+            const interruptedContent = `${incomingAssistantText.trimEnd()}\n\n*(Stream interrupted: ${err.message} — tap Continue to finish)*`;
+            const nextSwipes =
+              existingSwipes && existingSwipes.length > 0
+                ? [...existingSwipes, interruptedContent]
+                : [interruptedContent];
+            const interruptedMsg: ChatMessage = {
+              id: assistantPlaceholderId,
+              conversationId: activeConversationId || undefined,
+              characterId: character.id,
+              role: 'assistant',
+              content: interruptedContent,
+              swipes: nextSwipes,
+              swipeIndex: nextSwipes.length - 1,
+              backendPrompt: capturedBackendPrompt || undefined,
+              finishReason: 'INTERRUPTED',
+              timestamp: Date.now(),
+            };
+            const trimmedHistory = historyWithUser.map(m =>
+              m.backendPrompt ? { ...m, backendPrompt: undefined } : m
+            );
+            const interruptedMessages = trimmedHistory.concat([interruptedMsg]);
+            setMessages(interruptedMessages);
+            void persistMessagesList(interruptedMessages);
+          } else {
+            setMessages(prev =>
+              prev.map(m =>
+                m.id === assistantPlaceholderId
+                  ? { ...m, content: `⚠️ Error: ${err.message}` }
+                  : m
+              )
+            );
+          }
         },
         onComplete: async (fullText, tokenCount, thought, meta) => {
-          setIsStreaming(false);
           // Auto-reset 1-turn-only cast members back to away so they don't leak into subsequent turns
           const singleTurnMembers = castMembers.filter(
             m => !m.isPrimary && m.singleTurnOnly && m.presence === 'present'
@@ -1526,22 +1619,23 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             existingSwipes && existingSwipes.length > 0
               ? [...existingSwipes, finalText]
               : [finalText];
-          const finishSummary = (() => {
+          const formatFinishSummary = (mMeta?: typeof meta, fallback?: string) => {
             const parts: string[] = [];
-            if (meta?.finishReason) {
-              parts.push(meta.finishReason);
-            } else if (meta?.usage) {
+            if (mMeta?.finishReason) {
+              parts.push(mMeta.finishReason);
+            } else if (mMeta?.usage) {
               parts.push('NO_FINISH_REASON');
             }
-            if (meta?.usage) {
+            if (mMeta?.usage) {
               const uParts: string[] = [];
-              if (typeof meta.usage.promptTokens === 'number') uParts.push(`in: ${meta.usage.promptTokens}`);
-              if (typeof meta.usage.outputTokens === 'number') uParts.push(`out: ${meta.usage.outputTokens}`);
-              if (typeof meta.usage.thoughtsTokens === 'number') uParts.push(`think: ${meta.usage.thoughtsTokens}`);
+              if (typeof mMeta.usage.promptTokens === 'number') uParts.push(`in: ${mMeta.usage.promptTokens}`);
+              if (typeof mMeta.usage.outputTokens === 'number') uParts.push(`out: ${mMeta.usage.outputTokens}`);
+              if (typeof mMeta.usage.thoughtsTokens === 'number') uParts.push(`think: ${mMeta.usage.thoughtsTokens}`);
               if (uParts.length > 0) parts.push(`(${uParts.join(', ')})`);
             }
-            return parts.length > 0 ? parts.join(' ') : undefined;
-          })();
+            return parts.length > 0 ? parts.join(' ') : fallback;
+          };
+          const finishSummary = formatFinishSummary(meta);
           const finalMsg: ChatMessage = {
             id: assistantPlaceholderId,
             conversationId: activeConversationId || undefined,
@@ -1556,8 +1650,117 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             tokenCount,
             timestamp: Date.now(),
           };
-          const finalMessages = historyWithUser.concat([finalMsg]);
+          const trimmedHistory = historyWithUser.map(m =>
+            m.backendPrompt ? { ...m, backendPrompt: undefined } : m
+          );
+          const finalMessages = trimmedHistory.concat([finalMsg]);
           setMessages(finalMessages);
+          await persistMessagesList(finalMessages);
+
+          const isTruncated =
+            !meta?.aborted &&
+            visibleText.length > 0 &&
+            /^(?:MAX_TOKENS|length)$/i.test(String(meta?.finishReason || '').trim());
+
+          if (isTruncated) {
+            setIsStreaming(true);
+            setIsContinuingWait(true);
+            setLocalReveal(null);
+            let contAddition = '';
+            let contContent = finalMsg.content;
+
+            await aiProviderService.streamChat(
+              effectiveChar,
+              getPromptHistory(finalMessages),
+              '',
+              persona,
+              activeConfig,
+              {
+                onChunk: chunk => {
+                  setIsContinuingWait(false);
+                  contAddition += chunk;
+                  contContent = joinContinuation(finalMsg.content, contAddition);
+                  if (textStreamingEnabled) {
+                    const now = Date.now();
+                    if (now - lastStreamFlushRef.current >= 45) {
+                      lastStreamFlushRef.current = now;
+                      const snapshot = contContent;
+                      setMessages(prev =>
+                        prev.map(m =>
+                          m.id === assistantPlaceholderId ? { ...m, content: snapshot } : m
+                        )
+                      );
+                      if (autoScrollEnabled) {
+                        scrollViewRef.current?.scrollToEnd({ animated: false });
+                      }
+                    }
+                  }
+                },
+                onError: () => {
+                  setIsContinuingWait(false);
+                  setIsStreaming(false);
+                  const latestContent = contAddition ? contContent : finalMsg.content;
+                  const keptSwipes = nextSwipes.slice();
+                  keptSwipes[keptSwipes.length - 1] = latestContent;
+                  const keptMsg: ChatMessage = {
+                    ...finalMsg,
+                    content: latestContent,
+                    swipes: keptSwipes,
+                  };
+                  const keptMessages = trimmedHistory.concat([keptMsg]);
+                  setMessages(keptMessages);
+                  void persistMessagesList(keptMessages);
+                },
+                onComplete: async (contFullText, contTokens, contThought, contMeta) => {
+                  setIsContinuingWait(false);
+                  setIsStreaming(false);
+                  const effectiveAddition = contAddition || contFullText || '';
+                  if (contMeta?.aborted && !effectiveAddition) {
+                    setMessages(finalMessages);
+                    return;
+                  }
+                  const mergedContent = effectiveAddition
+                    ? joinContinuation(finalMsg.content, effectiveAddition)
+                    : contContent;
+                  const mergedSwipes = nextSwipes.slice();
+                  mergedSwipes[mergedSwipes.length - 1] = mergedContent;
+                  const mergedMsg: ChatMessage = {
+                    ...finalMsg,
+                    content: mergedContent,
+                    swipes: mergedSwipes,
+                    tokenCount: (finalMsg.tokenCount || 0) + contTokens,
+                    thought: contThought || finalMsg.thought,
+                    finishReason: formatFinishSummary(contMeta, finalMsg.finishReason),
+                  };
+                  const completedMessages = trimmedHistory.concat([mergedMsg]);
+                  setMessages(completedMessages);
+                  await persistMessagesList(completedMessages);
+
+                  const turnsSinceCheckpoint = completedMessages.length - 1 - lastCheckpointIndex;
+                  if (
+                    !contMeta?.aborted &&
+                    autoMemoryEnabled &&
+                    !isSummarizingMemory &&
+                    turnsSinceCheckpoint >= Math.max(4, autoMemoryInterval)
+                  ) {
+                    runIncrementalCheckpointForList(completedMessages, true).catch(() => { });
+                  }
+                },
+              },
+              {
+                conversationId: activeConversationId || undefined,
+                scenario: currentScenario,
+                lorebooks: freshLorebooks,
+                isContinue: true,
+                memory: chatMemory,
+                extraContext,
+                tokenOptimizer: tokenOptimizerLevel,
+              }
+            );
+            return;
+          }
+
+          setIsStreaming(false);
           if (
             !meta?.aborted &&
             animateNonStreamed &&
@@ -1568,7 +1771,6 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           } else {
             setLocalReveal(null);
           }
-          await persistMessagesList(finalMessages);
 
           const turnsSinceCheckpoint = finalMessages.length - 1 - lastCheckpointIndex;
           if (
@@ -1852,6 +2054,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     if (freshLorebooks.length !== lorebooks.length) setLorebooks(freshLorebooks);
     const effectiveChar: Character = {
       ...character,
+      customChatName: customChatNameOverride.trim() || undefined,
       lorebookIds: Array.from(new Set([...(character.lorebookIds || []), ...attachedLorebookIds])),
     };
 
@@ -2579,7 +2782,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               ]}
             >
               {(isIosGlass || isJanitor) && Platform.OS !== 'web' && (
-                <BlurView
+                <SafeBlurView
                   intensity={Platform.OS === 'android' ? 75 : 55}
                   blurReductionFactor={3}
                   tint="dark"
@@ -2799,7 +3002,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                 ]}
               >
                 {(isIosGlass || isJanitor) && Platform.OS !== 'web' && (
-                  <BlurView
+                  <SafeBlurView
                     intensity={Platform.OS === 'android' ? 75 : 55}
                     blurReductionFactor={3}
                     tint="dark"
@@ -3517,6 +3720,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                 data={visibleMessages}
                 keyExtractor={item => item.id}
                 renderItem={renderMessageRowItem}
+                scrollEnabled={!isNekoGrabbed}
                 nestedScrollEnabled
                 keyboardShouldPersistTaps="handled"
                 contentContainerStyle={[
@@ -3779,6 +3983,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                 }}
                 onRefine={handleRefine}
                 onOpenFidget={() => setFidgetOpen(true)}
+                onNekoGrabChange={setIsNekoGrabbed}
                 onOpenSceneDepict={handleOpenSceneDepict}
                 onOpenCastSheet={handleOpenCastSheet}
                 onOpenPersonaModal={() => {
@@ -4408,7 +4613,10 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
       {/* ================= MODAL: FULL CHARACTER PROFILE CARD (Header Name Tap) ================= */}
       <BottomSheetModal
         visible={showCharacterCardModal}
-        onClose={() => setShowCharacterCardModal(false)}
+        onClose={() => {
+          setEditingCharName(false);
+          setShowCharacterCardModal(false);
+        }}
         showDragHandle={false}
         sheetStyle={{ paddingHorizontal: 0, paddingTop: 0, paddingBottom: 16 }}
       >
@@ -4422,7 +4630,10 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           />
           <TouchableOpacity
             style={styles.charProfileCloseBtn}
-            onPress={() => setShowCharacterCardModal(false)}
+            onPress={() => {
+              setEditingCharName(false);
+              setShowCharacterCardModal(false);
+            }}
             activeOpacity={0.8}
           >
             <X size={18} color="#FFFFFF" />
@@ -4444,6 +4655,87 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           <Text style={styles.charProfileName}>{character.name}</Text>
           <Text style={styles.charProfileTagline}>{character.subtitle || character.tagline || 'Roleplay Companion'}</Text>
           <Text style={styles.charProfileCreator}>Created by @{character.creator || 'community'}</Text>
+
+          {/* Manual Chat Display Name Override */}
+          <View style={styles.charNameOverrideCard}>
+            <View style={styles.charNameOverrideHeader}>
+              <Text style={styles.charNameOverrideLabel}>CHAT DISPLAY NAME</Text>
+              <View style={styles.charNameOverrideBadge}>
+                <Text style={styles.charNameOverrideBadgeText}>
+                  {customChatNameOverride.trim() ? 'Custom' : 'Auto'}
+                </Text>
+              </View>
+            </View>
+            {editingCharName ? (
+              <View style={styles.charNameOverrideRow}>
+                <TextInput
+                  style={styles.charNameOverrideInput}
+                  value={charNameDraft}
+                  onChangeText={setCharNameDraft}
+                  placeholder={autoChatCharName}
+                  placeholderTextColor="#64748b"
+                  maxLength={40}
+                  autoFocus
+                  returnKeyType="done"
+                  onSubmitEditing={() => handleSaveCustomCharName()}
+                />
+                <TouchableOpacity
+                  style={styles.charNameOverrideBtnPrimary}
+                  onPress={() => handleSaveCustomCharName()}
+                  activeOpacity={0.8}
+                >
+                  <Check size={14} color={palette.bgDark} strokeWidth={2.8} />
+                </TouchableOpacity>
+                {Boolean(customChatNameOverride.trim()) && (
+                  <TouchableOpacity
+                    style={styles.charNameOverrideBtn}
+                    onPress={() => handleSaveCustomCharName('')}
+                    activeOpacity={0.8}
+                    accessibilityLabel="Reset to auto name"
+                  >
+                    <RotateCcw size={13} color="#cbd5e1" />
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.charNameOverrideBtn}
+                  onPress={() => setEditingCharName(false)}
+                  activeOpacity={0.8}
+                >
+                  <X size={14} color="#9ca3af" />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.charNameOverrideRow}>
+                <Text style={styles.charNameOverrideValue} numberOfLines={1}>
+                  {chatCharName}
+                </Text>
+                <TouchableOpacity
+                  style={styles.charNameOverrideBtn}
+                  onPress={() => {
+                    setCharNameDraft(chatCharName);
+                    setEditingCharName(true);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Edit2 size={12} color={palette.accent} />
+                  <Text style={styles.charNameOverrideBtnText}>Rename</Text>
+                </TouchableOpacity>
+                {Boolean(customChatNameOverride.trim()) && (
+                  <TouchableOpacity
+                    style={styles.charNameOverrideBtn}
+                    onPress={() => handleSaveCustomCharName('')}
+                    activeOpacity={0.8}
+                    accessibilityLabel="Reset to auto name"
+                  >
+                    <RotateCcw size={13} color="#9ca3af" />
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+            <Text style={styles.charNameOverrideHint}>
+              Applies to header, chat bubbles, {'{{char}}'}, and AI prompts.
+            </Text>
+          </View>
 
           {/* Tag Chips */}
           <View style={styles.charProfileTagWrap}>
@@ -7571,6 +7863,88 @@ const createStyles = (palette: ThemePalette, skin: UiSkinTokens) => {
       fontSize: 11,
       marginTop: 2,
       marginBottom: 10,
+    },
+    charNameOverrideCard: {
+      backgroundColor: 'rgba(255, 255, 255, 0.04)',
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.09)',
+      padding: 10,
+      marginBottom: 14,
+      gap: 6,
+    },
+    charNameOverrideHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    charNameOverrideLabel: {
+      color: '#94a3b8',
+      fontSize: 10,
+      fontWeight: '700',
+      letterSpacing: 0.7,
+    },
+    charNameOverrideBadge: {
+      backgroundColor: `rgba(${palette.accentRgb}, 0.14)`,
+      borderRadius: 999,
+      paddingHorizontal: 7,
+      paddingVertical: 2,
+    },
+    charNameOverrideBadgeText: {
+      color: palette.accent,
+      fontSize: 10,
+      fontWeight: '700',
+    },
+    charNameOverrideValue: {
+      flex: 1,
+      color: '#FFFFFF',
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    charNameOverrideRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+    },
+    charNameOverrideInput: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.35)',
+      borderWidth: 1,
+      borderColor: `rgba(${palette.accentRgb}, 0.45)`,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      color: '#FFFFFF',
+      fontSize: 13.5,
+      fontWeight: '600',
+    },
+    charNameOverrideBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      backgroundColor: 'rgba(255, 255, 255, 0.07)',
+      borderRadius: 8,
+      paddingHorizontal: 9,
+      paddingVertical: 6,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.10)',
+    },
+    charNameOverrideBtnPrimary: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: palette.accent,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    charNameOverrideBtnText: {
+      color: palette.accent,
+      fontSize: 11.5,
+      fontWeight: '700',
+    },
+    charNameOverrideHint: {
+      color: '#64748b',
+      fontSize: 10.5,
     },
     charProfileTagWrap: {
       flexDirection: 'row',

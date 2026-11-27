@@ -16,6 +16,7 @@ import { matchLorebookEntriesWithDiagnostics } from './lorebookService';
 import { getDefaultLanguagePrompt } from '../i18n/translations';
 import {
   APPLICATION_SAFETY_POLICY,
+  applyPromptMacros,
   buildGeminiRequestBody,
   buildOpenAiChatPayload,
   buildTurns,
@@ -209,6 +210,73 @@ export function cleanCreatorHandle(raw?: string): string {
   return clean.length > 24 ? `${clean.slice(0, 20)}…` : clean;
 }
 
+const GENERIC_PLACEHOLDER_NAME_RE =
+  /^(?:narrator|story|roleplay|bot|character|assistant|gm|game\s*master|dm|dungeon\s*master|system|host|scenario|anonymous|unnamed(?:\s+companion)?|user|you|created|note|warning|none|unknown|n\/a)$/i;
+
+function normalizeProfileLines(text?: string): string {
+  return (text || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|li|h[1-6]|tr)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/[*_`]/g, '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+/g, ' ');
+}
+
+function cleanExtractedNameCandidate(candidate?: string): string | null {
+  const cleaned = (candidate || '')
+    .replace(/[-—–:|,;.!?/]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned || cleaned.length < 2 || cleaned.length > 40) return null;
+  if (cleaned.includes('{{') || cleaned.includes('}}') || cleaned.includes('<') || cleaned.includes('>')) {
+    return null;
+  }
+  if (cleaned.split(/\s+/).length > 4) return null;
+  if (GENERIC_PLACEHOLDER_NAME_RE.test(cleaned)) return null;
+  return cleaned;
+}
+
+function extractExplicitNameFromProfile(
+  personality?: string,
+  firstMessage?: string,
+  allowHeuristicFallback: boolean = false
+): string | null {
+  const sources = [normalizeProfileLines(personality), normalizeProfileLines(firstMessage)].filter(Boolean);
+  for (const src of sources) {
+    const explicitMatch =
+      src.match(
+        /(?:^|\n)[ \t]*[-•+]?[ \t]*(?:Full[ \t]+Name|Real[ \t]+Name|Character[ \t]+Name|Name|Nama)[ \t]*[:=][ \t]*([A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ0-9.'’_-]*(?:[ \t]+(?![-•+:])[A-Za-zÀ-ÖØ-öø-ÿ0-9.'’_-]+){0,3})(?=[ \t]*(?:\n|$|[,;(\[|]|[-—–][ \t]))/i
+      ) ||
+      src.match(
+        /(?:^|\n)[ \t]*#*[ \t]*([A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ.'’_-]+(?:[ \t]+[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ.'’_-]+){0,2})[ \t]*[-—–:|][ \t]*(?:Character[ \t]+Profile|Character[ \t]+Card|Character[ \t]+Sheet|Profile|Bio)\b/
+      ) ||
+      src.match(
+        /\[(?:Character|char)\s*\(\s*["']?([A-Za-zÀ-ÖØ-öø-ÿ0-9'’_-]+(?:[ \t]+[A-Za-zÀ-ÖØ-öø-ÿ0-9'’_-]+){0,2})/i
+      ) ||
+      src.match(
+        /(?:You are|Character:|Name:|\{\{char\}\} is|\{\{char\}\}'s name is|Her name is|His name is)[ \t]+([A-Z][a-zA-Z0-9'’_-]+(?:[ \t]+[A-Z][a-zA-Z0-9'’_-]+){0,2})/
+      );
+    const valid = cleanExtractedNameCandidate(explicitMatch?.[1]);
+    if (valid) return valid;
+  }
+
+  if (allowHeuristicFallback && sources.length > 0) {
+    const combined = sources.join('\n').replace(/\s+/g, ' ');
+    const fallbackMatch =
+      combined.match(/\b([A-Z][a-z]{2,15})[ \t]*\(\s*\d{1,2}\s*(?:yo|years old)?\s*\)/i) ||
+      combined.match(
+        /\b([A-Z][a-z]{2,15}(?:[ \t]+[A-Z][a-z]{2,15})?)[ \t]+(?:has stopped|smiles|looks|glares|observes|stands|walks|steps|sighs|chuckles|grins|laughs|watches|leans|crosses|sits|speaks|whispers|taps|nods|turns)\b/
+      ) ||
+      combined.match(/\b([A-Z][a-z]{2,15})'s\b/);
+    const valid = cleanExtractedNameCandidate(fallbackMatch?.[1]);
+    if (valid) return valid;
+  }
+
+  return null;
+}
+
 export function extractCleanCharacterName(
   rawName?: string,
   rawSubtitle?: string,
@@ -219,8 +287,10 @@ export function extractCleanCharacterName(
 
   // If rawName is empty, only then check if rawSubtitle has a name-like string
   if (!raw) {
+    const fromProfile = extractExplicitNameFromProfile(personality, firstMessage, false);
+    if (fromProfile) return fromProfile;
     const sub = (rawSubtitle || '').trim();
-    if (sub && sub.length <= 34 && !sub.includes('#') && !sub.includes('\n')) {
+    if (sub && sub.length <= 34 && !sub.includes('#') && !sub.includes('\n') && !GENERIC_PLACEHOLDER_NAME_RE.test(sub)) {
       return sub;
     }
     return 'Character';
@@ -231,6 +301,29 @@ export function extractCleanCharacterName(
 
   // 2. Strip leading bracket/paren tags e.g. (IDN), [ENG], [NSFW], (18+)
   raw = raw.replace(/^\s*(?:\([a-zA-Z0-9_\s-]{1,10}\)|\[[a-zA-Z0-9_\s-]{1,10}\])\s*/g, '');
+
+  // 2b. Generic placeholder names (e.g. "Narrator") -> extract actual character name from profile/card
+  if (GENERIC_PLACEHOLDER_NAME_RE.test(raw)) {
+    const explicitFromProfile = extractExplicitNameFromProfile(personality, firstMessage, false);
+    if (explicitFromProfile) {
+      return explicitFromProfile;
+    }
+    const sub = (rawSubtitle || '').trim();
+    if (
+      sub &&
+      sub.toLowerCase() !== raw.toLowerCase() &&
+      !GENERIC_PLACEHOLDER_NAME_RE.test(sub) &&
+      !sub.includes('#') &&
+      !sub.includes('\n') &&
+      !/^Created by\b/i.test(sub)
+    ) {
+      const resolvedSub = extractCleanCharacterName(sub, undefined, firstMessage, personality);
+      if (resolvedSub && !GENERIC_PLACEHOLDER_NAME_RE.test(resolvedSub)) {
+        return resolvedSub;
+      }
+    }
+    return raw;
+  }
 
   // 3. Pattern: "Quote..." - Name  (e.g. (IDN) "Gue Bukan Nungguin Lu." - Febri Aryani)
   const quoteThenDash = raw.match(/^["“][^"”]+["”]\s*[-—–]\s*([A-Za-z0-9\s.'’_-]{2,30})$/);
@@ -291,26 +384,25 @@ export function extractCleanCharacterName(
     /\b(?:Netorare|NTR|Mom|Mother|Wife|Sister|Aunt|Milf|Friend|Best Friend|Childhood Friend|Classmate|Roommate|Bully|Teacher|Sensei|Boss|Maid|Slave|Goddess|Princess|Queen|Yandere|Tsundere|Kuudere|Femboy|Tomboy|Step-mom|Stepmother|Step-sister|Stepsister|Coworker|Neighbor|Doctor|Nurse|Barista|Girlfriend|Boyfriend)\b/i.test(raw);
 
   if (isTropeOrRole || /^[a-z0-9\s,.'!?-]+$/.test(raw) || /^(?:he|she|i|my|they|you|we)\s+/i.test(raw) || raw.split(/\s+/).length >= 4) {
-    const cleanText = (s?: string) => (s || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ');
-    const combined = `${cleanText(personality)}\n${cleanText(firstMessage)}`;
-    const nameMatch =
-      combined.match(/(?:(?:Name|Full Name|Real Name|Nama|Character)\s*[:=][ \t]*([A-Za-z0-9'’_-]+(?:[ \t]+[A-Za-z0-9'’_-]+){0,3}))/i) ||
-      combined.match(/\[(?:Character|char)\s*\(\s*["']?([A-Za-z0-9'’_-]+(?:[ \t]+[A-Za-z0-9'’_-]+){0,2})/i) ||
-      combined.match(/(?:You are|Character:|Name:|\{\{char\}\} is|\{\{char\}\}'s name is|Her name is|His name is)[ \t]+([A-Z][a-zA-Z0-9'’_-]+(?:[ \t]+[A-Z][a-zA-Z0-9'’_-]+){0,2})/i) ||
-      combined.match(/\b([A-Z][a-z]{2,15})[ \t]*\(\s*\d{1,2}\s*(?:yo|years old)?\s*\)/i) ||
-      combined.match(/\b([A-Z][a-z]{2,15}(?:[ \t]+[A-Z][a-z]{2,15})?)[ \t]+(?:has stopped|smiles|looks|glares|observes|stands|walks|steps|sighs|chuckles|grins|laughs|watches|leans|crosses|sits|speaks|whispers|taps|nods|turns)\b/) ||
-      combined.match(/\b([A-Z][a-z]{2,15})'s\b/);
-    if (nameMatch && nameMatch[1]) {
-      const candidate = nameMatch[1].trim();
-      if (!/^(?:User|You|Character|Narrator|Roleplay|Story|Scenario|Created|Note|Warning)$/i.test(candidate)) {
-        return candidate;
-      }
+    const profileCandidate = extractExplicitNameFromProfile(personality, firstMessage, true);
+    if (profileCandidate) {
+      return profileCandidate;
     }
   }
 
   // 9. If rawSubtitle looks like a clean personal name (e.g. from chat_name), prefer it over a long title
   const sub = (rawSubtitle || '').trim();
-  if (sub && sub !== raw && sub.length >= 2 && sub.length <= 34 && !sub.includes('#') && !sub.includes('\n') && !sub.startsWith('Created by')) {
+  if (
+    sub &&
+    sub !== raw &&
+    (raw.split(/\s+/).length >= 4 || isTropeOrRole || raw.length > 34) &&
+    sub.length >= 2 &&
+    sub.length <= 34 &&
+    !sub.includes('#') &&
+    !sub.includes('\n') &&
+    !sub.startsWith('Created by') &&
+    !GENERIC_PLACEHOLDER_NAME_RE.test(sub)
+  ) {
     return sub;
   }
 
@@ -1006,12 +1098,14 @@ export const aiProviderService = {
 
     const optimizerLevel: TokenOptimizerLevel = options?.tokenOptimizer || 'off';
     const isOoc = isOocMessage(userMessage);
-    const chatCharName = extractCleanCharacterName(
-      character.name,
-      character.subtitle || character.tagline,
-      character.firstMessage,
-      character.personality
-    );
+    const chatCharName =
+      character.customChatName?.trim() ||
+      extractCleanCharacterName(
+        character.chatName || character.name,
+        character.subtitle || character.name || character.tagline,
+        character.firstMessage,
+        character.personality || character.description
+      );
     const userName = persona?.name || 'User';
 
     // Build rich instructions with {{char}} / {{user}} macro expansion
@@ -1506,7 +1600,7 @@ export const aiProviderService = {
     try {
       if (route.kind === 'gemini') {
         if (!route.apiKey) return draft;
-        const ai = new GoogleGenAI({ apiKey: route.apiKey });
+        const ai = new GoogleGenAI({ apiKey: route.apiKey, apiVersion: 'v1beta' });
         const res = await ai.models.generateContent({
           model: route.model,
           contents: prompt,
@@ -1563,12 +1657,21 @@ export const aiProviderService = {
       .filter(m => (m.role === 'user' || m.role === 'assistant') && !isErrorMessage(m) && m.content !== '...');
 
     const cpNum = options?.checkpointNumber || 1;
+    const charName =
+      character.customChatName?.trim() ||
+      extractCleanCharacterName(
+        character.chatName || character.name,
+        character.subtitle || character.name || character.tagline,
+        character.firstMessage,
+        character.personality || character.description
+      );
+    const userName = persona?.name || 'User';
 
     if (cleanHistory.length === 0) {
       return (
         `<memory>\n` +
         `[Checkpoint #${cpNum} - Opening Scene]\n` +
-        `- Events: ${persona?.name || 'User'} and ${character.name} began their roleplay.\n` +
+        `- Events: ${userName} and ${charName} began their roleplay.\n` +
         `- Promises & Agreements: None yet.\n` +
         `- Current Situation: Story starting at initial setting.\n` +
         `- Appearance & State: Default persona and companion appearance.\n` +
@@ -1576,69 +1679,148 @@ export const aiProviderService = {
       );
     }
 
-    const conversationTranscript = cleanHistory
-      .map(m => `${m.role === 'user' ? persona?.name || 'User' : character.name}: ${m.content}`)
-      .join('\n\n');
+    const formattedTurns = cleanHistory.map(m => {
+      const speaker = m.role === 'user' ? userName : charName;
+      const body = applyPromptMacros(String(m.content || ''), charName, userName).trim();
+      return `${speaker}: ${body}`;
+    });
 
-    const prompt = isIncremental
-      ? `You are an elite roleplay archivist and memory synthesizer (JanitorAI & Warden AI standard).\n` +
-        `You are updating the story memory with the LATEST continuation between ${character.name} and ${persona?.name || 'User'}.\n\n` +
-        `--- NEW DIALOGUE & ACTIONS TO SUMMARIZE ---\n` +
-        `${conversationTranscript}\n` +
+    const MAX_CHUNK_CHARS = 24000;
+    const chunks: string[] = [];
+    let currentTurns: string[] = [];
+    let currentChars = 0;
+    for (const turn of formattedTurns) {
+      if (currentTurns.length >= 2 && currentChars + turn.length > MAX_CHUNK_CHARS) {
+        chunks.push(currentTurns.join('\n\n'));
+        currentTurns = [turn];
+        currentChars = turn.length;
+      } else {
+        currentTurns.push(turn);
+        currentChars += turn.length + 2;
+      }
+    }
+    if (currentTurns.length > 0) {
+      chunks.push(currentTurns.join('\n\n'));
+    }
+
+    const buildSummaryPrompt = (
+      transcriptChunk: string,
+      priorMemory: string | undefined,
+      chunkIdx: number,
+      totalChunks: number
+    ) => {
+      const useIncrementalStyle = isIncremental || chunkIdx > 0;
+      const isFinalChunk = chunkIdx === totalChunks - 1;
+      const headerLabel =
+        isFinalChunk && !isIncremental
+          ? `[Master Checkpoint - Complete Story Arc]`
+          : `[Checkpoint #${cpNum}${totalChunks > 1 ? ` - Part ${chunkIdx + 1}/${totalChunks}` : ''} - <Descriptive Milestone Title>]`;
+
+      if (useIncrementalStyle) {
+        return (
+          `You are an elite roleplay archivist and memory synthesizer (JanitorAI & Warden AI standard).\n` +
+          `Update the story memory with the LATEST turns between ${charName} and ${userName}.\n\n` +
+          (priorMemory ? `Prior Established Story Checkpoints:\n${priorMemory}\n\n` : '') +
+          `--- DIALOGUE & ACTIONS TO SUMMARIZE ---\n` +
+          `${transcriptChunk}\n` +
+          `--- END CONVERSATION ---\n\n` +
+          `TASK: Consolidate the prior memory (if any) and these turns into a clear, factual summary. Strictly capture:\n` +
+          `1. Events${!isIncremental && isFinalChunk ? ' Arc' : ''}: Concrete plot developments, actions, revelations, and turning points.\n` +
+          `2. Promises & Secrets: Specific agreements, vows, debts, lies, or uncovered secrets.\n` +
+          `3. Current Situation: Immediate location, mood/tension, relationship dynamic, and active goals.\n` +
+          `4. Appearance & Condition: Notable changes in clothing, injuries, emotional state, or physical details.\n\n` +
+          `FORMAT REQUIREMENT: Output MUST be wrapped strictly in <memory>...</memory> tags like this:\n` +
+          `<memory>\n` +
+          `${headerLabel}\n` +
+          `- Events${!isIncremental && isFinalChunk ? ' Arc' : ''}: <Summary of concrete events and plot turns>\n` +
+          `- Promises & Secrets: <Specific commitments, vows, or secrets revealed>\n` +
+          `- Current Situation: <Setting, atmosphere, dynamic, or immediate conflict>\n` +
+          `- Appearance & Condition: <Physical, clothing, or condition shifts for both>\n` +
+          `</memory>\n` +
+          `Output ONLY the <memory> block, no conversational chatter.`
+        );
+      }
+
+      return (
+        `You are an elite roleplay archivist and memory synthesizer (JanitorAI & Warden AI standard).\n` +
+        `Synthesize the roleplay history between ${charName} and ${userName} into a factual story memory.\n\n` +
+        `--- CONVERSATION HISTORY ---\n` +
+        `${transcriptChunk}\n` +
         `--- END CONVERSATION ---\n\n` +
-        (options?.existingMemory ? `Prior Established Story Checkpoints:\n${options.existingMemory}\n\n` : '') +
-        `TASK: Synthesize these new turns into Checkpoint #${cpNum}. Strictly capture:\n` +
-        `1. Events: Key developments, actions, revelations, and turns of the plot.\n` +
-        `2. Promises & Secrets: Standing agreements, commitments, or uncovered secrets.\n` +
-        `3. Current Situation: Immediate surroundings, stakes, dynamic between the two, and active goals.\n` +
-        `4. Appearance & Condition: Any changes in clothing, injuries, emotional state, or physical features.\n\n` +
+        `TASK: Capture concrete story facts:\n` +
+        `1. Events Arc: Chronological recap of actual plot developments and milestones.\n` +
+        `2. Standing Promises & Agreements: What was promised, sworn, or discovered.\n` +
+        `3. Current Active Situation: The exact ongoing location, tension, dynamic, and immediate goal.\n` +
+        `4. Appearance & Dynamic: Current physical state, clothing, and real relationship status.\n\n` +
         `FORMAT REQUIREMENT: Output MUST be wrapped strictly in <memory>...</memory> tags like this:\n` +
         `<memory>\n` +
-        `[Checkpoint #${cpNum} - <Descriptive Milestone Title>]\n` +
-        `- Events: <Summary of actions and plot turns>\n` +
-        `- Promises & Secrets: <Commitments, vows, or secrets revealed>\n` +
-        `- Current Situation: <Setting, atmosphere, active dilemma, or next step>\n` +
-        `- Appearance & Condition: <Physical, clothing, or condition shifts for both>\n` +
+        `${headerLabel}\n` +
+        `- Events Arc: <Chronological summary of actual plot milestones>\n` +
+        `- Standing Promises & Agreements: <Specific vows, promises, and secrets>\n` +
+        `- Current Active Situation: <Exact current location, active dilemma, and atmosphere>\n` +
+        `- Appearance & Dynamic: <Established physical state, clothing, and current dynamic>\n` +
         `</memory>\n` +
         `Output ONLY the <memory> block, no conversational chatter.`
-      : `You are an elite roleplay archivist and memory synthesizer (JanitorAI & Warden AI standard).\n` +
-        `Synthesize the ENTIRE roleplay history from the very beginning between ${character.name} and ${persona?.name || 'User'} into a master story memory.\n\n` +
-        `--- COMPLETE CONVERSATION HISTORY ---\n` +
-        `${conversationTranscript}\n` +
-        `--- END CONVERSATION ---\n\n` +
-        `TASK: Create a master story checkpoint capturing:\n` +
-        `1. Events Arc: Chronological recap of major story developments and milestones.\n` +
-        `2. Standing Promises & Agreements: What was promised, sworn, or discovered.\n` +
-        `3. Current Active Situation: The exact ongoing situation, active tension, and immediate goal.\n` +
-        `4. Appearance & Dynamic: Current physical state, clothing, and relationship bond.\n\n` +
-        `FORMAT REQUIREMENT: Output MUST be wrapped strictly in <memory>...</memory> tags like this:\n` +
-        `<memory>\n` +
-        `[Master Checkpoint - Complete Story Arc]\n` +
-        `- Events Arc: <Chronological summary of all major plot milestones>\n` +
-        `- Standing Promises & Agreements: <All vows, promises, and secrets preserved>\n` +
-        `- Current Active Situation: <Exact current location, active dilemma, and atmosphere>\n` +
-        `- Appearance & Dynamic: <Established physical state, clothing, and bond status>\n` +
-        `</memory>\n` +
-        `Output ONLY the <memory> block, no conversational chatter.`;
+      );
+    };
 
     const route = resolveProviderRoute(config);
 
-    try {
+    const finalizeMemoryBlock = (rawOutput: string, finishReason?: string): string => {
+      const text = rawOutput
+        .replace(/^```[a-z]*\n?/i, '')
+        .replace(/\n?```$/i, '')
+        .trim();
+      const bodyOnly = text.replace(/<\/?memory>/gi, '').trim();
+      if (bodyOnly.length < 20) {
+        throw new Error(`Model returned an empty summary (${finishReason || 'no text'})`);
+      }
+      if (text.includes('<memory>')) return text;
+      return `<memory>\n${text}\n</memory>`;
+    };
+
+    const runSummaryLlmCall = async (promptText: string): Promise<string> => {
       if (route.kind === 'gemini') {
         if (!route.apiKey) throw new Error('Missing Gemini API Key');
-        const ai = new GoogleGenAI({ apiKey: route.apiKey });
-        const res = await ai.models.generateContent({
-          model: route.model,
-          contents: prompt,
-          config: {
-            maxOutputTokens: 4096,
-            temperature: 0.4,
-          },
+        const modelName = encodeURIComponent(route.model || 'gemini-2.5-flash');
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(route.apiKey)}`;
+        const res = await platformFetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: promptText }] }],
+            safetySettings: [
+              { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+              { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+              { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+              { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+            ],
+            generationConfig: {
+              maxOutputTokens: 4096,
+              temperature: 0.4,
+            },
+          }),
         });
-        const rawText = res.text?.trim() || '';
-        const text = rawText.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
-        if (text.includes('<memory>')) return text;
-        return `<memory>\n${text}\n</memory>`;
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          throw new Error(data?.error?.message || `Gemini HTTP ${res.status}`);
+        }
+        const blockReason = data?.promptFeedback?.blockReason;
+        if (blockReason) {
+          throw new Error(`Blocked by Gemini (${blockReason})`);
+        }
+        const candidate = data?.candidates?.[0];
+        const finishReason = String(candidate?.finishReason || '');
+        if (/^(?:SAFETY|PROHIBITED_CONTENT|BLOCKLIST|SPII|RECITATION)$/i.test(finishReason)) {
+          throw new Error(`Summary blocked (${finishReason})`);
+        }
+        const parts: any[] = candidate?.content?.parts || [];
+        const rawText = parts
+          .filter(p => p?.text && !p?.thought)
+          .map(p => String(p.text))
+          .join('')
+          .trim();
+        return finalizeMemoryBlock(rawText, finishReason || undefined);
       }
 
       if (!route.endpoint) throw new Error('Missing Base URL');
@@ -1654,48 +1836,30 @@ export const aiProviderService = {
         headers,
         body: JSON.stringify({
           model: route.model,
-          messages: [{ role: 'user', content: prompt }],
+          messages: [{ role: 'user', content: promptText }],
           temperature: 0.4,
           max_tokens: 4096,
+          stream: false,
         }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      const outputRaw = json.choices?.[0]?.message?.content?.trim() || '';
-      const output = outputRaw.replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/i, '').trim();
-      if (output.includes('<memory>')) return output;
-      return `<memory>\n${output}\n</memory>`;
-    } catch (err: any) {
-      console.warn('[summarizeChatToCheckpoint] LLM invocation failed, using smart story fallback:', err?.message || err);
-      // Heuristic fallback if offline or API error
-      const lastUser = cleanHistory.filter(m => m.role === 'user').pop();
-      const lastBot = cleanHistory.filter(m => m.role === 'assistant').pop();
-
-      if (options?.mode === 'full') {
-        return (
-          `<memory>\n` +
-          `[Master Checkpoint - Complete Story Arc (Turns 1-${cleanHistory.length})]\n` +
-          `- Events Arc: Active roleplay between ${character.name} and ${persona?.name || 'User'} spanning ${cleanHistory.length} turns.\n` +
-          (lastUser ? `- Latest User Interaction: "${lastUser.content.slice(0, 110).replace(/\n/g, ' ')}..."\n` : '') +
-          (lastBot ? `- Companion Latest Response: "${lastBot.content.slice(0, 110).replace(/\n/g, ' ')}..."\n` : '') +
-          `- Standing Promises & Agreements: Mutual trust, established relationship dynamic, and past agreements intact.\n` +
-          `- Current Active Situation: Immediate ongoing scene awaiting reply.\n` +
-          `- Appearance & Dynamic: Canonical persona and companion physical traits, attire, and emotional bond preserved.\n` +
-          `</memory>`
-        );
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => '');
+        throw new Error(describeHttpError(res.status, errBody, route.label));
       }
+      const json = await res.json();
+      const rawChoice = String(json.choices?.[0]?.message?.content || '');
+      const finishReason = json.choices?.[0]?.finish_reason;
+      const { content } = extractThoughtAndContent(rawChoice);
+      return finalizeMemoryBlock(content || rawChoice, finishReason);
+    };
 
-      return (
-        `<memory>\n` +
-        `[Checkpoint #${cpNum} - Story Continuation]\n` +
-        `- Events: Ongoing interaction between ${character.name} and ${persona?.name || 'User'}.\n` +
-        (lastUser ? `- User Action: "${lastUser.content.slice(0, 110).replace(/\n/g, ' ')}..."\n` : '') +
-        (lastBot ? `- Character Reply: "${lastBot.content.slice(0, 110).replace(/\n/g, ' ')}..."\n` : '') +
-        `- Current Situation: Active scene awaiting response.\n` +
-        `- Appearance & State: Established state maintained.\n` +
-        `</memory>`
-      );
+    let rollingMemory = options?.existingMemory;
+    for (let i = 0; i < chunks.length; i++) {
+      const promptText = buildSummaryPrompt(chunks[i], rollingMemory, i, chunks.length);
+      rollingMemory = await runSummaryLlmCall(promptText);
     }
+
+    return rollingMemory || '';
   },
 
   /**

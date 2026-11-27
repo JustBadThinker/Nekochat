@@ -148,6 +148,10 @@ function AppContent() {
 
   const initApp = async () => {
     try {
+      if (Platform.OS === 'web') {
+        await storageService.reclaimWebStorageQuota().catch(() => {});
+      }
+
       // 0. Load saved theme & settings immediately so SplashScreen renders in user's theme
       const appSet = await storageService.getSettings();
       setSettings(appSet);
@@ -364,10 +368,14 @@ function AppContent() {
     }
 
     // Normalize character whether it's CommunityCharacter, Character, or raw JSON
+    const resolvedId = character.id || character.characterId || `char_${Date.now()}`;
+    const existingSaved = charactersRef.current.find(c => c.id === resolvedId);
+    const preservedCustomChatName = character.customChatName || existingSaved?.customChatName;
     const fullChar: Character = {
-      id: character.id || character.characterId || `char_${Date.now()}`,
+      id: resolvedId,
       name: character.name || 'Unnamed Companion',
-      chatName: resolvedDetail?.chatName || character.chatName || '',
+      chatName: resolvedDetail?.chatName || character.chatName || existingSaved?.chatName || '',
+      ...(preservedCustomChatName ? { customChatName: preservedCustomChatName } : {}),
       subtitle: resolvedDetail?.chatName || character.chatName || character.subtitle || '',
       tagline: character.tagline || (character.creatorName ? `Created by @${character.creatorName}` : 'Roleplay Companion'),
       avatar: character.avatar || character.avatarUrl || 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=500',
@@ -625,7 +633,7 @@ function AppContent() {
                 }
               };
 
-              return activeSkinTokens.id === 'ios' ? (
+              return activeSkinTokens.id === 'ios' || activeSkinTokens.id === 'bento' ? (
                 <BlurTargetView
                   ref={mainPagerBlurTargetRef}
                   style={styles.screenArea}
@@ -724,6 +732,10 @@ function AppContent() {
                 persona={activePersona}
                 personas={personas}
                 onSelectPersona={setActivePersona}
+                onUpdateCharacter={updatedChar => {
+                  setActiveChatCharacter(updatedChar);
+                  setCharacters(prev => prev.map(c => (c.id === updatedChar.id ? updatedChar : c)));
+                }}
                 config={config}
                 initialConversationId={activeConversationId || undefined}
                 onBack={() => {

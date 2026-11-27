@@ -4,12 +4,18 @@ on:
   push:
     tags:
       - 'v*'
+      - 'draft-*'
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release tag (e.g. v0.2.4)'
+        description: 'Release tag (e.g. draft-v0.2.4-test or v0.2.4)'
         required: false
-        default: 'v0.2.4'
+        default: 'draft-v0.2.4-test'
+      draft:
+        description: 'Create as unpublished Draft release for testing'
+        type: boolean
+        required: false
+        default: true
 
 permissions:
   contents: write
@@ -79,7 +85,13 @@ jobs:
             FILES="${FALLBACK_OUT}"$'\n'
           fi
 
+          IS_DRAFT="false"
+          if [[ "$TAG" == draft-* ]] || [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.draft }}" == "true" ]]; then
+            IS_DRAFT="true"
+          fi
+
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "is_draft=$IS_DRAFT" >> "$GITHUB_OUTPUT"
           {
             echo "files<<EOF"
             printf "%s" "$FILES"
@@ -90,8 +102,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.apk.outputs.tag }}
+          IS_DRAFT: ${{ steps.apk.outputs.is_draft }}
         run: |
-          RELEASE_IDS=$(gh api "repos/${{ github.repository }}/releases" --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+          if [ "$IS_DRAFT" = "true" ]; then
+            RELEASE_IDS=$(gh api "repos/${{ github.repository }}/releases" --jq ".[] | select(.tag_name == \"$TAG\" and .draft == true) | .id")
+          else
+            RELEASE_IDS=$(gh api "repos/${{ github.repository }}/releases" --jq ".[] | select(.tag_name == \"$TAG\") | .id")
+          fi
           for id in $RELEASE_IDS; do
             echo "Deleting previous release $id for tag $TAG"
             gh api -X DELETE "repos/${{ github.repository }}/releases/$id" || true
@@ -101,7 +118,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.apk.outputs.tag }}
-          name: NekoChat ${{ steps.apk.outputs.tag }}
+          name: ${{ steps.apk.outputs.is_draft == 'true' && format('NekoChat {0} (Draft Test Build)', steps.apk.outputs.tag) || format('NekoChat {0}', steps.apk.outputs.tag) }}
           overwrite_files: true
           body: |
             ## 🐾 NekoChat ${{ steps.apk.outputs.tag }}
@@ -128,6 +145,6 @@ jobs:
               - Fixed native Android/iOS scroll hijacking in `BottomSheetModal`, converted `CommunityCharacterModal` & `CreatorProfileModal` into slide-up sheets, added Smart Notifications & Creator Drops inbox, migrated Image Gen API keys into `expo-secure-store`, enforced `http(s)` URL allowlisting, and verified `85/85` passing unit tests.
           generate_release_notes: true
           files: ${{ steps.apk.outputs.files }}
-          draft: false
+          draft: ${{ steps.apk.outputs.is_draft == 'true' }}
           prerelease: true
 

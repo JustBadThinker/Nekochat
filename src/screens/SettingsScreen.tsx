@@ -26,7 +26,6 @@ import {
   Palette,
   ShieldCheck,
   Cpu,
-  Users,
   Sparkles,
   RefreshCw,
   Check,
@@ -49,7 +48,7 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react-native';
-import { ProviderConfig, AppSettings, Persona } from '../types';
+import { ProviderConfig, AppSettings } from '../types';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
@@ -122,7 +121,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const styles = useMemo(() => createStyles(palette, skin), [palette, skin]);
   // Modal Visibility State
   const [activeModal, setActiveModal] = useState<
-    'api' | 'theming' | 'taste' | 'language' | 'passcode' | 'notifications' | 'vault' | 'personas' | 'tokens' | 'about' | 'voice' | 'image' | 'help' | 'matrix' | null
+    'api' | 'theming' | 'taste' | 'language' | 'passcode' | 'notifications' | 'vault' | 'tokens' | 'about' | 'voice' | 'image' | 'help' | 'matrix' | null
   >(null);
 
   // On-Device Taste & Algorithm State
@@ -231,10 +230,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [copiedVault, setCopiedVault] = useState(false);
   const [vaultNotice, setVaultNotice] = useState<string | null>(null);
 
-  // Personas State
-  const [personas, setPersonas] = useState<Persona[]>([]);
-  const [activePersonaId, setActivePersonaId] = useState<string>('default-user');
-
   // Token Limits & Advanced Sampling State
   const [contextLimit, setContextLimit] = useState(String(config.contextLimit || 8192));
   const [currency, setCurrency] = useState<'IDR' | 'USD'>('IDR');
@@ -256,7 +251,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   useEffect(() => {
     testAllServices();
-    loadPersonas();
     loadProviders();
     loadMediaConfigs();
     loadTasteProfile();
@@ -454,15 +448,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     setHealthStatus(results);
     setHasTested(true);
     setTestingHealth(false);
-  };
-
-  const loadPersonas = async () => {
-    try {
-      const list = await storageService.getPersonas();
-      setPersonas(list);
-      const def = list.find(p => p.isDefault) || list[0];
-      if (def) setActivePersonaId(def.id);
-    } catch {}
   };
 
   // Auto-Test Ping for Custom API (also persists the config so testing immediately activates it)
@@ -985,15 +970,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             },
           },
           {
-            key: 'theming',
-            Icon: Palette,
-            title: t('settings.theming'),
-            subtitle: t('settings.themingSub'),
-            badge: `${skin.badge} • ${selectedTheme.charAt(0).toUpperCase() + selectedTheme.slice(1)}`,
-            accentBadge: false,
-            onPress: () => setActiveModal('theming'),
-          },
-          {
             key: 'taste',
             Icon: Brain,
             title: 'For You & Taste',
@@ -1020,13 +996,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             onPress: () => setActiveModal('vault'),
           },
           {
-            key: 'personas',
-            Icon: Users,
-            title: t('settings.personas'),
-            subtitle: t('settings.personasSub'),
-            badge: `${personas.length} ${t('studio.personas')}`,
+            key: 'theming',
+            Icon: Palette,
+            title: t('settings.theming'),
+            subtitle: t('settings.themingSub'),
+            badge: `${skin.badge} • ${selectedTheme.charAt(0).toUpperCase() + selectedTheme.slice(1)}`,
             accentBadge: false,
-            onPress: () => setActiveModal('personas'),
+            onPress: () => setActiveModal('theming'),
           },
           {
             key: 'tokens',
@@ -1278,9 +1254,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <View style={styles.bentoTwoGrid}>
             {controlItems.map(item => {
               const IconComp = item.Icon;
-              const isFeaturedWide =
-                (isNekoBento && (item.key === 'api' || item.key === 'theming' || item.key === 'taste')) ||
-                (!isNekoBento && item.key === 'taste');
+              const isFeaturedWide = item.key === 'api' || item.key === 'taste';
               if (isFeaturedWide) {
                 return (
                   <TouchableOpacity
@@ -2316,54 +2290,6 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </ScrollView>
       </BottomSheetModal>
 
-      {/* MODAL 4: Persona Studio */}
-      <BottomSheetModal visible={activeModal === 'personas'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleRow}>
-                <Users size={16} color={palette.accent} style={{ marginRight: 6 }} />
-                <Text style={styles.modalTitle}>User Personas & Identity</Text>
-              </View>
-              <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
-                <X size={16} color="#9ca3af" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.modalBody}>
-              {personas.map(p => (
-                <TouchableOpacity
-                  key={p.id}
-                  style={[styles.personaItem, activePersonaId === p.id && styles.personaItemActive]}
-                  onPress={() => {
-                    setActivePersonaId(p.id);
-                    storageService.setDefaultPersona(p.id);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <View style={styles.personaAvatarWrap}>
-                    <Text style={styles.personaAvatarInitial}>{p.name.charAt(0)}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.personaName}>{p.name}</Text>
-                    <Text style={styles.personaDesc} numberOfLines={1}>
-                      {p.description || 'No description provided'}
-                    </Text>
-                  </View>
-                  {activePersonaId === p.id && <Check size={16} color={palette.accent} />}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={styles.saveBtn}
-                onPress={() => setActiveModal(null)}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.saveBtnText}>Done</Text>
-              </TouchableOpacity>
-            </View>
-      </BottomSheetModal>
-
       {/* MODAL 5: Token Limits & Cost */}
       <BottomSheetModal visible={activeModal === 'tokens'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
             <View style={styles.modalHeader}>
@@ -3163,7 +3089,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       <BottomSheetModal
         visible={activeModal === 'notifications'}
         onClose={() => setActiveModal(null)}
-        sheetStyle={{ maxHeight: '86%' }}
+        sheetStyle={styles.modalSheet}
       >
         <View style={styles.modalHeader}>
           <View style={styles.modalTitleRow}>
@@ -3327,7 +3253,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       <BottomSheetModal
         visible={activeModal === 'taste'}
         onClose={() => setActiveModal(null)}
-        sheetStyle={{ maxHeight: '88%' }}
+        sheetStyle={styles.modalSheet}
       >
         <View style={styles.modalHeader}>
           <View style={styles.modalTitleRow}>
@@ -4110,43 +4036,6 @@ const createStyles = (palette: ThemePalette, skin: UiSkinTokens) => {
     color: palette.accent,
     textAlign: 'center',
     marginTop: 10,
-  },
-  personaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: subtleSurfaceBg,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    padding: 10,
-    marginBottom: 8,
-  },
-  personaItemActive: {
-    borderColor: palette.accent,
-  },
-  personaAvatarWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  personaAvatarInitial: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: palette.accent,
-  },
-  personaName: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  personaDesc: {
-    fontSize: 10,
-    color: '#9ca3af',
-    marginTop: 1,
   },
   tokenPillRow: {
     flexDirection: 'row',

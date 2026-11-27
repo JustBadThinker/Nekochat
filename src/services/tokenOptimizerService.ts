@@ -334,12 +334,14 @@ export class TokenOptimizerService {
     customRules?: string;
   }): { systemPrompt: string; messages: ChatMessage[] } {
     const { character, scenario, persona, lorebooks, conversation, customRules } = options;
-    const chatCharName = extractCleanCharacterName(
-      character.name,
-      character.subtitle || character.tagline,
-      character.firstMessage,
-      character.personality
-    );
+    const chatCharName =
+      character.customChatName?.trim() ||
+      extractCleanCharacterName(
+        character.chatName || character.name,
+        character.subtitle || character.name || character.tagline,
+        character.firstMessage,
+        character.personality || character.description
+      );
     const userName = persona?.name || 'User';
 
     const sections: string[] = [];
@@ -455,12 +457,14 @@ DIRECTIVES FOR THIS RESPONSE:
     }
 
     const { character, scenario, persona, lorebooks, conversation, customRules } = options;
-    const chatCharName = extractCleanCharacterName(
-      character.name,
-      character.subtitle || character.tagline,
-      character.firstMessage,
-      character.personality
-    );
+    const chatCharName =
+      character.customChatName?.trim() ||
+      extractCleanCharacterName(
+        character.chatName || character.name,
+        character.subtitle || character.name || character.tagline,
+        character.firstMessage,
+        character.personality || character.description
+      );
     const userName = persona?.name || 'User';
 
     const realUserMsgs = conversation.messages.filter(

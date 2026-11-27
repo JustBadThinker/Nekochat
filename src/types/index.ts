@@ -118,6 +118,7 @@ export interface Character {
   id: string;
   name: string;
   chatName?: string; // Actual RP character name (distinct from card title)
+  customChatName?: string; // User-overridden RP display/prompt name (takes precedence over auto-extracted name)
   subtitle?: string; // Character subtitle / secondary identity title
   tagline: string; // e.g. "The Cold CEO", "Playful Childhood Friend"
   description: string;

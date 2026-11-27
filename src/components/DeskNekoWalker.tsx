@@ -7,6 +7,7 @@ import {
   Animated,
   Easing,
   PanResponder,
+  Platform,
 } from 'react-native';
 import { useTheme } from '../theme/ThemeContext';
 import { ThemePalette } from '../theme/colors';
@@ -38,6 +39,7 @@ interface DeskNekoWalkerProps {
   isTypingUser: boolean;
   isAiWaiting: boolean;
   onPress: () => void;
+  onGrabChange?: (grabbed: boolean) => void;
 }
 
 const FRAME_SIZE = 44;
@@ -51,6 +53,7 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
   isTypingUser,
   isAiWaiting,
   onPress,
+  onGrabChange,
 }) => {
   const { palette } = useTheme();
   const styles = useMemo(() => createStyles(palette), [palette]);
@@ -67,15 +70,19 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
   maxWalkXRef.current = maxWalkX;
   const onPressRef = useRef(onPress);
   onPressRef.current = onPress;
+  const onGrabChangeRef = useRef(onGrabChange);
+  onGrabChangeRef.current = onGrabChange;
 
   const posX = useRef(new Animated.Value(28)).current;
   const currentXRef = useRef(28);
   const currentYRef = useRef(0);
   const bounceY = useRef(new Animated.Value(0)).current;
   const walkAnimRef = useRef<Animated.CompositeAnimation | null>(null);
+  const landingAnimRef = useRef<Animated.CompositeAnimation | null>(null);
   const throwRafRef = useRef<number | null>(null);
   const isGrabbedRef = useRef(false);
   const dragStartRef = useRef({ x: 28, y: 0 });
+  const recentMovesRef = useRef<{ dx: number; dy: number; t: number }[]>([]);
 
   // Autonomous behavior loop when neither typing nor waiting
   useEffect(() => {
@@ -89,6 +96,9 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
       posX.removeListener(idX);
       bounceY.removeListener(idY);
       if (throwRafRef.current !== null) cancelAnimationFrame(throwRafRef.current);
+      walkAnimRef.current?.stop();
+      landingAnimRef.current?.stop();
+      onGrabChangeRef.current?.(false);
     };
   }, [posX, bounceY]);
 
@@ -99,17 +109,37 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
       onMoveShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponderCapture: () => true,
       onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
       onPanResponderGrant: () => {
         if (throwRafRef.current !== null) {
           cancelAnimationFrame(throwRafRef.current);
           throwRafRef.current = null;
         }
         walkAnimRef.current?.stop();
-        isGrabbedRef.current = true;
+        walkAnimRef.current = null;
+        landingAnimRef.current?.stop();
+        landingAnimRef.current = null;
+        recentMovesRef.current = [];
+        posX.stopAnimation(v => {
+          currentXRef.current = v;
+          dragStartRef.current.x = v;
+        });
+        bounceY.stopAnimation(v => {
+          currentYRef.current = v;
+          dragStartRef.current.y = v;
+        });
         dragStartRef.current = { x: currentXRef.current, y: currentYRef.current };
+        isGrabbedRef.current = true;
+        onGrabChangeRef.current?.(true);
         setAction('grabbed');
       },
       onPanResponderMove: (_evt, gesture) => {
+        const now = Date.now();
+        recentMovesRef.current.push({ dx: gesture.dx, dy: gesture.dy, t: now });
+        recentMovesRef.current = recentMovesRef.current
+          .filter(m => now - m.t <= 120)
+          .slice(-6);
+
         const minX = 8;
         const maxX = maxWalkXRef.current;
         const nextX = Math.max(minX, Math.min(maxX, dragStartRef.current.x + gesture.dx));
@@ -127,8 +157,9 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
       },
       onPanResponderRelease: (_evt, gesture) => {
         isGrabbedRef.current = false;
+        onGrabChangeRef.current?.(false);
         // Short tap without dragging -> open the mini-game card
-        if (Math.abs(gesture.dx) < 6 && Math.abs(gesture.dy) < 6) {
+        if (Math.abs(gesture.dx) < 6 && Math.abs(gesture.dy) < 6 && Math.abs(currentYRef.current) < 6) {
           bounceY.setValue(0);
           setAction('idle');
           onPressRef.current();
@@ -139,8 +170,20 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
         setAction('thrown');
         let x = currentXRef.current;
         let y = currentYRef.current;
-        let vx = Math.max(-20, Math.min(20, gesture.vx * 16));
-        let vy = Math.max(-24, Math.min(14, gesture.vy * 18));
+        let rawVx = gesture.vx;
+        let rawVy = gesture.vy;
+        if (Math.abs(rawVx) < 0.05 && Math.abs(rawVy) < 0.05 && recentMovesRef.current.length >= 2) {
+          const oldest = recentMovesRef.current[0];
+          const newest = recentMovesRef.current[recentMovesRef.current.length - 1];
+          const dt = Math.max(16, newest.t - oldest.t);
+          rawVx = (newest.dx - oldest.dx) / dt;
+          rawVy = (newest.dy - oldest.dy) / dt;
+        }
+        let vx = Math.max(-20, Math.min(20, rawVx * 16));
+        let vy = Math.max(-24, Math.min(14, rawVy * 18));
+        if (y >= -4 && vy >= -1) {
+          vy = -Math.max(7, Math.min(16, Math.hypot(gesture.dx, gesture.dy) * 0.14));
+        }
         const gravity = 0.85;
         const minX = 8;
         const maxX = maxWalkXRef.current;
@@ -185,12 +228,17 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
       },
       onPanResponderTerminate: () => {
         isGrabbedRef.current = false;
+        onGrabChangeRef.current?.(false);
         Animated.spring(bounceY, {
           toValue: 0,
           friction: 5,
           tension: 160,
           useNativeDriver: true,
-        }).start(() => setAction('landing'));
+        }).start(({ finished }) => {
+          if (finished && !isGrabbedRef.current) {
+            setAction('landing');
+          }
+        });
       },
     })
   ).current;
@@ -442,19 +490,28 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
           setFrame({ row: 8, col: 3 });
           setPillowState({ x: landX, col: 1, poofing: true });
 
-          Animated.parallel([
+          const anim = Animated.parallel([
             Animated.sequence([
               Animated.timing(bounceY, { toValue: -18, duration: 150, easing: Easing.out(Easing.quad), useNativeDriver: true }),
               Animated.timing(bounceY, { toValue: 0, duration: 170, easing: Easing.in(Easing.quad), useNativeDriver: true }),
             ]),
             Animated.timing(posX, { toValue: landX + jumpOffset, duration: 320, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-          ]).start(() => {
-            setAction('idle');
+          ]);
+          landingAnimRef.current = anim;
+          anim.start(({ finished }) => {
+            if (landingAnimRef.current === anim) {
+              landingAnimRef.current = null;
+            }
+            if (finished && !isGrabbedRef.current) {
+              setAction('idle');
+            }
           });
         }
       }, 150);
       return () => {
         clearInterval(iv);
+        landingAnimRef.current?.stop();
+        landingAnimRef.current = null;
       };
     }
 
@@ -525,6 +582,13 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
         {...panResponder.panHandlers}
         style={[
           styles.petAnchor,
+          Platform.OS === 'web'
+            ? ({
+                touchAction: 'none',
+                userSelect: 'none',
+                cursor: action === 'grabbed' ? 'grabbing' : 'grab',
+              } as any)
+            : null,
           {
             transform: [
               { translateX: posX },
@@ -567,11 +631,13 @@ export const DeskNekoWalker: React.FC<DeskNekoWalkerProps> = ({
 const createStyles = (palette: ThemePalette) => StyleSheet.create({
   rail: {
     position: 'absolute',
-    top: -39,
+    top: 0,
     left: 0,
     right: 0,
     height: FRAME_SIZE,
-    zIndex: 20,
+    zIndex: 30,
+    elevation: 30,
+    overflow: 'visible',
   },
   petAnchor: {
     position: 'absolute',
@@ -581,6 +647,11 @@ const createStyles = (palette: ThemePalette) => StyleSheet.create({
   touchTarget: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingTop: 6,
+    paddingBottom: 2,
+    marginLeft: -6,
+    marginTop: -6,
   },
   spriteViewport: {
     width: FRAME_SIZE,

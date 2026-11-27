@@ -55,6 +55,10 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
   const isAnimatingOutRef = useRef(false);
   const sheetRef = useRef<any>(null);
   const sheetTopYRef = useRef<number | null>(null);
+  const overlayHeightRef = useRef<number>(0);
+  const sheetHeightRef = useRef<number>(0);
+  const insetsTopRef = useRef<number>(insets.top);
+  insetsTopRef.current = insets.top;
 
   const measureSheetTop = () => {
     sheetRef.current?.measureInWindow?.((_x: number, y: number) => {
@@ -161,10 +165,22 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
         if (gesture.dy <= 12 || Math.abs(gesture.dy) <= Math.abs(gesture.dx) * 1.4) {
           return false;
         }
-        const sheetTopY = sheetTopYRef.current;
-        if (sheetTopY === null) return false;
+        const measuredTop = sheetTopYRef.current;
+        const layoutTop =
+          overlayHeightRef.current > 0 && sheetHeightRef.current > 0
+            ? Math.max(0, overlayHeightRef.current - sheetHeightRef.current)
+            : null;
+        const minTop =
+          measuredTop !== null && layoutTop !== null
+            ? Math.min(measuredTop, layoutTop)
+            : (measuredTop ?? layoutTop);
+        const maxTop =
+          measuredTop !== null && layoutTop !== null
+            ? Math.max(measuredTop, layoutTop)
+            : (measuredTop ?? layoutTop);
+        if (minTop === null || maxTop === null) return false;
         const startPageY = evt.nativeEvent.pageY - gesture.dy;
-        return startPageY >= sheetTopY - 8 && startPageY <= sheetTopY + 76;
+        return startPageY >= minTop - Math.max(12, insetsTopRef.current) && startPageY <= maxTop + 96;
       },
       onPanResponderTerminationRequest: () => false,
       onPanResponderMove: (_, gesture) => {
@@ -195,14 +211,30 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
     })
   );
 
+  const isFloatingIosSheet = skin.id === 'ios' && !fullScreen;
+  const safeBottomPad =
+    keyboardHeight > 0
+      ? 14
+      : isFloatingIosSheet
+        ? 18
+        : Platform.OS === 'android'
+          ? Math.max(insets.bottom + 18, 44)
+          : Math.max(insets.bottom + 12, 24);
+
   return (
     <Modal
       visible={internalVisible}
       transparent
+      statusBarTranslucent
       animationType="none"
       onRequestClose={animateClose}
     >
-      <Animated.View style={[styles.overlay, { opacity: backdropOpacity }]}>
+      <Animated.View
+        style={[styles.overlay, { opacity: backdropOpacity }]}
+        onLayout={e => {
+          overlayHeightRef.current = e.nativeEvent.layout.height;
+        }}
+      >
         {/* Progressive Dark Gradient Backdrop */}
         <LinearGradient
           pointerEvents="none"
@@ -221,7 +253,10 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
         {/* Sheet Card (supports swiping down only from top drag bar / header zone) */}
         <Animated.View
           ref={sheetRef}
-          onLayout={measureSheetTop}
+          onLayout={e => {
+            sheetHeightRef.current = e.nativeEvent.layout.height;
+            measureSheetTop();
+          }}
           {...sheetPanResponder.panHandlers}
           style={[
             styles.sheet,
@@ -269,19 +304,20 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
                       : null),
                   }
                 : null),
-              marginBottom:
-                skin.id === 'ios' && !fullScreen
-                  ? keyboardHeight > 0
-                    ? keyboardHeight + 6
+              marginBottom: isFloatingIosSheet
+                ? keyboardHeight > 0
+                  ? keyboardHeight + 6
+                  : Platform.OS === 'android'
+                    ? Math.max(insets.bottom + 10, 32)
                     : Math.max(10, insets.bottom)
-                  : keyboardHeight,
+                : keyboardHeight,
               maxHeight: Math.max(240, windowHeight - keyboardHeight - insets.top - (fullScreen ? 8 : 28)),
-              paddingBottom: keyboardHeight > 0 ? 14 : Math.max(24, insets.bottom + 12),
             },
             fullScreen && {
               height: Math.max(280, windowHeight - keyboardHeight - insets.top - 8),
             },
             sheetStyle,
+            { paddingBottom: safeBottomPad },
             { transform: [{ translateY }] },
           ]}
         >
@@ -324,7 +360,15 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
           )}
           {/* Swipe-Down Drag Handle Zone */}
           {showDragHandle && (
-            <View style={styles.dragZone} {...panResponder.panHandlers}>
+            <View
+              style={[
+                styles.dragZone,
+                Platform.OS === 'web'
+                  ? ({ touchAction: 'none', cursor: 'grab' } as any)
+                  : null,
+              ]}
+              {...panResponder.panHandlers}
+            >
               <View
                 style={[
                   styles.dragPill,
@@ -370,8 +414,8 @@ const styles = StyleSheet.create({
   },
   dragZone: {
     width: '100%',
-    paddingTop: 12,
-    paddingBottom: 10,
+    paddingTop: 14,
+    paddingBottom: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },

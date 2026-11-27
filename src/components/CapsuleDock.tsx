@@ -7,7 +7,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
+import { SafeBlurView } from './SafeBlurView';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MessageSquare, Compass, User, Settings } from 'lucide-react-native';
 import { useTheme } from '../theme/ThemeContext';
@@ -245,7 +245,7 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({
               {
                 borderRadius: 34,
                 backgroundColor:
-                  Platform.OS === 'web' ? 'rgba(18, 20, 30, 0.38)' : 'rgba(18, 20, 30, 0.28)',
+                  Platform.OS === 'web' ? 'rgba(18, 20, 30, 0.38)' : 'rgba(18, 20, 30, 0.14)',
                 borderWidth: 1,
                 borderColor: 'rgba(255, 255, 255, 0.28)',
                 borderTopColor: 'rgba(255, 255, 255, 0.62)',
@@ -259,10 +259,10 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({
             ]}
           >
             {Platform.OS !== 'web' && (
-              <BlurView
+              <SafeBlurView
                 intensity={Platform.OS === 'android' ? 75 : 60}
                 blurReductionFactor={3}
-                tint="dark"
+                tint="systemUltraThinMaterialDark"
                 blurMethod="dimezisBlurViewSdk31Plus"
                 blurTarget={blurTargetRef}
                 style={[StyleSheet.absoluteFill, { borderRadius: 34 }]}
@@ -359,14 +359,29 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({
             borderWidth: skin.dockBorderWidth,
           },
           skin.id === 'bento' && {
-            backgroundColor: palette.bgSurface,
+            backgroundColor:
+              Platform.OS === 'web' ? 'rgba(18, 22, 34, 0.56)' : 'rgba(18, 22, 34, 0.22)',
             borderWidth: 1.25,
             borderColor: `rgba(${palette.accentRgb}, 0.30)`,
             borderBottomWidth: 3.5,
             borderBottomColor: 'rgba(0, 0, 0, 0.65)',
+            ...(Platform.OS === 'web'
+              ? ({ backdropFilter: 'blur(22px) saturate(170%)' } as any)
+              : null),
           },
         ]}
       >
+        {skin.id === 'bento' && Platform.OS !== 'web' && (
+          <SafeBlurView
+            intensity={Platform.OS === 'android' ? 75 : 55}
+            blurReductionFactor={3}
+            tint="systemUltraThinMaterialDark"
+            blurMethod="dimezisBlurViewSdk31Plus"
+            blurTarget={blurTargetRef}
+            style={[StyleSheet.absoluteFill, { borderRadius: skin.dockRadius }]}
+            pointerEvents="none"
+          />
+        )}
         {/* Frosted Glass Diagonal Sheen & Rim Highlight */}
         <LinearGradient
           pointerEvents="none"
