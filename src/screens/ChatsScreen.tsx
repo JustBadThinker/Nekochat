@@ -13,7 +13,6 @@ import {
   FlatList,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
   Image,
   LayoutAnimation,
   Platform,
@@ -53,7 +52,7 @@ import { NekoLogoSvg } from '../components/NekoLogoSvg';
 import { StoryTray } from '../components/StoryTray';
 import { BentoChatCard } from '../components/BentoChatCard';
 import { StoryViewerModal } from '../components/StoryViewerModal';
-import { BottomSheetModal } from '../components/BottomSheetModal';
+import { BottomSheetModal, BottomSheetScrollView } from '../components/BottomSheetModal';
 import { AnimatedChevron, AnimatedEnterRow, AnimatedTabTransition } from '../components/SmoothTransition';
 import { storageService } from '../services/storageService';
 import { GLASS } from '../theme/glassTheme';
@@ -1080,7 +1079,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
 
                 {/* Sessions List */}
                 <Text style={styles.sessionsListLabel}>EXISTING SCENARIOS & CHATS</Text>
-                <ScrollView style={styles.sessionsScroll} showsVerticalScrollIndicator={false}>
+                <BottomSheetScrollView style={styles.sessionsScroll} showsVerticalScrollIndicator={false}>
                   {activeCharSessions.length === 0 ? (
                     <View style={styles.emptySessionsBox}>
                       <Text style={styles.emptySessionsTitle}>No previous sessions yet</Text>
@@ -1140,7 +1139,7 @@ export const ChatsScreen: React.FC<ChatsScreenProps> = ({
                       );
                     })
                   )}
-                </ScrollView>
+                </BottomSheetScrollView>
               </>
             )}
       </BottomSheetModal>

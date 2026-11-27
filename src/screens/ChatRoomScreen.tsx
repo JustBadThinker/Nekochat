@@ -44,7 +44,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SmoothSlider } from '../components/SmoothSlider';
 import { ModelDropdown } from '../components/ModelDropdown';
 import { RichHtmlRenderer } from '../components/RichHtmlRenderer';
-import { BottomSheetModal } from '../components/BottomSheetModal';
+import { BottomSheetModal, BottomSheetScrollView, BottomSheetGestureLock } from '../components/BottomSheetModal';
 import { NekoSwitch } from '../components/NekoSwitch';
 import { AnimatedChevron, AnimatedCollapsible } from '../components/SmoothTransition';
 import { GLASS } from '../theme/glassTheme';
@@ -4048,7 +4048,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={{ maxHeight: 420 }} keyboardShouldPersistTaps="handled">
+        <BottomSheetScrollView style={{ maxHeight: 420 }} keyboardShouldPersistTaps="handled">
           {/* Scene Location & Time */}
           <View style={{ paddingHorizontal: 16, marginBottom: 14 }}>
             <Text style={{ color: '#94a3b8', fontSize: 11.5, fontWeight: '700', marginBottom: 6 }}>
@@ -4260,23 +4260,25 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               placeholder="Character Name (e.g. Clara)"
               placeholderTextColor="#64748b"
             />
-            <TextInput
-              style={{
-                backgroundColor: 'rgba(255,255,255,0.06)',
-                borderRadius: skin.inputRadius,
-                paddingHorizontal: 12,
-                paddingVertical: 9,
-                color: '#FFFFFF',
-                fontSize: 13.5,
-                minHeight: 68,
-                textAlignVertical: 'top',
-              }}
-              multiline
-              value={castDraftCharacteristics}
-              onChangeText={setCastDraftCharacteristics}
-              placeholder="Characteristics (e.g. Kind highschool friend from the library, older than me, helps with work...)"
-              placeholderTextColor="#64748b"
-            />
+            <BottomSheetGestureLock>
+              <TextInput
+                style={{
+                  backgroundColor: 'rgba(255,255,255,0.06)',
+                  borderRadius: skin.inputRadius,
+                  paddingHorizontal: 12,
+                  paddingVertical: 9,
+                  color: '#FFFFFF',
+                  fontSize: 13.5,
+                  minHeight: 68,
+                  textAlignVertical: 'top',
+                }}
+                multiline
+                value={castDraftCharacteristics}
+                onChangeText={setCastDraftCharacteristics}
+                placeholder="Characteristics (e.g. Kind highschool friend from the library, older than me, helps with work...)"
+                placeholderTextColor="#64748b"
+              />
+            </BottomSheetGestureLock>
             <TouchableOpacity
               onPress={handleSaveCastDraft}
               activeOpacity={0.85}
@@ -4293,7 +4295,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               </Text>
             </TouchableOpacity>
           </View>
-        </ScrollView>
+        </BottomSheetScrollView>
       </BottomSheetModal>
 
       {/* ================= MODAL: MULTI-SESSION MANAGER ================= */}
@@ -4311,7 +4313,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={{ maxHeight: 340, marginVertical: 12 }}>
+        <BottomSheetScrollView style={{ maxHeight: 340, marginVertical: 12 }}>
           {conversations.map((conv, idx) => {
             const isActive = conv.id === activeConversationId;
             return (
@@ -4356,7 +4358,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               </View>
             );
           })}
-        </ScrollView>
+        </BottomSheetScrollView>
 
         <TouchableOpacity
           style={styles.newSessionBtn}
@@ -4382,7 +4384,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={{ maxHeight: 360, marginVertical: 12 }}>
+        <BottomSheetScrollView style={{ maxHeight: 360, marginVertical: 12 }}>
           {(character.scenarios || []).map(scen => {
             const isCurrent = scen.id === activeScenarioId;
             return (
@@ -4403,7 +4405,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               </TouchableOpacity>
             );
           })}
-        </ScrollView>
+        </BottomSheetScrollView>
       </BottomSheetModal>
 
       {/* ================= MODAL: SCENE DEPICTION ART ================= */}
@@ -4421,7 +4423,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={{ maxHeight: 440, marginVertical: 10 }}>
+        <BottomSheetScrollView style={{ maxHeight: 440, marginVertical: 10 }}>
           <Text style={styles.imageModalLabel}>Style Preset</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
             {IMAGE_STYLE_OPTIONS.map(opt => {
@@ -4450,14 +4452,16 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           </ScrollView>
 
           <Text style={styles.imageModalLabel}>Visual Scene Prompt</Text>
-          <TextInput
-            style={[styles.textInput, { minHeight: 70, textAlignVertical: 'top', marginBottom: 12 }]}
-            value={imagePrompt}
-            onChangeText={setImagePrompt}
-            multiline
-            placeholder="Describe scene visual details..."
-            placeholderTextColor={colors.textMuted}
-          />
+          <BottomSheetGestureLock>
+            <TextInput
+              style={[styles.textInput, { minHeight: 70, textAlignVertical: 'top', marginBottom: 12 }]}
+              value={imagePrompt}
+              onChangeText={setImagePrompt}
+              multiline
+              placeholder="Describe scene visual details..."
+              placeholderTextColor={colors.textMuted}
+            />
+          </BottomSheetGestureLock>
 
           {imageError && (
             <View style={styles.imageErrorBox}>
@@ -4506,7 +4510,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               </TouchableOpacity>
             )}
           </View>
-        </ScrollView>
+        </BottomSheetScrollView>
       </BottomSheetModal>
 
       {/* ================= MODAL: QUICK PERSONA SWITCHER ================= */}
@@ -4524,7 +4528,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        <ScrollView
+        <BottomSheetScrollView
           style={{ maxHeight: 420 }}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.personaSwitchGrid}
@@ -4607,7 +4611,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               );
             });
           })()}
-        </ScrollView>
+        </BottomSheetScrollView>
       </BottomSheetModal>
 
       {/* ================= MODAL: FULL CHARACTER PROFILE CARD (Header Name Tap) ================= */}
@@ -4651,7 +4655,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           </View>
         </View>
 
-        <ScrollView style={styles.charProfileBodyScroll} showsVerticalScrollIndicator={false}>
+        <BottomSheetScrollView style={styles.charProfileBodyScroll} showsVerticalScrollIndicator={false}>
           <Text style={styles.charProfileName}>{character.name}</Text>
           <Text style={styles.charProfileTagline}>{character.subtitle || character.tagline || 'Roleplay Companion'}</Text>
           <Text style={styles.charProfileCreator}>Created by @{character.creator || 'community'}</Text>
@@ -4782,7 +4786,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               </View>
             </>
           ) : null}
-        </ScrollView>
+        </BottomSheetScrollView>
       </BottomSheetModal>
 
       {/* ================= MODAL: AVATAR / PROFILE PHOTO LIGHTBOX ================= */}
@@ -4864,7 +4868,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
           ))}
         </View>
 
-        <ScrollView
+        <BottomSheetScrollView
           style={{ flex: 1 }}
           contentContainerStyle={{ paddingBottom: 16 }}
           keyboardShouldPersistTaps="handled"
@@ -4918,27 +4922,29 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                     );
                   })()}
 
-                  <TextInput
-                    style={[
-                      styles.personaPersonalityInput,
-                      {
-                        minHeight: 165,
-                        fontSize: 12.5,
-                        lineHeight: 18,
-                        marginBottom: 6,
-                      },
-                    ]}
-                    value={chatMemory}
-                    onChangeText={text => {
-                      setChatMemory(text);
-                      persistSessionMemory(activeConversationId, text);
-                    }}
-                    placeholder="Write or auto-generate key plot points, character states, and relationship notes..."
-                    placeholderTextColor="rgba(255, 255, 255, 0.35)"
-                    multiline
-                    numberOfLines={8}
-                    textAlignVertical="top"
-                  />
+                  <BottomSheetGestureLock>
+                    <TextInput
+                      style={[
+                        styles.personaPersonalityInput,
+                        {
+                          minHeight: 165,
+                          fontSize: 12.5,
+                          lineHeight: 18,
+                          marginBottom: 6,
+                        },
+                      ]}
+                      value={chatMemory}
+                      onChangeText={text => {
+                        setChatMemory(text);
+                        persistSessionMemory(activeConversationId, text);
+                      }}
+                      placeholder="Write or auto-generate key plot points, character states, and relationship notes..."
+                      placeholderTextColor="rgba(255, 255, 255, 0.35)"
+                      multiline
+                      numberOfLines={8}
+                      textAlignVertical="top"
+                    />
+                  </BottomSheetGestureLock>
 
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                     <Text style={{ color: '#64748b', fontSize: 11.5 }}>
@@ -5255,36 +5261,38 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                               marginBottom: 10,
                             }}
                           >
-                            <ScrollView
-                              nestedScrollEnabled
-                              showsVerticalScrollIndicator
-                              style={{ maxHeight: 122 }}
-                            >
-                              <Text style={{ fontSize: 11.5, lineHeight: 17 }}>
-                                {preview.segments.map((seg, segIdx) => (
-                                  <Text
-                                    key={segIdx}
-                                    style={
-                                      seg.state === 'stripped'
-                                        ? {
-                                          color: 'rgba(248, 113, 113, 0.5)',
-                                          textDecorationLine: 'line-through',
-                                        }
-                                        : seg.state === 'compressed'
+                            <BottomSheetGestureLock>
+                              <ScrollView
+                                nestedScrollEnabled
+                                showsVerticalScrollIndicator
+                                style={{ maxHeight: 122 }}
+                              >
+                                <Text style={{ fontSize: 11.5, lineHeight: 17 }}>
+                                  {preview.segments.map((seg, segIdx) => (
+                                    <Text
+                                      key={segIdx}
+                                      style={
+                                        seg.state === 'stripped'
                                           ? {
-                                            color: 'rgba(251, 191, 36, 0.85)',
-                                            fontStyle: 'italic',
+                                            color: 'rgba(248, 113, 113, 0.5)',
+                                            textDecorationLine: 'line-through',
                                           }
-                                          : {
-                                            color: '#e2e8f0',
-                                          }
-                                    }
-                                  >
-                                    {seg.text}
-                                  </Text>
-                                ))}
-                              </Text>
-                            </ScrollView>
+                                          : seg.state === 'compressed'
+                                            ? {
+                                              color: 'rgba(251, 191, 36, 0.85)',
+                                              fontStyle: 'italic',
+                                            }
+                                            : {
+                                              color: '#e2e8f0',
+                                            }
+                                      }
+                                    >
+                                      {seg.text}
+                                    </Text>
+                                  ))}
+                                </Text>
+                              </ScrollView>
+                            </BottomSheetGestureLock>
                             <View style={{ flexDirection: 'row', gap: 12, marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' }}>
                               <Text style={{ color: '#cbd5e1', fontSize: 10 }}>● Kept</Text>
                               <Text style={{ color: 'rgba(248, 113, 113, 0.78)', fontSize: 10, textDecorationLine: 'line-through' }}>● Stripped</Text>
@@ -5804,15 +5812,17 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                     />
 
                     <Text style={{ color: '#e2e8f0', fontSize: 12.5, fontWeight: '600', marginBottom: 6 }}>Custom prompt</Text>
-                    <TextInput
-                      style={[styles.personaPersonalityInput, { minHeight: 150, marginBottom: 10 }]}
-                      value={newPresetBody}
-                      onChangeText={setNewPresetBody}
-                      placeholder="Write the instructions the model should follow..."
-                      placeholderTextColor="rgba(255,255,255,0.35)"
-                      multiline
-                      textAlignVertical="top"
-                    />
+                    <BottomSheetGestureLock>
+                      <TextInput
+                        style={[styles.personaPersonalityInput, { minHeight: 150, marginBottom: 10 }]}
+                        value={newPresetBody}
+                        onChangeText={setNewPresetBody}
+                        placeholder="Write the instructions the model should follow..."
+                        placeholderTextColor="rgba(255,255,255,0.35)"
+                        multiline
+                        textAlignVertical="top"
+                      />
+                    </BottomSheetGestureLock>
 
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                       <Text style={{ color: '#64748b', fontSize: 11.5 }}>
@@ -5978,18 +5988,20 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                       <View style={[styles.settingsHairline, { marginBottom: 12 }]} />
 
                       <Text style={{ color: '#cbd5e1', fontSize: 12, fontWeight: '600', marginBottom: 6 }}>Prefill</Text>
-                      <TextInput
-                        style={[styles.personaPersonalityInput, { minHeight: 110, marginBottom: 10 }]}
-                        value={prefillText}
-                        onChangeText={txt => {
-                          setPrefillText(txt);
-                          persistChatSettings({ prefillText: txt });
-                        }}
-                        placeholder="Start the assistant's response with..."
-                        placeholderTextColor="rgba(255,255,255,0.35)"
-                        multiline
-                        textAlignVertical="top"
-                      />
+                      <BottomSheetGestureLock>
+                        <TextInput
+                          style={[styles.personaPersonalityInput, { minHeight: 110, marginBottom: 10 }]}
+                          value={prefillText}
+                          onChangeText={txt => {
+                            setPrefillText(txt);
+                            persistChatSettings({ prefillText: txt });
+                          }}
+                          placeholder="Start the assistant's response with..."
+                          placeholderTextColor="rgba(255,255,255,0.35)"
+                          multiline
+                          textAlignVertical="top"
+                        />
+                      </BottomSheetGestureLock>
 
                       <Text style={styles.settingsHelperText}>
                         {"Puts words in the AI's mouth: your text is slipped in as the start of its reply, right after your latest message, and it continues in that voice and format. Applies to every reply while on."}
@@ -6592,7 +6604,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
               </View>
             )}
           </Animated.View>
-        </ScrollView>
+        </BottomSheetScrollView>
 
         <TouchableOpacity
           style={[styles.appearanceDoneBtn, { backgroundColor: palette.accent }]}

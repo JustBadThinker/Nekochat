@@ -220,6 +220,9 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
   const [backdropOpacity] = useState(() => new Animated.Value(0));
   const onCloseRef = useRef(onClose);
   const isClosingRef = useRef(false);
+  const scrollAtTopRef = useRef(true);
+  const touchStartedAtTopRef = useRef(true);
+  const [isSheetDragging, setIsSheetDragging] = useState(false);
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -230,9 +233,15 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
     bioExpandAnim.setValue(0);
     if (visible && cleanHandle) {
       isClosingRef.current = false;
+      scrollAtTopRef.current = true;
+      touchStartedAtTopRef.current = true;
+      setIsSheetDragging(false);
       setInternalVisible(true);
       runSheetOpenAnimation(sheetTranslateY, backdropOpacity, skin.animation);
     } else if (internalVisible && !isClosingRef.current) {
+      scrollAtTopRef.current = true;
+      touchStartedAtTopRef.current = true;
+      setIsSheetDragging(false);
       isClosingRef.current = true;
       runSheetCloseAnimation(sheetTranslateY, backdropOpacity, skin.animation, () => {
         isClosingRef.current = false;
@@ -313,6 +322,52 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
         }
       },
       onPanResponderTerminate: () => {
+        Animated.spring(sheetTranslateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          friction: 8,
+          tension: 120,
+        }).start();
+      },
+    })
+  );
+
+  const [bodySwipePanResponder] = useState(() =>
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponderCapture: () => {
+        touchStartedAtTopRef.current = scrollAtTopRef.current;
+        return false;
+      },
+      onMoveShouldSetPanResponderCapture: (_, gesture) =>
+        touchStartedAtTopRef.current &&
+        scrollAtTopRef.current &&
+        gesture.dy > 12 &&
+        Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.45,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        setIsSheetDragging(true);
+      },
+      onPanResponderMove: (_, gesture) => {
+        if (gesture.dy > 0) {
+          sheetTranslateY.setValue(gesture.dy);
+        }
+      },
+      onPanResponderRelease: (_, gesture) => {
+        setIsSheetDragging(false);
+        if (gesture.dy > 110 || (gesture.dy > 45 && gesture.vy > 0.65)) {
+          animateCloseRef.current();
+        } else {
+          Animated.spring(sheetTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            friction: 8,
+            tension: 120,
+          }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        setIsSheetDragging(false);
         Animated.spring(sheetTranslateY, {
           toValue: 0,
           useNativeDriver: true,
@@ -468,11 +523,19 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
             </View>
           </View>
 
-          <ScrollView
-            style={styles.scroll}
-            contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(36, insets.bottom + 24) }]}
-            showsVerticalScrollIndicator={false}
-          >
+          <View {...bodySwipePanResponder.panHandlers} style={{ flex: 1 }}>
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(36, insets.bottom + 24) }]}
+              bounces={false}
+              overScrollMode="never"
+              scrollEnabled={!isSheetDragging}
+              scrollEventThrottle={16}
+              onScroll={e => {
+                scrollAtTopRef.current = e.nativeEvent.contentOffset.y <= 2;
+              }}
+              showsVerticalScrollIndicator={false}
+            >
             {/* Profile Hero Card (Default NekoChat Theme) */}
             <View
               style={[
@@ -760,6 +823,7 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
               </View>
             )}
           </ScrollView>
+          </View>
         </Animated.View>
       </Animated.View>
     </Modal>

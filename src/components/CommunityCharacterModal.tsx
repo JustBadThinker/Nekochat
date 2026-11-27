@@ -172,6 +172,9 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
   const [backdropOpacity] = useState(() => new Animated.Value(0));
   const onCloseRef = useRef(onClose);
   const isClosingRef = useRef(false);
+  const scrollAtTopRef = useRef(true);
+  const touchStartedAtTopRef = useRef(true);
+  const [isSheetDragging, setIsSheetDragging] = useState(false);
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -180,9 +183,15 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
   useEffect(() => {
     if (visible && character) {
       isClosingRef.current = false;
+      scrollAtTopRef.current = true;
+      touchStartedAtTopRef.current = true;
+      setIsSheetDragging(false);
       setInternalVisible(true);
       runSheetOpenAnimation(sheetTranslateY, backdropOpacity, skin.animation);
     } else if (internalVisible && !isClosingRef.current) {
+      scrollAtTopRef.current = true;
+      touchStartedAtTopRef.current = true;
+      setIsSheetDragging(false);
       isClosingRef.current = true;
       runSheetCloseAnimation(sheetTranslateY, backdropOpacity, skin.animation, () => {
         isClosingRef.current = false;
@@ -190,6 +199,10 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
       });
     }
   }, [visible, character, internalVisible, sheetTranslateY, backdropOpacity, skin.animation]);
+
+  useEffect(() => {
+    scrollAtTopRef.current = true;
+  }, [activeTab]);
 
   const animateClose = (after?: () => void) => {
     if (isClosingRef.current) return;
@@ -264,6 +277,52 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
         }
       },
       onPanResponderTerminate: () => {
+        Animated.spring(sheetTranslateY, {
+          toValue: 0,
+          useNativeDriver: true,
+          friction: 8,
+          tension: 120,
+        }).start();
+      },
+    })
+  );
+
+  const [bodySwipePanResponder] = useState(() =>
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onStartShouldSetPanResponderCapture: () => {
+        touchStartedAtTopRef.current = scrollAtTopRef.current;
+        return false;
+      },
+      onMoveShouldSetPanResponderCapture: (_, gesture) =>
+        touchStartedAtTopRef.current &&
+        scrollAtTopRef.current &&
+        gesture.dy > 12 &&
+        Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.45,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        setIsSheetDragging(true);
+      },
+      onPanResponderMove: (_, gesture) => {
+        if (gesture.dy > 0) {
+          sheetTranslateY.setValue(gesture.dy);
+        }
+      },
+      onPanResponderRelease: (_, gesture) => {
+        setIsSheetDragging(false);
+        if (gesture.dy > 110 || (gesture.dy > 45 && gesture.vy > 0.65)) {
+          animateCloseRef.current();
+        } else {
+          Animated.spring(sheetTranslateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            friction: 8,
+            tension: 120,
+          }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        setIsSheetDragging(false);
         Animated.spring(sheetTranslateY, {
           toValue: 0,
           useNativeDriver: true,
@@ -634,14 +693,21 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* 3. SCROLLABLE TAB CONTENT AREA (Matches Gambar 3)                   */}
           {/* ══════════════════════════════════════════════════════════════════ */}
-          <ScrollView
-            style={styles.modalContent}
-            contentContainerStyle={styles.modalContentInner}
-            nestedScrollEnabled
-            keyboardShouldPersistTaps="handled"
-            overScrollMode="always"
-            showsVerticalScrollIndicator
-          >
+          <View {...bodySwipePanResponder.panHandlers} style={{ flex: 1 }}>
+            <ScrollView
+              style={styles.modalContent}
+              contentContainerStyle={styles.modalContentInner}
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
+              bounces={false}
+              overScrollMode="never"
+              scrollEnabled={!isSheetDragging}
+              scrollEventThrottle={16}
+              onScroll={e => {
+                scrollAtTopRef.current = e.nativeEvent.contentOffset.y <= 2;
+              }}
+              showsVerticalScrollIndicator
+            >
             <Animated.View style={{ opacity: tabFadeAnim }}>
               {activeTab === 'overview' && (
                 <View style={styles.overviewSection}>
@@ -779,6 +845,7 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
               })()}
             </Animated.View>
           </ScrollView>
+          </View>
 
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* 4. STICKY BOTTOM ACTION FOOTER (Matches Gambar 3)                   */}

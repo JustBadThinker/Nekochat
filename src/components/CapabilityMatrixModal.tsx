@@ -9,14 +9,13 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ScrollView,
   ActivityIndicator,
   StyleSheet,
   Platform,
 } from 'react-native';
 import { X, ShieldCheck, Play, RotateCcw } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BottomSheetModal } from './BottomSheetModal';
+import { BottomSheetModal, BottomSheetScrollView } from './BottomSheetModal';
 import { useTheme } from '../theme/ThemeContext';
 import type { ProviderConfig } from '../types';
 import { normalizeEndpointIdentity } from '../services/promptBudget';
@@ -186,7 +185,7 @@ export const CapabilityMatrixModal: React.FC<CapabilityMatrixModalProps> = ({
         Tap ↻ to run a single probe · Long-press a badge to set manually
       </Text>
 
-      <ScrollView
+      <BottomSheetScrollView
         style={{ flex: 1 }}
         nestedScrollEnabled
         contentContainerStyle={{ padding: 14, gap: 8 }}
@@ -237,7 +236,7 @@ export const CapabilityMatrixModal: React.FC<CapabilityMatrixModalProps> = ({
             </View>
           );
         })}
-      </ScrollView>
+      </BottomSheetScrollView>
 
       {/* Opt-In Consent + Run Buttons */}
       <View style={[styles.footer, { paddingBottom: Math.max(16, insets.bottom + 12) }]}>

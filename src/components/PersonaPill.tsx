@@ -10,13 +10,69 @@ import { Persona } from '../types';
 import { colors } from '../theme/colors';
 import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
-import { BottomSheetModal } from './BottomSheetModal';
+import { BottomSheetModal, useBottomSheetGesture } from './BottomSheetModal';
 
 interface PersonaPillProps {
   personas: Persona[];
   activePersona: Persona;
   onSelectPersona: (persona: Persona) => void;
 }
+
+const PersonaListSheetContent: React.FC<{
+  personas: Persona[];
+  activePersona: Persona;
+  accentColor: string;
+  accentRgb: string;
+  onSelectPersona: (persona: Persona) => void;
+  onClose: () => void;
+}> = ({ personas, activePersona, accentColor, accentRgb, onSelectPersona, onClose }) => {
+  const gestureCtx = useBottomSheetGesture();
+  return (
+    <>
+      <Text style={styles.modalTitle}>Switch Persona</Text>
+      <FlatList
+        data={personas}
+        keyExtractor={item => item.id}
+        bounces={false}
+        overScrollMode="never"
+        scrollEnabled={!gestureCtx?.isSheetDragging}
+        scrollEventThrottle={16}
+        onScroll={e => {
+          gestureCtx?.setScrollAtTop(e.nativeEvent.contentOffset.y <= 2);
+        }}
+        renderItem={({ item }) => {
+          const isSelected = item.id === activePersona.id;
+          return (
+            <TouchableOpacity
+              style={[
+                styles.personaItem,
+                isSelected && {
+                  backgroundColor: `rgba(${accentRgb}, 0.08)`,
+                  borderWidth: 1,
+                  borderColor: accentColor,
+                },
+              ]}
+              onPress={() => {
+                onSelectPersona(item);
+                onClose();
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.personaName, isSelected && { color: accentColor }]}>
+                  {item.name}
+                </Text>
+                <Text style={styles.personaDesc} numberOfLines={1}>
+                  {item.description}
+                </Text>
+              </View>
+              {isSelected && <Check size={18} color={accentColor} />}
+            </TouchableOpacity>
+          );
+        }}
+      />
+    </>
+  );
+};
 
 export const PersonaPill: React.FC<PersonaPillProps> = ({
   personas,
@@ -46,39 +102,13 @@ export const PersonaPill: React.FC<PersonaPillProps> = ({
         onClose={() => setModalVisible(false)}
         sheetStyle={{ maxHeight: '62%' }}
       >
-        <Text style={styles.modalTitle}>Switch Persona</Text>
-        <FlatList
-          data={personas}
-          keyExtractor={item => item.id}
-          renderItem={({ item }) => {
-            const isSelected = item.id === activePersona.id;
-            return (
-              <TouchableOpacity
-                style={[
-                  styles.personaItem,
-                  isSelected && {
-                    backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
-                    borderWidth: 1,
-                    borderColor: palette.accent,
-                  },
-                ]}
-                onPress={() => {
-                  onSelectPersona(item);
-                  setModalVisible(false);
-                }}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.personaName, isSelected && { color: palette.accent }]}>
-                    {item.name}
-                  </Text>
-                  <Text style={styles.personaDesc} numberOfLines={1}>
-                    {item.description}
-                  </Text>
-                </View>
-                {isSelected && <Check size={18} color={palette.accent} />}
-              </TouchableOpacity>
-            );
-          }}
+        <PersonaListSheetContent
+          personas={personas}
+          activePersona={activePersona}
+          accentColor={palette.accent}
+          accentRgb={palette.accentRgb}
+          onSelectPersona={onSelectPersona}
+          onClose={() => setModalVisible(false)}
         />
       </BottomSheetModal>
     </>

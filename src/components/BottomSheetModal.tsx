@@ -5,10 +5,15 @@
  * 3. Swipe down on the drag handle / top bar to dismiss
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { createContext, forwardRef, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
   View,
+  ViewProps,
+  ScrollView,
+  ScrollViewProps,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
   TouchableOpacity,
   StyleSheet,
   Animated,
@@ -26,6 +31,84 @@ import { GLASS } from '../theme/glassTheme';
 import { getM3TonalContainer } from '../theme/skins';
 import { useTheme } from '../theme/ThemeContext';
 import { runSheetCloseAnimation, runSheetOpenAnimation } from '../theme/animations';
+
+interface BottomSheetGestureContextValue {
+  setScrollAtTop: (atTop: boolean) => void;
+  setInnerGestureLocked: (locked: boolean) => void;
+  isSheetDragging: boolean;
+}
+
+const BottomSheetGestureContext = createContext<BottomSheetGestureContextValue | null>(null);
+
+export const useBottomSheetGesture = () => useContext(BottomSheetGestureContext);
+
+export const BottomSheetScrollView = forwardRef<React.ComponentRef<typeof ScrollView>, ScrollViewProps>(
+  function BottomSheetScrollViewInner({ onScroll, scrollEnabled, scrollEventThrottle, bounces, overScrollMode, ...props }, ref) {
+    const ctx = useContext(BottomSheetGestureContext);
+    const setScrollAtTop = ctx?.setScrollAtTop;
+
+    useEffect(() => {
+      setScrollAtTop?.(true);
+      return () => {
+        setScrollAtTop?.(true);
+      };
+    }, [setScrollAtTop]);
+
+    const handleScroll = useCallback(
+      (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+        setScrollAtTop?.(e.nativeEvent.contentOffset.y <= 2);
+        onScroll?.(e);
+      },
+      [setScrollAtTop, onScroll]
+    );
+
+    return (
+      <ScrollView
+        {...props}
+        ref={ref}
+        scrollEventThrottle={scrollEventThrottle ?? 16}
+        bounces={bounces ?? false}
+        overScrollMode={overScrollMode ?? 'never'}
+        scrollEnabled={ctx?.isSheetDragging ? false : scrollEnabled}
+        onScroll={handleScroll}
+      />
+    );
+  }
+);
+
+export const BottomSheetGestureLock: React.FC<ViewProps> = ({
+  onTouchStartCapture,
+  onTouchStart,
+  onTouchEnd,
+  onTouchCancel,
+  children,
+  ...rest
+}) => {
+  const ctx = useContext(BottomSheetGestureContext);
+  return (
+    <View
+      {...rest}
+      onTouchStartCapture={e => {
+        ctx?.setInnerGestureLocked(true);
+        onTouchStartCapture?.(e);
+      }}
+      onTouchStart={e => {
+        ctx?.setInnerGestureLocked(true);
+        onTouchStart?.(e);
+      }}
+      onTouchEnd={e => {
+        ctx?.setInnerGestureLocked(false);
+        onTouchEnd?.(e);
+      }}
+      onTouchCancel={e => {
+        ctx?.setInnerGestureLocked(false);
+        onTouchCancel?.(e);
+      }}
+    >
+      {children}
+    </View>
+  );
+};
 
 interface BottomSheetModalProps {
   visible: boolean;
@@ -59,6 +142,27 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
   const sheetHeightRef = useRef<number>(0);
   const insetsTopRef = useRef<number>(insets.top);
   insetsTopRef.current = insets.top;
+  const scrollAtTopRef = useRef<boolean>(true);
+  const touchStartedAtTopRef = useRef<boolean>(true);
+  const innerGestureLockedRef = useRef<boolean>(false);
+  const [isSheetDragging, setIsSheetDragging] = useState(false);
+
+  const setScrollAtTop = useCallback((atTop: boolean) => {
+    scrollAtTopRef.current = atTop;
+  }, []);
+
+  const setInnerGestureLocked = useCallback((locked: boolean) => {
+    innerGestureLockedRef.current = locked;
+  }, []);
+
+  const gestureContextValue = useMemo<BottomSheetGestureContextValue>(
+    () => ({
+      setScrollAtTop,
+      setInnerGestureLocked,
+      isSheetDragging,
+    }),
+    [setScrollAtTop, setInnerGestureLocked, isSheetDragging]
+  );
 
   const measureSheetTop = () => {
     sheetRef.current?.measureInWindow?.((_x: number, y: number) => {
@@ -90,12 +194,20 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
   useEffect(() => {
     if (visible) {
       isAnimatingOutRef.current = false;
+      scrollAtTopRef.current = true;
+      touchStartedAtTopRef.current = true;
+      innerGestureLockedRef.current = false;
+      setIsSheetDragging(false);
       setInternalVisible(true);
       runSheetOpenAnimation(translateY, backdropOpacity, skin.animation);
       const timer = setTimeout(measureSheetTop, 320);
       return () => clearTimeout(timer);
     } else if (internalVisible && !isAnimatingOutRef.current) {
       sheetTopYRef.current = null;
+      scrollAtTopRef.current = true;
+      touchStartedAtTopRef.current = true;
+      innerGestureLockedRef.current = false;
+      setIsSheetDragging(false);
       isAnimatingOutRef.current = true;
       runSheetCloseAnimation(translateY, backdropOpacity, skin.animation, () => {
         isAnimatingOutRef.current = false;
@@ -161,9 +273,47 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
   const [sheetPanResponder] = useState(() =>
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (evt, gesture) => {
-        if (gesture.dy <= 12 || Math.abs(gesture.dy) <= Math.abs(gesture.dx) * 1.4) {
+      onStartShouldSetPanResponderCapture: () => {
+        touchStartedAtTopRef.current = scrollAtTopRef.current;
+        innerGestureLockedRef.current = false;
+        return false;
+      },
+      onMoveShouldSetPanResponderCapture: (evt, gesture) => {
+        if (innerGestureLockedRef.current) {
           return false;
+        }
+        if (gesture.dy <= 12 || Math.abs(gesture.dy) <= Math.abs(gesture.dx) * 1.45) {
+          return false;
+        }
+        if (touchStartedAtTopRef.current && scrollAtTopRef.current) {
+          return true;
+        }
+        const measuredTop = sheetTopYRef.current;
+        const layoutTop =
+          overlayHeightRef.current > 0 && sheetHeightRef.current > 0
+            ? Math.max(0, overlayHeightRef.current - sheetHeightRef.current)
+            : null;
+        const minTop =
+          measuredTop !== null && layoutTop !== null
+            ? Math.min(measuredTop, layoutTop)
+            : (measuredTop ?? layoutTop);
+        const maxTop =
+          measuredTop !== null && layoutTop !== null
+            ? Math.max(measuredTop, layoutTop)
+            : (measuredTop ?? layoutTop);
+        if (minTop === null || maxTop === null) return false;
+        const startPageY = evt.nativeEvent.pageY - gesture.dy;
+        return startPageY >= minTop - Math.max(12, insetsTopRef.current) && startPageY <= maxTop + 96;
+      },
+      onMoveShouldSetPanResponder: (evt, gesture) => {
+        if (innerGestureLockedRef.current) {
+          return false;
+        }
+        if (gesture.dy <= 12 || Math.abs(gesture.dy) <= Math.abs(gesture.dx) * 1.45) {
+          return false;
+        }
+        if (touchStartedAtTopRef.current && scrollAtTopRef.current) {
+          return true;
         }
         const measuredTop = sheetTopYRef.current;
         const layoutTop =
@@ -183,13 +333,17 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
         return startPageY >= minTop - Math.max(12, insetsTopRef.current) && startPageY <= maxTop + 96;
       },
       onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        setIsSheetDragging(true);
+      },
       onPanResponderMove: (_, gesture) => {
         if (gesture.dy > 0) {
           translateY.setValue(gesture.dy);
         }
       },
       onPanResponderRelease: (_, gesture) => {
-        if (gesture.dy > 115 || (gesture.dy > 55 && gesture.vy > 0.75)) {
+        setIsSheetDragging(false);
+        if (gesture.dy > 110 || (gesture.dy > 45 && gesture.vy > 0.65)) {
           animateCloseRef.current();
         } else {
           Animated.spring(translateY, {
@@ -201,6 +355,7 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
         }
       },
       onPanResponderTerminate: () => {
+        setIsSheetDragging(false);
         Animated.spring(translateY, {
           toValue: 0,
           useNativeDriver: true,
@@ -383,7 +538,9 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
             </View>
           )}
 
-          {children}
+          <BottomSheetGestureContext.Provider value={gestureContextValue}>
+            {children}
+          </BottomSheetGestureContext.Provider>
         </Animated.View>
       </Animated.View>
     </Modal>

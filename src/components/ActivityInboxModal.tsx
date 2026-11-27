@@ -2,7 +2,6 @@ import React from 'react';
 import {
   ActivityIndicator,
   Image,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -12,7 +11,7 @@ import { Bell, CheckCheck, RefreshCw, Settings, Sparkles, X } from 'lucide-react
 import type { CreatorDropNotificationItem } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { getSubtleSurfaceBg, getSurfaceBg } from '../theme/skins';
-import { BottomSheetModal } from './BottomSheetModal';
+import { BottomSheetModal, BottomSheetScrollView } from './BottomSheetModal';
 
 interface ActivityInboxModalProps {
   visible: boolean;
@@ -147,7 +146,7 @@ export const ActivityInboxModal: React.FC<ActivityInboxModalProps> = ({
       </View>
 
       {/* Body */}
-      <ScrollView
+      <BottomSheetScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 14, gap: 10, paddingBottom: 28 }}
         showsVerticalScrollIndicator={false}
@@ -222,7 +221,7 @@ export const ActivityInboxModal: React.FC<ActivityInboxModalProps> = ({
             </TouchableOpacity>
           ))
         )}
-      </ScrollView>
+      </BottomSheetScrollView>
     </BottomSheetModal>
   );
 };

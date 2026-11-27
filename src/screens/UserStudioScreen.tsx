@@ -27,7 +27,7 @@ import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
 import { UiSkinTokens, getCardSurfaceStyle, getScreenBg } from '../theme/skins';
 import { useTranslation } from '../i18n/LanguageContext';
-import { BottomSheetModal } from '../components/BottomSheetModal';
+import { BottomSheetModal, BottomSheetScrollView, BottomSheetGestureLock } from '../components/BottomSheetModal';
 import { AnimatedTabTransition } from '../components/SmoothTransition';
 import {
   Sparkles,
@@ -874,7 +874,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+        <BottomSheetScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
           {/* Import Mode Tabs */}
           <View style={styles.segmentPill}>
             <TouchableOpacity
@@ -920,14 +920,16 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
               </TouchableOpacity>
 
               <Text style={styles.fieldLabel}>{t('studio.orPaste')}</Text>
-              <TextInput
-                style={[styles.textInput, { height: 160, textAlignVertical: 'top' }]}
-                placeholder={`Paste Character Card JSON (V1, V2, V3, Tavern, Warden) or manual W++ text:\n\nName: Luna\nPersonality: Playful and energetic...\nScenario: Lost in the cyber city...\nFirst Message: "Hey there! Need a hand?"`}
-                placeholderTextColor="rgba(255, 255, 255, 0.3)"
-                multiline
-                value={importRawText}
-                onChangeText={setImportRawText}
-              />
+              <BottomSheetGestureLock>
+                <TextInput
+                  style={[styles.textInput, { height: 160, textAlignVertical: 'top' }]}
+                  placeholder={`Paste Character Card JSON (V1, V2, V3, Tavern, Warden) or manual W++ text:\n\nName: Luna\nPersonality: Playful and energetic...\nScenario: Lost in the cyber city...\nFirst Message: "Hey there! Need a hand?"`}
+                  placeholderTextColor="rgba(255, 255, 255, 0.3)"
+                  multiline
+                  value={importRawText}
+                  onChangeText={setImportRawText}
+                />
+              </BottomSheetGestureLock>
               <Text style={{ color: 'rgba(255, 255, 255, 0.4)', fontSize: 11, marginTop: 4 }}>
                 Supports Chara Card V1/V2/V3, SillyTavern, JanitorAI format, and raw roleplay prompts.
               </Text>
@@ -974,7 +976,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
               </>
             )}
           </TouchableOpacity>
-        </ScrollView>
+        </BottomSheetScrollView>
       </BottomSheetModal>
 
       {/* ================= FULL-SCREEN PAGE: CREATE / EDIT CHARACTER ================= */}
@@ -1003,7 +1005,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
             <X size={20} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
-        <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
+        <BottomSheetScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
           <Text style={styles.fieldLabel}>Lorebook Title (Optional)</Text>
           <TextInput
             style={styles.textInput}
@@ -1013,17 +1015,19 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
             onChangeText={setLoreImportTitle}
           />
           <Text style={styles.fieldLabel}>Paste JanitorAI Lorebook JSON or JS Script *</Text>
-          <TextInput
-            style={[styles.textInput, styles.textArea, { minHeight: 160 }]}
-            placeholder={'Paste JanitorAI Lorebook JSON or JS Script (var ... = context.chat...)'}
-            placeholderTextColor="#666"
-            multiline
-            value={loreImportJson}
-            onChangeText={v => {
-              setLoreImportJson(v);
-              setLoreImportError(null);
-            }}
-          />
+          <BottomSheetGestureLock>
+            <TextInput
+              style={[styles.textInput, styles.textArea, { minHeight: 160 }]}
+              placeholder={'Paste JanitorAI Lorebook JSON or JS Script (var ... = context.chat...)'}
+              placeholderTextColor="#666"
+              multiline
+              value={loreImportJson}
+              onChangeText={v => {
+                setLoreImportJson(v);
+                setLoreImportError(null);
+              }}
+            />
+          </BottomSheetGestureLock>
           {loreImportError ? (
             <Text style={{ color: '#f87171', fontSize: 12, fontWeight: '600', marginBottom: 8 }}>
               {loreImportError}
@@ -1044,7 +1048,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
           >
             <Text style={styles.saveSubmitBtnText}>Import to Codex</Text>
           </TouchableOpacity>
-        </ScrollView>
+        </BottomSheetScrollView>
       </BottomSheetModal>
 
       {/* ================= MODAL: ADD / EDIT PERSONA ================= */}
@@ -1062,7 +1066,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+        <BottomSheetScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
           {/* Persona Avatar Preview & Upload */}
           <View style={styles.uploadRow}>
             <Image source={{ uri: personaAvatar || ANIME_DEFAULT_FALLBACK }} style={styles.uploadPreviewRound} />
@@ -1109,15 +1113,17 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
 
           {/* Persona Description */}
           <Text style={styles.fieldLabel}>Persona Description (Backstory, Appearance, Personality & RP Traits)</Text>
-          <TextInput
-            style={[styles.textInput, styles.textArea, { minHeight: 120 }]}
-            placeholder="Describe your character's backstory, appearance, personality, mannerisms, and roleplay traits..."
-            placeholderTextColor="#666"
-            multiline
-            numberOfLines={6}
-            value={personaDescription}
-            onChangeText={setPersonaDescription}
-          />
+          <BottomSheetGestureLock>
+            <TextInput
+              style={[styles.textInput, styles.textArea, { minHeight: 120 }]}
+              placeholder="Describe your character's backstory, appearance, personality, mannerisms, and roleplay traits..."
+              placeholderTextColor="#666"
+              multiline
+              numberOfLines={6}
+              value={personaDescription}
+              onChangeText={setPersonaDescription}
+            />
+          </BottomSheetGestureLock>
 
           {/* Attached Codex Lorebooks for this Persona */}
           {lorebooks.length > 0 && (
@@ -1167,7 +1173,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
           <TouchableOpacity style={styles.saveSubmitBtn} onPress={handleSavePersona}>
             <Text style={styles.saveSubmitBtnText}>Save Persona</Text>
           </TouchableOpacity>
-        </ScrollView>
+        </BottomSheetScrollView>
       </BottomSheetModal>
 
       {/* ================= MODAL: ADD / EDIT LOREBOOK ================= */}
@@ -1188,7 +1194,7 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+        <BottomSheetScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
           <Text style={styles.fieldLabel}>Lorebook Title *</Text>
           <TextInput
             style={styles.textInput}
@@ -1199,14 +1205,16 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
           />
 
           <Text style={styles.fieldLabel}>Codex Summary / Description</Text>
-          <TextInput
-            style={[styles.textInput, styles.textArea, { minHeight: 48 }]}
-            placeholder="Brief summary of lore topics covered in this codex..."
-            placeholderTextColor="#666"
-            multiline
-            value={lbDescription}
-            onChangeText={setLbDescription}
-          />
+          <BottomSheetGestureLock>
+            <TextInput
+              style={[styles.textInput, styles.textArea, { minHeight: 48 }]}
+              placeholder="Brief summary of lore topics covered in this codex..."
+              placeholderTextColor="#666"
+              multiline
+              value={lbDescription}
+              onChangeText={setLbDescription}
+            />
+          </BottomSheetGestureLock>
 
           <View style={{ flexDirection: 'row', gap: 12 }}>
             <View style={{ flex: 1 }}>
@@ -1310,21 +1318,23 @@ export const UserStudioScreen: React.FC<UserStudioScreenProps> = ({
                 value={entry.keys.join(', ')}
                 onChangeText={v => handleUpdateLorebookEntry(eIdx, { keys: v.split(',').map(k => k.trim()).filter(Boolean) })}
               />
-              <TextInput
-                style={[styles.textInput, styles.textArea, { minHeight: 60 }]}
-                placeholder="World lore content injected into LLM context when keyword matches..."
-                placeholderTextColor="#666"
-                multiline
-                value={entry.content}
-                onChangeText={v => handleUpdateLorebookEntry(eIdx, { content: v })}
-              />
+              <BottomSheetGestureLock>
+                <TextInput
+                  style={[styles.textInput, styles.textArea, { minHeight: 60 }]}
+                  placeholder="World lore content injected into LLM context when keyword matches..."
+                  placeholderTextColor="#666"
+                  multiline
+                  value={entry.content}
+                  onChangeText={v => handleUpdateLorebookEntry(eIdx, { content: v })}
+                />
+              </BottomSheetGestureLock>
             </View>
           ))}
 
           <TouchableOpacity style={styles.saveSubmitBtn} onPress={handleSaveLorebook}>
             <Text style={styles.saveSubmitBtnText}>Save Codex Lorebook</Text>
           </TouchableOpacity>
-        </ScrollView>
+        </BottomSheetScrollView>
       </BottomSheetModal>
 
       <HelpCenterModal

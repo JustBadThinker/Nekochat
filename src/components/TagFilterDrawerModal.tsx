@@ -9,7 +9,6 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ScrollView,
   StyleSheet,
   Animated,
   Easing,
@@ -26,7 +25,7 @@ import {
 import { GLASS } from '../theme/glassTheme';
 import { useTheme } from '../theme/ThemeContext';
 import { ThemePalette } from '../theme/colors';
-import { BottomSheetModal } from './BottomSheetModal';
+import { BottomSheetModal, BottomSheetScrollView } from './BottomSheetModal';
 
 const AnimatedTagAccordion: React.FC<{ isExpanded: boolean; children: React.ReactNode }> = ({
   isExpanded,
@@ -237,7 +236,7 @@ export const TagFilterDrawerModal: React.FC<TagFilterDrawerModalProps> = ({
           </View>
 
           {/* Body: Catalog Filters + Accordion Tag Categories */}
-          <ScrollView style={styles.scrollBody} contentContainerStyle={styles.scrollContent}>
+          <BottomSheetScrollView style={styles.scrollBody} contentContainerStyle={styles.scrollContent}>
             {(onChangeEntityMode || onChangeSfwOnly || onChangeScopeMode) && (
               <View style={{ marginBottom: 16, gap: 12 }}>
                 {onChangeEntityMode && (
@@ -389,7 +388,7 @@ export const TagFilterDrawerModal: React.FC<TagFilterDrawerModalProps> = ({
                 </View>
               );
             })}
-          </ScrollView>
+          </BottomSheetScrollView>
 
           {/* Footer Actions */}
           <View style={[styles.footer, { paddingBottom: Math.max(14, insets.bottom + 10) }]}>

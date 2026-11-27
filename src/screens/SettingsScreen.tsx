@@ -79,7 +79,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { useTranslation } from '../i18n/LanguageContext';
 import { LANGUAGE_OPTIONS, UiLanguage, getDefaultLanguagePrompt } from '../i18n/translations';
 import { NekoLogoSvg } from '../components/NekoLogoSvg';
-import { BottomSheetModal } from '../components/BottomSheetModal';
+import { BottomSheetModal, BottomSheetScrollView, BottomSheetGestureLock } from '../components/BottomSheetModal';
 import { HelpCenterModal } from '../components/HelpCenterModal';
 import { CapabilityMatrixModal } from '../components/CapabilityMatrixModal';
 import { NekoSwitch } from '../components/NekoSwitch';
@@ -1382,7 +1382,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               })}
             </View>
 
-            <ScrollView style={styles.modalBody}>
+            <BottomSheetScrollView style={styles.modalBody}>
               {aiModalTab === 'llm' && (
                 <>
                   <Text style={styles.inputLabel}>{t('settings.selectProvider')}</Text>
@@ -1525,7 +1525,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                               borderBottomColor: 'rgba(255, 255, 255, 0.08)',
                             }}
                           />
-                          <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled showsVerticalScrollIndicator>
+                          <BottomSheetGestureLock>
+                            <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled showsVerticalScrollIndicator>
                             {availableModels
                               .filter(m => {
                                 const q = modelSearchQuery.trim().toLowerCase();
@@ -1592,7 +1593,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                                   </TouchableOpacity>
                                 );
                               })}
-                          </ScrollView>
+                            </ScrollView>
+                          </BottomSheetGestureLock>
                         </View>
                       )}
                     </View>
@@ -1812,7 +1814,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   </TouchableOpacity>
                 </>
               )}
-            </ScrollView>
+            </BottomSheetScrollView>
 
             <View style={styles.modalFooter}>
               <TouchableOpacity
@@ -1839,7 +1841,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody}>
+            <BottomSheetScrollView style={styles.modalBody}>
               <Text style={styles.sectionSub}>UI Design & Surface Skin (Applies Instantly)</Text>
               {Object.values(UI_SKINS).map(sk => {
                 const isSelected = selectedSkin === sk.id;
@@ -1922,7 +1924,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   </TouchableOpacity>
                 );
               })}
-            </ScrollView>
+            </BottomSheetScrollView>
 
             <View style={styles.modalFooter}>
               <TouchableOpacity
@@ -1947,7 +1949,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <BottomSheetScrollView style={styles.modalBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <Text style={styles.sectionSub}>{t('settings.languageSub')}</Text>
 
           {/* 4 Language Options: English, Japanese, French, Indonesian */}
@@ -2028,17 +2030,19 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   </Text>
                 </TouchableOpacity>
               </View>
-              <TextInput
-                style={[styles.inputBox, { minHeight: 76, textAlignVertical: 'top' }]}
-                multiline
-                placeholder={getDefaultLanguagePrompt(selectedUiLang)}
-                placeholderTextColor="rgba(255,255,255,0.3)"
-                value={langCustomPrompt}
-                onChangeText={setLangCustomPrompt}
-              />
+              <BottomSheetGestureLock>
+                <TextInput
+                  style={[styles.inputBox, { minHeight: 76, textAlignVertical: 'top' }]}
+                  multiline
+                  placeholder={getDefaultLanguagePrompt(selectedUiLang)}
+                  placeholderTextColor="rgba(255,255,255,0.3)"
+                  value={langCustomPrompt}
+                  onChangeText={setLangCustomPrompt}
+                />
+              </BottomSheetGestureLock>
             </View>
           </View>
-        </ScrollView>
+        </BottomSheetScrollView>
 
         <View style={styles.modalFooter}>
           <TouchableOpacity
@@ -2063,7 +2067,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <BottomSheetScrollView style={styles.modalBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <View
             style={{
               backgroundColor: 'rgba(255,255,255,0.04)',
@@ -2178,7 +2182,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </Text>
             </TouchableOpacity>
           )}
-        </ScrollView>
+        </BottomSheetScrollView>
 
         <View style={styles.modalFooter}>
           <TouchableOpacity
@@ -2231,7 +2235,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody}>
+            <BottomSheetScrollView style={styles.modalBody}>
               <Text style={styles.vaultInfoText}>
                 Zero-Key Sanitization: Exported .neko files are 100% stripped of your API keys and credentials, safe to share with friends or communities.
               </Text>
@@ -2268,14 +2272,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>Pick File</Text>
                 </TouchableOpacity>
               </View>
-              <TextInput
-                style={[styles.inputBox, { height: 75, textAlignVertical: 'top' }]}
-                multiline
-                value={importJsonText}
-                onChangeText={setImportJsonText}
-                placeholder="Paste exported vault JSON text here..."
-                placeholderTextColor="#6b7280"
-              />
+              <BottomSheetGestureLock>
+                <TextInput
+                  style={[styles.inputBox, { height: 75, textAlignVertical: 'top' }]}
+                  multiline
+                  value={importJsonText}
+                  onChangeText={setImportJsonText}
+                  placeholder="Paste exported vault JSON text here..."
+                  placeholderTextColor="#6b7280"
+                />
+              </BottomSheetGestureLock>
 
               <TouchableOpacity
                 style={styles.importActionBtn}
@@ -2287,7 +2293,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </TouchableOpacity>
 
               {vaultNotice && <Text style={styles.vaultNoticeText}>{vaultNotice}</Text>}
-            </ScrollView>
+            </BottomSheetScrollView>
       </BottomSheetModal>
 
       {/* MODAL 5: Token Limits & Cost */}
@@ -2302,7 +2308,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody}>
+            <BottomSheetScrollView style={styles.modalBody}>
               <Text style={styles.inputLabel}>Maximum Context Window</Text>
               <View style={styles.tokenPillRow}>
                 {['4096', '8192', '16384', '32768'].map(limit => (
@@ -2507,7 +2513,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   </View>
                 </View>
               </AnimatedCollapsible>
-            </ScrollView>
+            </BottomSheetScrollView>
 
             <View style={styles.modalFooter}>
               <TouchableOpacity
@@ -2562,7 +2568,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody}>
+            <BottomSheetScrollView style={styles.modalBody}>
               {/* Enable Toggle */}
               <TouchableOpacity
                 style={styles.toggleRow}
@@ -2655,7 +2661,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   );
                 })}
               </View>
-            </ScrollView>
+            </BottomSheetScrollView>
 
             <View style={styles.modalFooter}>
               <TouchableOpacity
@@ -2688,7 +2694,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody}>
+            <BottomSheetScrollView style={styles.modalBody}>
               {/* Enable Toggle */}
               <TouchableOpacity
                 style={styles.toggleRow}
@@ -2807,7 +2813,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   <Text style={{ color: '#FF6B6B', fontSize: 12 }}>{imageTestResult.error}</Text>
                 </View>
               )}
-            </ScrollView>
+            </BottomSheetScrollView>
 
             <View style={styles.modalFooter}>
               <TouchableOpacity
@@ -2840,7 +2846,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.modalBody}>
+            <BottomSheetScrollView style={styles.modalBody}>
               <View style={styles.aboutCard}>
                 <View style={{ alignItems: 'center', marginBottom: 10 }}>
                   <NekoLogoSvg size={48} color={palette.accent} />
@@ -3063,7 +3069,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   ))}
                 </View>
               </View>
-            </ScrollView>
+            </BottomSheetScrollView>
       </BottomSheetModal>
 
       <HelpCenterModal
@@ -3101,7 +3107,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 20 }}>
+        <BottomSheetScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 20 }}>
           <Text style={[styles.sectionSub, { fontWeight: '500', lineHeight: 16, marginBottom: 12 }]}>
             Local scheduled reminders register directly with your OS (no battery optimization bypass needed). Followed Creator Drops sync periodically in the background and also appear in the Chats Bell inbox.
           </Text>
@@ -3217,7 +3223,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               {notifyNotice}
             </Text>
           ) : null}
-        </ScrollView>
+        </BottomSheetScrollView>
 
         <View style={styles.modalFooter}>
           <TouchableOpacity
@@ -3265,7 +3271,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 24 }}>
+        <BottomSheetScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 24 }}>
           {/* 100% On-Device Privacy Banner */}
           <View
             style={[
@@ -3605,7 +3611,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               {tasteNotice}
             </Text>
           ) : null}
-        </ScrollView>
+        </BottomSheetScrollView>
       </BottomSheetModal>
       </ScrollView>
     </View>

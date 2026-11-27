@@ -4,7 +4,6 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
   StyleSheet,
   Animated,
   Image,
@@ -24,7 +23,7 @@ import {
   Palette,
   HelpCircle,
 } from 'lucide-react-native';
-import { BottomSheetModal } from './BottomSheetModal';
+import { BottomSheetModal, BottomSheetScrollView } from './BottomSheetModal';
 import { useTheme } from '../theme/ThemeContext';
 import { ThemePalette } from '../theme/colors';
 
@@ -302,7 +301,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
         </View>
 
         {!activeArticle ? (
-          <ScrollView
+          <BottomSheetScrollView
             style={{ flex: 1 }}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
@@ -363,7 +362,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                 ))
               )}
             </View>
-          </ScrollView>
+          </BottomSheetScrollView>
         ) : (
           <Animated.View
             style={{
@@ -379,7 +378,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
               ],
             }}
           >
-            <ScrollView
+            <BottomSheetScrollView
               style={{ flex: 1 }}
               contentContainerStyle={styles.scrollContent}
               showsVerticalScrollIndicator={false}
@@ -422,7 +421,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
                 <ArrowLeft size={14} color={palette.accent} />
                 <Text style={styles.backAllText}>All Help Guides</Text>
               </TouchableOpacity>
-            </ScrollView>
+            </BottomSheetScrollView>
           </Animated.View>
         )}
       </View>
