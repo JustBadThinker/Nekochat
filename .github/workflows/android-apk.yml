@@ -130,19 +130,27 @@ jobs:
             - **`universal`:** Larger fallback build if `arm64-v8a` doesn't install (older 32-bit devices or emulators).
 
             ### ✨ What's New in v0.2.4
-            - **4 Overhauled UI Skins**:
+            - **4 Overhauled UI Skins & Live Android Blur**:
               - **Neko Bento**: Tactile `3.5px` keycap lips, asymmetric Bento Settings grid, balanced contrast bubbles, and a **2×2 Bento Macro-Pad Composer** with a detached Send/Expand stack.
-              - **HIG Liquid Glass**: Live Android 12+ GPU blur (`BlurTargetView` + `dimezisBlurViewSdk31Plus`), specular rims, and feathered SVG radial backdrop glows.
-              - **Material 3 Expressive**: Dynamic accent-tinted tonal surfaces (`getM3TonalContainer`), Android 16 segmented list geometry, thick expressive sliders, morphing switches, and floating pill composer.
-              - **Classic**: Floating frosted glass pills (`+` · `Message here...` · `Send`) that smoothly liquid-merge on focus with frosted chat chrome & bubbles.
+              - **HIG Liquid Glass**: Live Android 12+ GPU blur (`SafeBlurView` + `BlurTargetView` via `dimezisBlurViewSdk31Plus`) across the floating dock, headers, and overlays, specular rims, and feathered SVG radial backdrop glows.
+              - **Material 3 Expressive**: Dynamic accent-tinted tonal surfaces, Android 16 segmented list geometry, thick expressive sliders, morphing switches, and floating pill composer.
+              - **Classic**: Floating frosted glass pills (`+` · `Message here...` · `Send`) that smoothly liquid-merge on focus with live frosted chat chrome, dock, and bubbles.
+            - **One-Handed Swipe-Down Close on All Modals & Cards**:
+              - Swipe down from anywhere inside Settings, Memory, Persona, Character Cards, Creator Profiles, Help Center, Inbox, Studio, and filter sheets once scrolled to the top to dismiss them smoothly.
+              - Nested gesture locking protects scrollable text boxes (Memory editor, Custom Prompt, Prefill, Cast, Scene Prompt, Data Vault JSON, Model selector) so inner scrolling never accidentally closes the sheet.
             - **100% On-Device Taste Engine (`Settings → For You & Taste`)**:
-              - Split local recommendation brain (`tasteEngineLogic.ts` & `tasteEngineService.ts`) with 14-day exponential decay, real Datacat tag-ID catalog fetching, neutral RPG gender-bias fix, Character Focus overrides (`Auto` / `Female` / `Male` / `All`), pinned & muted tags, RP token-depth matching, quick-skip tracking, pause toggle, and reset controls.
+              - Local recommendation engine with 14-day exponential decay, real Datacat tag-ID catalog fetching, neutral RPG gender-bias fix, Character Focus overrides (`Auto` / `Female` / `Male` / `All`), pinned & muted tags, RP token-depth matching, quick-skip tracking, pause toggle, and reset controls.
             - **One-Tap In-Chat Persona Switcher**:
-              - Compact `[Avatar] [Name + Preview] [Check]` persona list inside Chat Room styled faithfully for all 4 skins.
+              - Compact `[Avatar] [Name + Preview] [Check]` persona switcher inside Chat Room styled faithfully for all 4 skins.
             - **Direct GitHub Releases Update Checker**:
               - Check for new releases and `.apk` assets directly from **Settings → About NekoChat**.
-            - **Sheet Ergonomics, Notifications & Security Hardening**:
-              - Fixed native Android/iOS scroll hijacking in `BottomSheetModal`, converted `CommunityCharacterModal` & `CreatorProfileModal` into slide-up sheets, added Smart Notifications & Creator Drops inbox, migrated Image Gen API keys into `expo-secure-store`, enforced `http(s)` URL allowlisting, and verified `85/85` passing unit tests.
+            - **Chat Room, Desk Neko & Roleplay Fixes**:
+              - Fixed expanded chat composer text alignment so multiline messages start cleanly at the top instead of vertically centered.
+              - Fixed Desk Neko grab-and-throw touch handling inside Chat Room so throwing the cat is no longer hijacked by message scrolling.
+              - Added per-chat character name override, hardened memory checkpoint generation, and fixed Web storage quota handling.
+            - **Android Release Stability, Notifications & Security Hardening**:
+              - Added R8/ProGuard keep rules for WorkManager, Room, and BlurView to prevent Android release APK startup crashes.
+              - Added Smart Notifications & Followed Creator Drops inbox, migrated Image Gen API keys into `expo-secure-store`, enforced `http(s)` external link allowlisting, and updated open-source library credits (including SillyTavern).
           generate_release_notes: true
           files: ${{ steps.apk.outputs.files }}
           draft: ${{ steps.apk.outputs.is_draft == 'true' }}
