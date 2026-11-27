@@ -47,7 +47,11 @@ import { GLASS } from '../theme/glassTheme';
 import { ThemePalette } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 import { getM3TonalContainer } from '../theme/skins';
-import { runSheetCloseAnimation, runSheetOpenAnimation } from '../theme/animations';
+import {
+  runSheetCloseAnimation,
+  runSheetOpenAnimation,
+  runTabFadeAnimation,
+} from '../theme/animations';
 import { openSafeExternalUrl } from '../utils/safeExternalUrl';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AnimatedChevron, AnimatedCollapsible } from './SmoothTransition';
@@ -204,6 +208,7 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
     resetGestureState,
   } = useSheetDismissGestures({
     translateY: sheetTranslateY,
+    animation: skin.animation,
     onDismiss: () => animateClose(),
   });
 
@@ -233,13 +238,8 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
   }, [activeTab, setScrollAtTop]);
 
   useEffect(() => {
-    tabFadeAnim.setValue(0);
-    Animated.timing(tabFadeAnim, {
-      toValue: 1,
-      duration: 180,
-      useNativeDriver: true,
-    }).start();
-  }, [activeTab, tabFadeAnim]);
+    runTabFadeAnimation(tabFadeAnim, skin.animation, 0);
+  }, [activeTab, tabFadeAnim, skin.animation]);
 
   const creatorName = character
     ? ('creatorName' in character ? character.creatorName : character.creator) || 'community'

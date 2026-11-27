@@ -2,18 +2,47 @@
  * Centralized Frontend Animation Registry
  *
  * Components call these helpers with `skin.animation` from `useTheme()` so every
- * theme pack (`Neko OLED`, `Classic / Janitor`, `Material You`, `HIG / iPhone`)
- * drives its own motion physics and easing curves consistently.
+ * built-in skin and downloaded Theme Pack drives its own motion physics,
+ * speed scale, and easing curves consistently across the entire app.
  */
 
-import { Animated } from 'react-native';
+import { Animated, Easing, type EasingFunction } from 'react-native';
 import type { SkinAnimationConfig } from './themes/types';
+import type { ThemeEasingSpec } from './themePackSchema';
+
+export function resolveEasing(spec?: ThemeEasingSpec): EasingFunction {
+  if (Array.isArray(spec) && spec.length === 4) {
+    return Easing.bezier(spec[0], spec[1], spec[2], spec[3]);
+  }
+  switch (spec) {
+    case 'quadOut':
+      return Easing.out(Easing.quad);
+    case 'expoOut':
+      return Easing.out(Easing.exp);
+    case 'backOut':
+      return Easing.out(Easing.back(1.2));
+    case 'iosStandard':
+      return Easing.bezier(0.25, 0.1, 0.25, 1.0);
+    case 'm3Emphasized':
+      return Easing.bezier(0.05, 0.7, 0.1, 1.0);
+    case 'linear':
+      return Easing.linear;
+    case 'cubicOut':
+    default:
+      return Easing.out(Easing.cubic);
+  }
+}
+
+function scaleDuration(ms: number, cfg: SkinAnimationConfig): number {
+  const scale = typeof cfg.speedScale === 'number' && cfg.speedScale > 0 ? cfg.speedScale : 1;
+  return Math.max(30, Math.round(ms * scale));
+}
 
 export function runEnterAnimation(anim: Animated.Value, cfg: SkinAnimationConfig): void {
   if (cfg.mode === 'timing') {
     Animated.timing(anim, {
       toValue: 1,
-      duration: cfg.enterDuration,
+      duration: scaleDuration(cfg.enterDuration, cfg),
       easing: cfg.easing,
       useNativeDriver: true,
     }).start();
@@ -31,7 +60,7 @@ export function runPressInAnimation(anim: Animated.Value, cfg: SkinAnimationConf
   if (cfg.mode === 'timing') {
     Animated.timing(anim, {
       toValue: cfg.pressScale,
-      duration: cfg.pressDuration,
+      duration: scaleDuration(cfg.pressDuration, cfg),
       easing: cfg.easing,
       useNativeDriver: true,
     }).start();
@@ -49,7 +78,7 @@ export function runPressOutAnimation(anim: Animated.Value, cfg: SkinAnimationCon
   if (cfg.mode === 'timing') {
     Animated.timing(anim, {
       toValue: 1,
-      duration: cfg.pressDuration,
+      duration: scaleDuration(cfg.pressDuration, cfg),
       easing: cfg.easing,
       useNativeDriver: true,
     }).start();
@@ -71,7 +100,7 @@ export function runDockSlideAnimation(
   if (cfg.mode === 'timing') {
     Animated.timing(slideAnim, {
       toValue,
-      duration: 240,
+      duration: scaleDuration(240, cfg),
       easing: cfg.easing,
       useNativeDriver: true,
     }).start();
@@ -94,7 +123,7 @@ export function runDockIconScale(
   if (cfg.mode === 'timing') {
     Animated.timing(scaleAnim, {
       toValue: target,
-      duration: 180,
+      duration: scaleDuration(180, cfg),
       easing: cfg.easing,
       useNativeDriver: true,
     }).start();
@@ -115,9 +144,10 @@ export function runToggleAnimation(
 ): void {
   const toValue = isOpen ? 1 : 0;
   if (cfg.mode === 'timing') {
+    const base = isOpen ? cfg.enterDuration : Math.max(120, Math.round(cfg.enterDuration * 0.72));
     Animated.timing(anim, {
       toValue,
-      duration: isOpen ? cfg.enterDuration : Math.max(150, Math.round(cfg.enterDuration * 0.72)),
+      duration: scaleDuration(base, cfg),
       easing: cfg.easing,
       useNativeDriver: true,
     }).start();
@@ -136,18 +166,19 @@ export function runSheetOpenAnimation(
   backdropOpacity: Animated.Value,
   cfg: SkinAnimationConfig
 ): void {
+  const duration = scaleDuration(cfg.sheetOpenDuration, cfg);
   translateY.setValue(420);
   backdropOpacity.setValue(0);
   Animated.parallel([
     Animated.timing(translateY, {
       toValue: 0,
-      duration: cfg.sheetOpenDuration,
+      duration,
       easing: cfg.easing,
       useNativeDriver: true,
     }),
     Animated.timing(backdropOpacity, {
       toValue: 1,
-      duration: cfg.sheetOpenDuration,
+      duration,
       easing: cfg.easing,
       useNativeDriver: true,
     }),
@@ -160,18 +191,140 @@ export function runSheetCloseAnimation(
   cfg: SkinAnimationConfig,
   onDone: () => void
 ): void {
+  const duration = scaleDuration(cfg.sheetCloseDuration, cfg);
   Animated.parallel([
     Animated.timing(translateY, {
       toValue: 520,
-      duration: cfg.sheetCloseDuration,
+      duration,
       easing: cfg.easing,
       useNativeDriver: true,
     }),
     Animated.timing(backdropOpacity, {
       toValue: 0,
-      duration: cfg.sheetCloseDuration,
+      duration,
       easing: cfg.easing,
       useNativeDriver: true,
     }),
   ]).start(onDone);
+}
+
+export function runSheetSnapBackAnimation(
+  translateY: Animated.Value,
+  cfg: SkinAnimationConfig
+): void {
+  if (cfg.mode === 'timing') {
+    Animated.timing(translateY, {
+      toValue: 0,
+      duration: scaleDuration(cfg.sheetCloseDuration, cfg),
+      easing: cfg.easing,
+      useNativeDriver: true,
+    }).start();
+    return;
+  }
+  Animated.spring(translateY, {
+    toValue: 0,
+    useNativeDriver: true,
+    friction: cfg.sheetSnapFriction,
+    tension: cfg.sheetSnapTension,
+  }).start();
+}
+
+export function runScreenEnterAnimation(
+  anim: Animated.Value,
+  cfg: SkinAnimationConfig
+): void {
+  anim.setValue(0);
+  if (cfg.mode === 'timing') {
+    Animated.timing(anim, {
+      toValue: 1,
+      duration: scaleDuration(cfg.enterDuration, cfg),
+      easing: cfg.easing,
+      useNativeDriver: true,
+    }).start();
+    return;
+  }
+  Animated.spring(anim, {
+    toValue: 1,
+    useNativeDriver: true,
+    friction: cfg.screenEnterFriction,
+    tension: cfg.screenEnterTension,
+  }).start();
+}
+
+export function runScreenExitAnimation(
+  anim: Animated.Value,
+  cfg: SkinAnimationConfig,
+  onDone?: () => void
+): void {
+  Animated.timing(anim, {
+    toValue: 0,
+    duration: scaleDuration(cfg.screenExitDuration, cfg),
+    easing: cfg.easing,
+    useNativeDriver: true,
+  }).start(() => onDone?.());
+}
+
+export function runSwitchAnimation(
+  anim: Animated.Value,
+  toValue: number,
+  cfg: SkinAnimationConfig
+): void {
+  if (cfg.mode === 'timing') {
+    Animated.timing(anim, {
+      toValue,
+      duration: scaleDuration(cfg.pressDuration, cfg),
+      easing: cfg.easing,
+      useNativeDriver: false,
+    }).start();
+    return;
+  }
+  Animated.spring(anim, {
+    toValue,
+    useNativeDriver: false,
+    friction: cfg.switchFriction,
+    tension: cfg.switchTension,
+  }).start();
+}
+
+export function runTabFadeAnimation(
+  anim: Animated.Value,
+  cfg: SkinAnimationConfig,
+  startFrom = 0
+): void {
+  anim.setValue(startFrom);
+  Animated.timing(anim, {
+    toValue: 1,
+    duration: scaleDuration(cfg.tabFadeDuration, cfg),
+    easing: cfg.easing,
+    useNativeDriver: true,
+  }).start();
+}
+
+export function runComposerAnimation(
+  anim: Animated.Value,
+  toValue: number,
+  cfg: SkinAnimationConfig,
+  useNativeDriver = false
+): void {
+  Animated.timing(anim, {
+    toValue,
+    duration: scaleDuration(cfg.composerDuration, cfg),
+    easing: cfg.easing,
+    useNativeDriver,
+  }).start();
+}
+
+export function runCollapsibleAnimation(
+  anim: Animated.Value,
+  toValue: number,
+  cfg: SkinAnimationConfig,
+  useNativeDriver = true,
+  onDone?: (finished: boolean) => void
+): void {
+  Animated.timing(anim, {
+    toValue,
+    duration: scaleDuration(cfg.collapsibleDuration, cfg),
+    easing: cfg.easing,
+    useNativeDriver,
+  }).start(({ finished }) => onDone?.(finished));
 }

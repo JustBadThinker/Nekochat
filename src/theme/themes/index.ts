@@ -1,5 +1,7 @@
 import { Platform, type ViewStyle } from 'react-native';
-import type { ThemePalette } from '../colors';
+import { getThemePalette, type ThemeId, type ThemePalette } from '../colors';
+import { resolveEasing } from '../animations';
+import type { NekoThemePack } from '../themePackSchema';
 import type { UiSkinId, UiSkinTokens } from './types';
 import { nekoTheme } from './neko';
 import { classicJanitorTheme } from './classic';
@@ -19,6 +21,111 @@ export const UI_SKINS: Record<UiSkinId, UiSkinTokens> = {
 export function getUiSkin(skinId?: string): UiSkinTokens {
   const key = (skinId || 'bento') as UiSkinId;
   return UI_SKINS[key] || UI_SKINS.bento;
+}
+
+export function resolvePaletteWithPack(
+  themeId?: string,
+  pack?: NekoThemePack | null
+): ThemePalette {
+  if (!pack) return getThemePalette(themeId);
+  return {
+    id: (pack.id as ThemeId) || 'midnight',
+    name: pack.name,
+    desc: pack.description || `${pack.baseSkin} pack by ${pack.author}`,
+    accent: pack.palette.accent,
+    accentMuted: pack.palette.accentMuted,
+    accentRgb: pack.palette.accentRgb,
+    bgDark: pack.palette.bgDark,
+    bgSurface: pack.palette.bgSurface,
+    bgSurfaceSubtle: pack.palette.bgSurfaceSubtle,
+    webFrameBg: pack.palette.webFrameBg || pack.palette.bgDark,
+    dockBg: pack.palette.dockBg,
+  };
+}
+
+export function resolveSkinWithPack(
+  skinId?: string,
+  pack?: NekoThemePack | null
+): UiSkinTokens {
+  const base = getUiSkin(pack ? pack.baseSkin : skinId);
+  if (!pack) return base;
+
+  const animOverride = pack.animation;
+  const easingSpec = animOverride?.easing ?? base.animation.easingSpec;
+  const mergedAnimation = {
+    ...base.animation,
+    ...(animOverride?.mode ? { mode: animOverride.mode } : {}),
+    ...(animOverride?.speedScale !== undefined ? { speedScale: animOverride.speedScale } : {}),
+    easingSpec,
+    easing: resolveEasing(easingSpec),
+    ...(animOverride?.enterDuration !== undefined ? { enterDuration: animOverride.enterDuration } : {}),
+    ...(animOverride?.enterTranslateY !== undefined ? { enterTranslateY: animOverride.enterTranslateY } : {}),
+    ...(animOverride?.enterScaleFrom !== undefined ? { enterScaleFrom: animOverride.enterScaleFrom } : {}),
+    ...(animOverride?.springFriction !== undefined ? { springFriction: animOverride.springFriction } : {}),
+    ...(animOverride?.springTension !== undefined ? { springTension: animOverride.springTension } : {}),
+    ...(animOverride?.pressScale !== undefined ? { pressScale: animOverride.pressScale } : {}),
+    ...(animOverride?.pressFriction !== undefined ? { pressFriction: animOverride.pressFriction } : {}),
+    ...(animOverride?.pressTension !== undefined ? { pressTension: animOverride.pressTension } : {}),
+    ...(animOverride?.pressDuration !== undefined ? { pressDuration: animOverride.pressDuration } : {}),
+    ...(animOverride?.dockSpringFriction !== undefined ? { dockSpringFriction: animOverride.dockSpringFriction } : {}),
+    ...(animOverride?.dockSpringTension !== undefined ? { dockSpringTension: animOverride.dockSpringTension } : {}),
+    ...(animOverride?.sheetOpenDuration !== undefined ? { sheetOpenDuration: animOverride.sheetOpenDuration } : {}),
+    ...(animOverride?.sheetCloseDuration !== undefined ? { sheetCloseDuration: animOverride.sheetCloseDuration } : {}),
+    ...(animOverride?.sheetSnapFriction !== undefined ? { sheetSnapFriction: animOverride.sheetSnapFriction } : {}),
+    ...(animOverride?.sheetSnapTension !== undefined ? { sheetSnapTension: animOverride.sheetSnapTension } : {}),
+    ...(animOverride?.screenEnterFriction !== undefined ? { screenEnterFriction: animOverride.screenEnterFriction } : {}),
+    ...(animOverride?.screenEnterTension !== undefined ? { screenEnterTension: animOverride.screenEnterTension } : {}),
+    ...(animOverride?.screenExitDuration !== undefined ? { screenExitDuration: animOverride.screenExitDuration } : {}),
+    ...(animOverride?.switchFriction !== undefined ? { switchFriction: animOverride.switchFriction } : {}),
+    ...(animOverride?.switchTension !== undefined ? { switchTension: animOverride.switchTension } : {}),
+    ...(animOverride?.tabFadeDuration !== undefined ? { tabFadeDuration: animOverride.tabFadeDuration } : {}),
+    ...(animOverride?.composerDuration !== undefined ? { composerDuration: animOverride.composerDuration } : {}),
+    ...(animOverride?.collapsibleDuration !== undefined ? { collapsibleDuration: animOverride.collapsibleDuration } : {}),
+  };
+
+  const s = pack.surfaces;
+  const g = pack.geometry;
+
+  return {
+    ...base,
+    packId: pack.id,
+    baseSkinId: base.id,
+    name: pack.name,
+    badge: pack.badge || base.badge,
+    desc: pack.description || base.desc,
+    ...(s?.surfaceMode ? { surfaceMode: s.surfaceMode } : {}),
+    screenBg: s?.screenBg ?? pack.palette.bgDark,
+    surfaceBg: s?.surfaceBg ?? pack.palette.bgSurface,
+    surfaceSubtleBg: s?.surfaceSubtleBg ?? pack.palette.bgSurfaceSubtle,
+    ...(s && (s.keycapLipWidth !== undefined || s.specularRimOpacity !== undefined || s.userBubbleBg || s.aiBubbleBg)
+      ? {
+          surfaceOverrides: {
+            ...(s.keycapLipWidth !== undefined ? { keycapLipWidth: s.keycapLipWidth } : {}),
+            ...(s.specularRimOpacity !== undefined ? { specularRimOpacity: s.specularRimOpacity } : {}),
+            ...(s.userBubbleBg ? { userBubbleBg: s.userBubbleBg } : {}),
+            ...(s.aiBubbleBg ? { aiBubbleBg: s.aiBubbleBg } : {}),
+          },
+        }
+      : {}),
+    ...(s?.cardBorderAccentMix !== undefined ? { cardBorderAccentMix: s.cardBorderAccentMix } : {}),
+    ...(s?.cardGlowOpacity !== undefined ? { cardGlowOpacity: s.cardGlowOpacity } : {}),
+    ...(s?.cardGlowRadius !== undefined ? { cardGlowRadius: s.cardGlowRadius } : {}),
+    ...(g?.cardRadius !== undefined ? { cardRadius: g.cardRadius } : {}),
+    ...(g?.cardBorderWidth !== undefined ? { cardBorderWidth: g.cardBorderWidth } : {}),
+    ...(g?.buttonRadius !== undefined ? { buttonRadius: g.buttonRadius } : {}),
+    ...(g?.pillRadius !== undefined ? { pillRadius: g.pillRadius } : {}),
+    ...(g?.inputRadius !== undefined ? { inputRadius: g.inputRadius } : {}),
+    ...(g?.sheetRadius !== undefined ? { sheetRadius: g.sheetRadius } : {}),
+    ...(g?.grabberWidth !== undefined ? { grabberWidth: g.grabberWidth } : {}),
+    ...(g?.grabberHeight !== undefined ? { grabberHeight: g.grabberHeight } : {}),
+    ...(g?.bubbleRadius !== undefined ? { bubbleRadius: g.bubbleRadius } : {}),
+    ...(g?.bubbleTailRadius !== undefined ? { bubbleTailRadius: g.bubbleTailRadius } : {}),
+    ...(g?.bubbleBorderWidth !== undefined ? { bubbleBorderWidth: g.bubbleBorderWidth } : {}),
+    ...(g?.dockRadius !== undefined ? { dockRadius: g.dockRadius } : {}),
+    ...(g?.dockBorderWidth !== undefined ? { dockBorderWidth: g.dockBorderWidth } : {}),
+    ...(g?.pressScale !== undefined ? { pressScale: g.pressScale } : {}),
+    animation: mergedAnimation,
+  };
 }
 
 function mixM3TonalColor(
@@ -97,16 +204,16 @@ export function getCardSurfaceStyle(palette: ThemePalette, skin: UiSkinTokens): 
     borderColor: skin.cardBorderWidth > 0 ? borderColor : 'transparent',
     ...(skin.id === 'bento'
       ? {
-          borderWidth: 1.25,
+          borderWidth: skin.cardBorderWidth || 1.25,
           borderColor: 'rgba(255, 255, 255, 0.11)',
           borderTopColor: 'rgba(255, 255, 255, 0.17)',
-          borderBottomWidth: 3.5,
+          borderBottomWidth: skin.surfaceOverrides?.keycapLipWidth ?? 3.5,
           borderBottomColor: 'rgba(0, 0, 0, 0.52)',
         }
       : {}),
     ...(skin.id === 'ios'
       ? {
-          borderTopColor: 'rgba(255, 255, 255, 0.46)',
+          borderTopColor: `rgba(255, 255, 255, ${skin.surfaceOverrides?.specularRimOpacity ?? 0.46})`,
           borderBottomColor: 'rgba(0, 0, 0, 0.42)',
           shadowColor: '#000000',
           shadowOffset: { width: 0, height: 10 },
@@ -203,10 +310,15 @@ export function getBubbleSurfaceStyle(
               }
             : {};
 
+  const customBubbleBg = isUser
+    ? skin.surfaceOverrides?.userBubbleBg
+    : skin.surfaceOverrides?.aiBubbleBg;
+
   return {
     ...cornerRadii,
     borderWidth: skin.bubbleBorderWidth,
     borderColor: skin.bubbleBorderWidth > 0 ? borderColor : 'transparent',
     ...backgroundOverride,
+    ...(customBubbleBg ? { backgroundColor: customBubbleBg } : null),
   };
 }

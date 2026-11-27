@@ -107,7 +107,7 @@ import {
   getSubtleSurfaceBg,
   getSurfaceBg,
 } from '../theme/skins';
-import { runToggleAnimation } from '../theme/animations';
+import { runTabFadeAnimation, runToggleAnimation } from '../theme/animations';
 import { useTranslation } from '../i18n/LanguageContext';
 import { imageGenService, IMAGE_STYLE_OPTIONS, ImageStylePreset } from '../services/imageGenService';
 import { ttsService, TtsPlaybackState } from '../services/ttsService';
@@ -629,13 +629,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   }, [showHeaderMenu, headerMenuAnim, skin.animation]);
 
   useEffect(() => {
-    chatControlTabAnim.setValue(0.35);
-    Animated.timing(chatControlTabAnim, {
-      toValue: 1,
-      duration: Math.max(140, Math.round(skin.animation.enterDuration * 0.7)),
-      easing: skin.animation.easing,
-      useNativeDriver: true,
-    }).start();
+    runTabFadeAnimation(chatControlTabAnim, skin.animation, 0.35);
   }, [chatControlTab, settingsSubView, skin.animation, chatControlTabAnim]);
 
   useEffect(() => {

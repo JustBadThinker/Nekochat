@@ -1,4 +1,5 @@
 import type { EasingFunction } from 'react-native';
+import type { ThemeEasingSpec } from '../themePackSchema';
 
 export type UiSkinId = 'bento' | 'janitor' | 'material' | 'ios';
 export type NavBarStyle = 'floating_capsule' | 'classic_bar' | 'm3_nav_bar' | 'ios_tab_bar';
@@ -7,6 +8,8 @@ export type SwitchStyle = 'neko' | 'm3' | 'ios';
 
 export interface SkinAnimationConfig {
   mode: 'spring' | 'timing';
+  speedScale: number;
+  easingSpec: ThemeEasingSpec;
   enterDuration: number;
   enterTranslateY: number;
   enterScaleFrom: number;
@@ -20,11 +23,30 @@ export interface SkinAnimationConfig {
   dockSpringTension: number;
   sheetOpenDuration: number;
   sheetCloseDuration: number;
+  sheetSnapFriction: number;
+  sheetSnapTension: number;
+  screenEnterFriction: number;
+  screenEnterTension: number;
+  screenExitDuration: number;
+  switchFriction: number;
+  switchTension: number;
+  tabFadeDuration: number;
+  composerDuration: number;
+  collapsibleDuration: number;
   easing: EasingFunction;
+}
+
+export interface UiSkinSurfaceOverrides {
+  keycapLipWidth?: number;
+  specularRimOpacity?: number;
+  userBubbleBg?: string;
+  aiBubbleBg?: string;
 }
 
 export interface UiSkinTokens {
   id: UiSkinId;
+  packId?: string;
+  baseSkinId?: UiSkinId;
   name: string;
   badge: string;
   desc: string;
@@ -32,6 +54,7 @@ export interface UiSkinTokens {
   screenBg?: string;
   surfaceBg?: string;
   surfaceSubtleBg?: string;
+  surfaceOverrides?: UiSkinSurfaceOverrides;
   navBarStyle: NavBarStyle;
   settingsLayout: SettingsLayoutStyle;
   switchStyle: SwitchStyle;

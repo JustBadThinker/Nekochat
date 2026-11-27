@@ -183,8 +183,11 @@ export function getThemePalette(themeId?: string): ThemePalette {
  * Applies the selected theme across design tokens AND (on Web) re-colors
  * compiled React Native Web atomic stylesheet classes & SVG strokes in real-time.
  */
-export function applyThemePalette(themeId?: string): ThemePalette {
-  const palette = getThemePalette(themeId);
+export function applyThemePalette(
+  themeId?: string,
+  customPalette?: ThemePalette | null
+): ThemePalette {
+  const palette = customPalette || getThemePalette(themeId);
   colors.themeId = palette.id;
   colors.lime = palette.accent;
   colors.limeMuted = palette.accentMuted;

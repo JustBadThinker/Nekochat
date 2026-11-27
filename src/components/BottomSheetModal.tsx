@@ -36,10 +36,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GLASS } from '../theme/glassTheme';
 import { getM3TonalContainer } from '../theme/skins';
 import { useTheme } from '../theme/ThemeContext';
-import { runSheetCloseAnimation, runSheetOpenAnimation } from '../theme/animations';
+import {
+  runSheetCloseAnimation,
+  runSheetOpenAnimation,
+  runSheetSnapBackAnimation,
+} from '../theme/animations';
+import type { SkinAnimationConfig } from '../theme/themes/types';
 
 interface UseSheetDismissGesturesOptions {
   translateY: Animated.Value;
+  animation: SkinAnimationConfig;
   onDismiss: () => void;
 }
 
@@ -47,9 +53,11 @@ interface UseSheetDismissGesturesOptions {
  * Coordinates native Android/iOS/Web pan gestures for dismissing a sheet via
  * either its top drag handle (always enabled) or its body (enabled at top of scroll).
  */
-export function useSheetDismissGestures({ translateY, onDismiss }: UseSheetDismissGesturesOptions) {
+export function useSheetDismissGestures({ translateY, animation, onDismiss }: UseSheetDismissGesturesOptions) {
   const onDismissRef = useRef(onDismiss);
   onDismissRef.current = onDismiss;
+  const animationRef = useRef(animation);
+  animationRef.current = animation;
 
   const [scrollAtTop, setScrollAtTopState] = useState(true);
   const [isSheetDragging, setIsSheetDragging] = useState(false);
@@ -74,12 +82,7 @@ export function useSheetDismissGestures({ translateY, onDismiss }: UseSheetDismi
   }, []);
 
   const springBack = useCallback(() => {
-    Animated.spring(translateY, {
-      toValue: 0,
-      useNativeDriver: true,
-      friction: 8,
-      tension: 120,
-    }).start();
+    runSheetSnapBackAnimation(translateY, animationRef.current);
   }, [translateY]);
 
   const bodyPanGesture = usePanGesture({
@@ -324,6 +327,7 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
     resetGestureState,
   } = useSheetDismissGestures({
     translateY,
+    animation: skin.animation,
     onDismiss: animateClose,
   });
 

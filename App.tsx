@@ -16,8 +16,13 @@ import { JetBrainsMono_400Regular } from '@expo-google-fonts/jetbrains-mono';
 import { Inter_300Light } from '@expo-google-fonts/inter';
 import { Character, Persona, ProviderConfig, AppSettings, CreatorDropNotificationItem } from './src/types';
 import { colors, applyThemePalette, getThemePalette } from './src/theme/colors';
-import { getScreenBg, getUiSkin } from './src/theme/skins';
+import { getScreenBg, resolvePaletteWithPack, resolveSkinWithPack } from './src/theme/skins';
 import { ThemeProvider } from './src/theme/ThemeContext';
+import { runScreenEnterAnimation, runScreenExitAnimation } from './src/theme/animations';
+import {
+  getInstalledThemePackByIdSync,
+  hydrateInstalledThemePacks,
+} from './src/services/themeStoreService';
 import { LanguageProvider } from './src/i18n/LanguageContext';
 import { storageService } from './src/services/storageService';
 import { hasPasscodeConfigured, shouldRelockOnResume } from './src/services/passcodeService';
@@ -153,10 +158,14 @@ function AppContent() {
         await storageService.reclaimWebStorageQuota().catch(() => {});
       }
 
-      // 0. Load saved theme & settings immediately so SplashScreen renders in user's theme
-      const appSet = await storageService.getSettings();
+      // 0. Load saved theme, installed theme packs & settings immediately so SplashScreen renders in user's theme
+      const [appSet] = await Promise.all([
+        storageService.getSettings(),
+        hydrateInstalledThemePacks(),
+      ]);
       setSettings(appSet);
-      applyThemePalette(appSet.theme || 'midnight');
+      const bootPack = getInstalledThemePackByIdSync(appSet.activeThemePackId);
+      applyThemePalette(appSet.theme || 'midnight', bootPack ? resolvePaletteWithPack(appSet.theme, bootPack) : null);
 
       // 1. Load local characters, personas, and configs in parallel (non-blocking startup)
       const [chars, persList, provCfg] = await Promise.all([
@@ -326,13 +335,7 @@ function AppContent() {
 
   useEffect(() => {
     if (activeChatCharacter) {
-      chatRoomEnterAnim.setValue(0);
-      Animated.spring(chatRoomEnterAnim, {
-        toValue: 1,
-        useNativeDriver: true,
-        friction: 9,
-        tension: 90,
-      }).start();
+      runScreenEnterAnimation(chatRoomEnterAnim, activeSkinTokens.animation);
     }
   }, [activeChatCharacter?.id]);
 
@@ -417,8 +420,12 @@ function AppContent() {
   // Active theme background tokens
   const currentTheme = settings?.theme || 'midnight';
   const currentSkin = settings?.uiSkin || 'bento';
-  const activePalette = applyThemePalette(currentTheme);
-  const activeSkinTokens = getUiSkin(currentSkin);
+  const activeThemePack = getInstalledThemePackByIdSync(settings?.activeThemePackId);
+  const activePalette = applyThemePalette(
+    currentTheme,
+    activeThemePack ? resolvePaletteWithPack(currentTheme, activeThemePack) : null
+  );
+  const activeSkinTokens = resolveSkinWithPack(currentSkin, activeThemePack);
   const themeBg = getScreenBg(activePalette, activeSkinTokens);
   const webFrameBg = activePalette.webFrameBg;
 
@@ -740,12 +747,7 @@ function AppContent() {
                 config={config}
                 initialConversationId={activeConversationId || undefined}
                 onBack={() => {
-                  Animated.timing(chatRoomEnterAnim, {
-                    toValue: 0,
-                    duration: 210,
-                    easing: Easing.in(Easing.cubic),
-                    useNativeDriver: true,
-                  }).start(async () => {
+                  runScreenExitAnimation(chatRoomEnterAnim, activeSkinTokens.animation, async () => {
                     setActiveChatCharacter(null);
                     setActiveConversationId(null);
                     const updated = await storageService.getCharacters();
@@ -762,7 +764,7 @@ function AppContent() {
 
   return (
     <SafeAreaProvider>
-      <ThemeProvider themeId={currentTheme} uiSkin={currentSkin}>
+      <ThemeProvider themeId={currentTheme} uiSkin={currentSkin} activeThemePack={activeThemePack}>
         <LanguageProvider language={settings?.uiLanguage || 'en'}>
           {body}
         </LanguageProvider>

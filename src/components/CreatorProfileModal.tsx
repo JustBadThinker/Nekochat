@@ -248,6 +248,7 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
     resetGestureState,
   } = useSheetDismissGestures({
     translateY: sheetTranslateY,
+    animation: skin.animation,
     onDismiss: animateClose,
   });
 

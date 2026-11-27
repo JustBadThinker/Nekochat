@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "id": "catppuccin-mocha",
+  "name": "Catppuccin Mocha",
+  "author": "NekoChat",
+  "version": "1.0.0",
+  "description": "Soothing pastel mauve & lavender accents on warm espresso Bento surfaces with soft spring motion.",
+  "badge": "Mocha",
+  "baseSkin": "bento",
+  "tags": ["Pastel", "Cozy", "OLED"],
+  "palette": {
+    "accent": "#CBA6F7",
+    "accentMuted": "#B4BEFE",
+    "accentRgb": "203, 166, 247",
+    "bgDark": "#11111B",
+    "bgSurface": "#1E1E2E",
+    "bgSurfaceSubtle": "#313244",
+    "webFrameBg": "#0B0B12",
+    "dockBg": "rgba(24, 24, 37, 0.92)"
+  },
+  "surfaces": {
+    "surfaceMode": "oled",
+    "cardBorderAccentMix": 0.16,
+    "keycapLipWidth": 3.5,
+    "userBubbleBg": "rgba(203, 166, 247, 0.18)",
+    "aiBubbleBg": "#1E1E2E"
+  },
+  "geometry": {
+    "cardRadius": 22,
+    "buttonRadius": 16,
+    "bubbleRadius": 20,
+    "bubbleTailRadius": 6,
+    "sheetRadius": 28,
+    "dockRadius": 30
+  },
+  "animation": {
+    "mode": "spring",
+    "speedScale": 1.0,
+    "easing": "cubicOut",
+    "springFriction": 7,
+    "springTension": 130,
+    "pressScale": 0.95,
+    "pressFriction": 6,
+    "pressTension": 185,
+    "dockSpringFriction": 7,
+    "dockSpringTension": 135,
+    "sheetOpenDuration": 270,
+    "sheetCloseDuration": 210,
+    "screenEnterFriction": 8.5,
+    "screenEnterTension": 95,
+    "switchFriction": 7.5,
+    "switchTension": 125
+  }
+}

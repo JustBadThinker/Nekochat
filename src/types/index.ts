@@ -440,6 +440,7 @@ export interface SyntaxColorConfig {
 export interface AppSettings {
   theme?: ThemeId;
   uiSkin?: UiSkinId;
+  activeThemePackId?: string | null;
   chatStyle: ChatStyleMode;
   syntaxColors: SyntaxColorConfig;
   showTokenCounter: boolean;

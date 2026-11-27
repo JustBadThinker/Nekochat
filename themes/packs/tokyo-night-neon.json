@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "id": "tokyo-night-neon",
+  "name": "Tokyo Night Neon",
+  "author": "NekoChat",
+  "version": "1.0.0",
+  "description": "Frosted midnight indigo glass with electric ice-cyan highlights, crisp specular rims, and snappy Cupertino springs.",
+  "badge": "Tokyo",
+  "baseSkin": "ios",
+  "tags": ["Neon", "Glass", "Cyber"],
+  "palette": {
+    "accent": "#7DCFFF",
+    "accentMuted": "#2AC3DE",
+    "accentRgb": "125, 207, 255",
+    "bgDark": "#0F111A",
+    "bgSurface": "rgba(26, 30, 48, 0.74)",
+    "bgSurfaceSubtle": "rgba(36, 42, 66, 0.66)",
+    "webFrameBg": "#090B12",
+    "dockBg": "rgba(22, 26, 42, 0.82)"
+  },
+  "surfaces": {
+    "surfaceMode": "frosted",
+    "cardBorderAccentMix": 0.22,
+    "cardGlowOpacity": 0.16,
+    "cardGlowRadius": 12,
+    "specularRimOpacity": 0.56,
+    "userBubbleBg": "rgba(125, 207, 255, 0.24)",
+    "aiBubbleBg": "rgba(24, 28, 44, 0.62)"
+  },
+  "geometry": {
+    "cardRadius": 22,
+    "buttonRadius": 16,
+    "bubbleRadius": 22,
+    "bubbleTailRadius": 6,
+    "sheetRadius": 30,
+    "dockRadius": 32
+  },
+  "animation": {
+    "mode": "spring",
+    "speedScale": 0.9,
+    "easing": "iosStandard",
+    "springFriction": 8,
+    "springTension": 135,
+    "pressScale": 0.97,
+    "pressFriction": 8,
+    "pressTension": 170,
+    "dockSpringFriction": 8,
+    "dockSpringTension": 145,
+    "sheetOpenDuration": 260,
+    "sheetCloseDuration": 200,
+    "screenEnterFriction": 9,
+    "screenEnterTension": 110,
+    "tabFadeDuration": 160,
+    "composerDuration": 190
+  }
+}

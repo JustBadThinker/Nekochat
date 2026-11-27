@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { TouchableOpacity, Animated, StyleSheet } from 'react-native';
 import { Check } from 'lucide-react-native';
 import { useTheme } from '../theme/ThemeContext';
+import { runSwitchAnimation } from '../theme/animations';
 
 interface NekoSwitchProps {
   value: boolean;
@@ -19,13 +20,8 @@ export const NekoSwitch: React.FC<NekoSwitchProps> = ({
   const pressAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.spring(anim, {
-      toValue: value ? 1 : 0,
-      useNativeDriver: false,
-      friction: skin.switchStyle === 'ios' ? 9 : 7,
-      tension: skin.switchStyle === 'ios' ? 110 : 130,
-    }).start();
-  }, [value, anim, skin.switchStyle]);
+    runSwitchAnimation(anim, value ? 1 : 0, skin.animation);
+  }, [value, anim, skin.animation]);
 
   const isM3 = skin.switchStyle === 'm3';
   const isIos = skin.switchStyle === 'ios';

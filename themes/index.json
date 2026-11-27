@@ -1,0 +1,84 @@
+{
+  "catalogVersion": 1,
+  "updatedAt": "2026-11-27",
+  "themes": [
+    {
+      "id": "catppuccin-mocha",
+      "name": "Catppuccin Mocha",
+      "author": "NekoChat",
+      "version": "1.0.0",
+      "description": "Soothing pastel mauve & lavender accents on warm espresso Bento surfaces with soft spring motion.",
+      "badge": "Mocha",
+      "baseSkin": "bento",
+      "tags": ["Pastel", "Cozy"],
+      "previewSwatches": ["#11111B", "#1E1E2E", "#CBA6F7", "#B4BEFE"],
+      "motionSummary": "Soft spring • 1.0x",
+      "packUrl": "https://raw.githubusercontent.com/JustBadThinker/Nekochat/main/themes/packs/catppuccin-mocha.json"
+    },
+    {
+      "id": "tokyo-night-neon",
+      "name": "Tokyo Night Neon",
+      "author": "NekoChat",
+      "version": "1.0.0",
+      "description": "Frosted midnight indigo glass with electric ice-cyan highlights, crisp specular rims, and snappy Cupertino springs.",
+      "badge": "Tokyo",
+      "baseSkin": "ios",
+      "tags": ["Neon", "Glass"],
+      "previewSwatches": ["#0F111A", "#1A1E30", "#7DCFFF", "#2AC3DE"],
+      "motionSummary": "Snappy glass spring • 0.9x",
+      "packUrl": "https://raw.githubusercontent.com/JustBadThinker/Nekochat/main/themes/packs/tokyo-night-neon.json"
+    },
+    {
+      "id": "nord-frost",
+      "name": "Nord Arctic Frost",
+      "author": "NekoChat",
+      "version": "1.0.0",
+      "description": "Calm Scandinavian polar slate tones, borderless Material tonal cards, and unhurried emphasized timing curves.",
+      "badge": "Nord",
+      "baseSkin": "material",
+      "tags": ["Minimal", "Pastel"],
+      "previewSwatches": ["#191E26", "#232934", "#88C0D0", "#81A1C1"],
+      "motionSummary": "Calm M3 timing • 1.05x",
+      "packUrl": "https://raw.githubusercontent.com/JustBadThinker/Nekochat/main/themes/packs/nord-frost.json"
+    },
+    {
+      "id": "rose-pine-velvet",
+      "name": "Rosé Pine Velvet",
+      "author": "NekoChat",
+      "version": "1.0.0",
+      "description": "Soft dusty rose gold on deep plum velvet with extra-round Bento corners and cushioned bouncy springs.",
+      "badge": "Rosé",
+      "baseSkin": "bento",
+      "tags": ["Pastel", "Minimal"],
+      "previewSwatches": ["#14121D", "#1F1D2E", "#EBBCBA", "#EB6F92"],
+      "motionSummary": "Bouncy velvet spring • 1.05x",
+      "packUrl": "https://raw.githubusercontent.com/JustBadThinker/Nekochat/main/themes/packs/rose-pine-velvet.json"
+    },
+    {
+      "id": "crt-phosphor",
+      "name": "CRT Phosphor 84",
+      "author": "NekoChat",
+      "version": "1.0.0",
+      "description": "Sharp retro monochrome phosphor green with tight boxy corners, glowing borders, and zero-lag snappy timing.",
+      "badge": "CRT",
+      "baseSkin": "janitor",
+      "tags": ["Retro", "Neon"],
+      "previewSwatches": ["#060B06", "#0C140C", "#39FF14", "#22C55E"],
+      "motionSummary": "Ultra-snappy timing • 0.65x",
+      "packUrl": "https://raw.githubusercontent.com/JustBadThinker/Nekochat/main/themes/packs/crt-phosphor.json"
+    },
+    {
+      "id": "dracula-obsidian",
+      "name": "Dracula Obsidian",
+      "author": "NekoChat",
+      "version": "1.0.0",
+      "description": "High-contrast gothic orchid purple with obsidian glass depth, bright rim highlights, and punchy fast springs.",
+      "badge": "Dracula",
+      "baseSkin": "ios",
+      "tags": ["Neon", "Glass"],
+      "previewSwatches": ["#14151F", "#212230", "#BD93F9", "#FF79C6"],
+      "motionSummary": "Punchy fast spring • 0.88x",
+      "packUrl": "https://raw.githubusercontent.com/JustBadThinker/Nekochat/main/themes/packs/dracula-obsidian.json"
+    }
+  ]
+}

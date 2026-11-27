@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "id": "dracula-obsidian",
+  "name": "Dracula Obsidian",
+  "author": "NekoChat",
+  "version": "1.0.0",
+  "description": "High-contrast gothic orchid purple with obsidian glass depth, bright rim highlights, and punchy fast springs.",
+  "badge": "Dracula",
+  "baseSkin": "ios",
+  "tags": ["Neon", "Glass", "Dark"],
+  "palette": {
+    "accent": "#BD93F9",
+    "accentMuted": "#FF79C6",
+    "accentRgb": "189, 147, 249",
+    "bgDark": "#14151F",
+    "bgSurface": "rgba(33, 34, 48, 0.76)",
+    "bgSurfaceSubtle": "rgba(52, 55, 75, 0.68)",
+    "webFrameBg": "#0D0E14",
+    "dockBg": "rgba(33, 34, 48, 0.84)"
+  },
+  "surfaces": {
+    "surfaceMode": "frosted",
+    "cardBorderAccentMix": 0.25,
+    "cardGlowOpacity": 0.14,
+    "cardGlowRadius": 12,
+    "specularRimOpacity": 0.52,
+    "userBubbleBg": "rgba(189, 147, 249, 0.24)",
+    "aiBubbleBg": "rgba(33, 34, 48, 0.68)"
+  },
+  "geometry": {
+    "cardRadius": 20,
+    "buttonRadius": 14,
+    "bubbleRadius": 20,
+    "bubbleTailRadius": 6,
+    "sheetRadius": 28,
+    "dockRadius": 30
+  },
+  "animation": {
+    "mode": "spring",
+    "speedScale": 0.88,
+    "easing": "cubicOut",
+    "springFriction": 7.5,
+    "springTension": 150,
+    "pressScale": 0.96,
+    "pressFriction": 6.5,
+    "pressTension": 200,
+    "dockSpringFriction": 7,
+    "dockSpringTension": 155,
+    "sheetOpenDuration": 240,
+    "sheetCloseDuration": 190
+  }
+}

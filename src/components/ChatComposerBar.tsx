@@ -14,7 +14,6 @@ import React, {
 } from 'react';
 import {
   Animated,
-  Easing,
   Image,
   Keyboard,
   LayoutAnimation,
@@ -46,7 +45,7 @@ import type { ThemePalette } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 import { getCardSurfaceStyle, getM3TonalContainer, getSurfaceBg, UiSkinTokens } from '../theme/skins';
 import { GLASS } from '../theme/glassTheme';
-import { runToggleAnimation } from '../theme/animations';
+import { runComposerAnimation, runToggleAnimation } from '../theme/animations';
 import { DeskNekoWalker } from './DeskNekoWalker';
 
 export interface ChatComposerBarHandle {
@@ -154,23 +153,13 @@ export const ChatComposerBar = React.memo(
 
     useEffect(() => {
       if (!isJanitor) return;
-      Animated.timing(janitorMergeAnim, {
-        toValue: isJanitorMerged ? 1 : 0,
-        duration: 210,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }).start();
-    }, [isJanitor, isJanitorMerged, janitorMergeAnim]);
+      runComposerAnimation(janitorMergeAnim, isJanitorMerged ? 1 : 0, skin.animation, false);
+    }, [isJanitor, isJanitorMerged, janitorMergeAnim, skin.animation]);
 
     useEffect(() => {
       if (!isNekoBento) return;
-      Animated.timing(bentoDockAnim, {
-        toValue: isBentoActive ? 1 : 0,
-        duration: 200,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }).start();
-    }, [isNekoBento, isBentoActive, bentoDockAnim]);
+      runComposerAnimation(bentoDockAnim, isBentoActive ? 1 : 0, skin.animation, false);
+    }, [isNekoBento, isBentoActive, bentoDockAnim, skin.animation]);
 
     useEffect(() => {
       if ((!isJanitor && !isNekoBento) || Platform.OS === 'web') return;
@@ -216,12 +205,7 @@ export const ChatComposerBar = React.memo(
     const handleToggleInputExpanded = () => {
       const nextExpanded = !isInputExpanded;
       setIsInputExpanded(nextExpanded);
-      Animated.timing(composerExpandAnim, {
-        toValue: nextExpanded ? 1 : 0,
-        duration: 240,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: false,
-      }).start();
+      runComposerAnimation(composerExpandAnim, nextExpanded ? 1 : 0, skin.animation, false);
     };
 
     const handlePressSend = () => {

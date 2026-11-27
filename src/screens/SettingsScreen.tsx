@@ -71,9 +71,12 @@ import {
   getScreenBg,
   getSubtleSurfaceBg,
   getSurfaceBg,
+  resolvePaletteWithPack,
 } from '../theme/skins';
 import { APP_VERSION, APP_VERSION_LABEL } from '../constants/appInfo';
 import { checkForGitHubUpdate, GITHUB_REPO_URL, UpdateCheckResult } from '../services/githubUpdateService';
+import { getInstalledThemePacksSync } from '../services/themeStoreService';
+import type { NekoThemePack } from '../theme/themePackSchema';
 import { openSafeExternalUrl } from '../utils/safeExternalUrl';
 import { useTheme } from '../theme/ThemeContext';
 import { useTranslation } from '../i18n/LanguageContext';
@@ -82,6 +85,7 @@ import { NekoLogoSvg } from '../components/NekoLogoSvg';
 import { BottomSheetModal, BottomSheetScrollView, BottomSheetGestureLock } from '../components/BottomSheetModal';
 import { HelpCenterModal } from '../components/HelpCenterModal';
 import { CapabilityMatrixModal } from '../components/CapabilityMatrixModal';
+import { ThemeStoreModal } from '../components/ThemeStoreModal';
 import { NekoSwitch } from '../components/NekoSwitch';
 import { AnimatedChevron, AnimatedCollapsible } from '../components/SmoothTransition';
 import {
@@ -116,12 +120,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onRefreshDropsInbox,
 }) => {
   const lastScrollYRef = useRef(0);
-  const { palette, skin } = useTheme();
+  const { palette, skin, activePack } = useTheme();
   const { t } = useTranslation();
   const styles = useMemo(() => createStyles(palette, skin), [palette, skin]);
   // Modal Visibility State
   const [activeModal, setActiveModal] = useState<
-    'api' | 'theming' | 'taste' | 'language' | 'passcode' | 'notifications' | 'vault' | 'tokens' | 'about' | 'voice' | 'image' | 'help' | 'matrix' | null
+    'api' | 'theming' | 'themeStore' | 'taste' | 'language' | 'passcode' | 'notifications' | 'vault' | 'tokens' | 'about' | 'voice' | 'image' | 'help' | 'matrix' | null
   >(null);
 
   // On-Device Taste & Algorithm State
@@ -539,25 +543,48 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const handleSelectThemeInstant = async (themeId: ThemeId) => {
     setSelectedTheme(themeId);
-    applyThemePalette(themeId);
-    const updated: AppSettings = { ...settings, theme: themeId };
+    applyThemePalette(themeId, null);
+    const updated: AppSettings = { ...settings, theme: themeId, activeThemePackId: null };
     await storageService.saveSettings(updated);
     onUpdateSettings(updated);
   };
 
   const handleSelectSkinInstant = async (skinId: UiSkinId) => {
     setSelectedSkin(skinId);
-    const updated: AppSettings = { ...settings, uiSkin: skinId };
+    const updated: AppSettings = { ...settings, uiSkin: skinId, activeThemePackId: null };
     await storageService.saveSettings(updated);
     onUpdateSettings(updated);
   };
 
   const handleApplyTheme = async () => {
-    applyThemePalette(selectedTheme);
-    const updated: AppSettings = { ...settings, theme: selectedTheme as any };
+    applyThemePalette(selectedTheme, null);
+    const updated: AppSettings = { ...settings, theme: selectedTheme as any, activeThemePackId: null };
     await storageService.saveSettings(updated);
     onUpdateSettings(updated);
     setActiveModal(null);
+  };
+
+  const handleApplyThemePack = async (pack: NekoThemePack) => {
+    setSelectedSkin(pack.baseSkin);
+    applyThemePalette(settings.theme || 'midnight', resolvePaletteWithPack(settings.theme, pack));
+    const updated: AppSettings = {
+      ...settings,
+      uiSkin: pack.baseSkin,
+      activeThemePackId: pack.id,
+    };
+    await storageService.saveSettings(updated);
+    onUpdateSettings(updated);
+  };
+
+  const handlePackUninstalled = async (packId: string) => {
+    if (settings.activeThemePackId !== packId) return;
+    applyThemePalette(selectedTheme, null);
+    const updated: AppSettings = {
+      ...settings,
+      activeThemePackId: null,
+    };
+    await storageService.saveSettings(updated);
+    onUpdateSettings(updated);
   };
 
   const handleSelectUiLanguage = async (lang: UiLanguage) => {
@@ -1842,9 +1869,52 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </View>
 
             <BottomSheetScrollView style={styles.modalBody}>
+              {/* Snappy Theme Store Launcher */}
+              <TouchableOpacity
+                onPress={() => setActiveModal('themeStore')}
+                activeOpacity={0.85}
+                style={[
+                  styles.themeOptionCard,
+                  {
+                    borderRadius: skin.cardRadius,
+                    borderColor: activePack ? palette.accent : `rgba(${palette.accentRgb}, 0.45)`,
+                    backgroundColor: `rgba(${palette.accentRgb}, 0.1)`,
+                    marginBottom: 14,
+                  },
+                ]}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                  <View
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 14,
+                      backgroundColor: palette.bgDark,
+                      borderWidth: 1.5,
+                      borderColor: palette.accent,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Sparkles size={20} color={palette.accent} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.themeOptionName, { color: palette.accent }]}>
+                      {activePack ? `Active Pack: ${activePack.name}` : 'Theme Store (Optional Packs)'}
+                    </Text>
+                    <Text style={styles.themeOptionDesc}>
+                      {activePack
+                        ? `${getInstalledThemePacksSync().length} installed • Tap to browse, preview or switch`
+                        : 'Browse screenshots, colors & custom animations from GitHub'}
+                    </Text>
+                  </View>
+                </View>
+                <ChevronRight size={18} color={palette.accent} />
+              </TouchableOpacity>
+
               <Text style={styles.sectionSub}>UI Design & Surface Skin (Applies Instantly)</Text>
               {Object.values(UI_SKINS).map(sk => {
-                const isSelected = selectedSkin === sk.id;
+                const isSelected = !activePack && selectedSkin === sk.id;
                 return (
                   <TouchableOpacity
                     key={sk.id}
@@ -1887,7 +1957,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
               <Text style={[styles.sectionSub, { marginTop: 14 }]}>{t('settings.selectThemeSub')}</Text>
               {Object.values(THEME_PALETTES).map(th => {
-                const isSelected = selectedTheme === th.id;
+                const isSelected = !activePack && selectedTheme === th.id;
                 return (
                   <TouchableOpacity
                     key={th.id}
@@ -3087,6 +3157,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           apiKey,
           model,
         }}
+      />
+
+      <ThemeStoreModal
+        visible={activeModal === 'themeStore'}
+        activePackId={settings?.activeThemePackId}
+        onClose={() => setActiveModal('theming')}
+        onApplyPack={handleApplyThemePack}
+        onPackUninstalled={handlePackUninstalled}
       />
 
       {/* ══════════════════════════════════════════════════════════════════ */}

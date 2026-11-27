@@ -2,7 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, StyleProp, ViewStyle } from 'react-native';
 import { ChevronDown } from 'lucide-react-native';
 import { useTheme } from '../theme/ThemeContext';
-import { runEnterAnimation, runToggleAnimation } from '../theme/animations';
+import {
+  runCollapsibleAnimation,
+  runEnterAnimation,
+  runTabFadeAnimation,
+  runToggleAnimation,
+} from '../theme/animations';
 
 interface AnimatedCollapsibleProps {
   expanded: boolean;
@@ -30,12 +35,7 @@ export const AnimatedCollapsible: React.FC<AnimatedCollapsibleProps> = ({
       setRendered(true);
       runToggleAnimation(anim, true, skin.animation);
     } else if (rendered) {
-      Animated.timing(anim, {
-        toValue: 0,
-        duration: Math.max(140, Math.round(skin.animation.enterDuration * 0.65)),
-        easing: skin.animation.easing,
-        useNativeDriver: true,
-      }).start(({ finished }) => {
+      runCollapsibleAnimation(anim, 0, skin.animation, true, finished => {
         if (finished) setRendered(false);
       });
     }
@@ -133,13 +133,7 @@ export const AnimatedTabTransition: React.FC<AnimatedTabTransitionProps> = ({
       isFirstMount.current = false;
       return;
     }
-    anim.setValue(0);
-    Animated.timing(anim, {
-      toValue: 1,
-      duration: Math.max(150, Math.round(skin.animation.enterDuration * 0.72)),
-      easing: skin.animation.easing,
-      useNativeDriver: true,
-    }).start();
+    runTabFadeAnimation(anim, skin.animation, 0);
   }, [transitionKey, anim, skin.animation]);
 
   return (

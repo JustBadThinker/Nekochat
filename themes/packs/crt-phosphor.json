@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "id": "crt-phosphor",
+  "name": "CRT Phosphor 84",
+  "author": "NekoChat",
+  "version": "1.0.0",
+  "description": "Sharp retro monochrome phosphor green with tight boxy corners, glowing borders, and zero-lag snappy timing.",
+  "badge": "CRT",
+  "baseSkin": "janitor",
+  "tags": ["Retro", "Neon", "Minimal"],
+  "palette": {
+    "accent": "#39FF14",
+    "accentMuted": "#22C55E",
+    "accentRgb": "57, 255, 20",
+    "bgDark": "#060B06",
+    "bgSurface": "#0C140C",
+    "bgSurfaceSubtle": "#121E12",
+    "webFrameBg": "#030603",
+    "dockBg": "rgba(10, 18, 10, 0.94)"
+  },
+  "surfaces": {
+    "surfaceMode": "glass",
+    "cardBorderAccentMix": 0.42,
+    "cardGlowOpacity": 0.22,
+    "cardGlowRadius": 10,
+    "userBubbleBg": "rgba(57, 255, 20, 0.12)",
+    "aiBubbleBg": "rgba(12, 20, 12, 0.88)"
+  },
+  "geometry": {
+    "cardRadius": 6,
+    "cardBorderWidth": 1.25,
+    "buttonRadius": 6,
+    "pillRadius": 6,
+    "inputRadius": 8,
+    "sheetRadius": 10,
+    "bubbleRadius": 8,
+    "bubbleTailRadius": 2,
+    "bubbleBorderWidth": 1,
+    "dockRadius": 0
+  },
+  "animation": {
+    "mode": "timing",
+    "speedScale": 0.65,
+    "easing": "expoOut",
+    "enterDuration": 140,
+    "pressDuration": 80,
+    "pressScale": 0.97,
+    "sheetOpenDuration": 160,
+    "sheetCloseDuration": 130,
+    "screenExitDuration": 130,
+    "tabFadeDuration": 110,
+    "composerDuration": 140,
+    "collapsibleDuration": 120
+  }
+}

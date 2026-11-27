@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "rose-pine-velvet",
+  "name": "Rosé Pine Velvet",
+  "author": "NekoChat",
+  "version": "1.0.0",
+  "description": "Soft dusty rose gold on deep plum velvet with extra-round Bento corners and cushioned bouncy springs.",
+  "badge": "Rosé",
+  "baseSkin": "bento",
+  "tags": ["Pastel", "Cozy", "Minimal"],
+  "palette": {
+    "accent": "#EBBCBA",
+    "accentMuted": "#EB6F92",
+    "accentRgb": "235, 188, 186",
+    "bgDark": "#14121D",
+    "bgSurface": "#1F1D2E",
+    "bgSurfaceSubtle": "#26233A",
+    "webFrameBg": "#0E0C15",
+    "dockBg": "rgba(31, 29, 46, 0.92)"
+  },
+  "surfaces": {
+    "surfaceMode": "oled",
+    "cardBorderAccentMix": 0.2,
+    "keycapLipWidth": 3.5,
+    "userBubbleBg": "rgba(235, 188, 186, 0.18)",
+    "aiBubbleBg": "#1F1D2E"
+  },
+  "geometry": {
+    "cardRadius": 24,
+    "buttonRadius": 18,
+    "bubbleRadius": 22,
+    "bubbleTailRadius": 8,
+    "sheetRadius": 30,
+    "dockRadius": 32
+  },
+  "animation": {
+    "mode": "spring",
+    "speedScale": 1.05,
+    "easing": "backOut",
+    "springFriction": 6.5,
+    "springTension": 120,
+    "pressScale": 0.94,
+    "pressFriction": 5.5,
+    "pressTension": 190,
+    "dockSpringFriction": 6,
+    "dockSpringTension": 135,
+    "sheetOpenDuration": 280,
+    "sheetCloseDuration": 220
+  }
+}
