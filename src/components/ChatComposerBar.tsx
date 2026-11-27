@@ -97,10 +97,11 @@ export const ChatComposerBar = React.memo(
     ref
   ) {
     const { palette, skin } = useTheme();
-    const isIosGlass = skin.id === 'ios';
-    const isM3 = skin.id === 'material';
-    const isNekoBento = skin.id === 'bento';
-    const isJanitor = skin.id === 'janitor';
+    const resolvedComposer = skin.composerStyle;
+    const isIosGlass = resolvedComposer ? resolvedComposer === 'ios_glass' : skin.id === 'ios';
+    const isM3 = resolvedComposer ? resolvedComposer === 'material_pill' : skin.id === 'material';
+    const isNekoBento = resolvedComposer ? resolvedComposer === 'bento_macropad' : skin.id === 'bento';
+    const isJanitor = resolvedComposer ? resolvedComposer === 'classic_pill' : skin.id === 'janitor';
     const styles = useMemo(() => createStyles(palette, skin), [palette, skin]);
 
     const [inputText, setInputText] = useState('');

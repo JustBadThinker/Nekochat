@@ -3,8 +3,8 @@
   "id": "aegis-scifi-hud",
   "name": "Aegis Orbital HUD",
   "author": "NekoChat",
-  "version": "1.0.0",
-  "description": "Sharp aerospace telemetry HUD with razor-edged framing, glowing instrument borders, docked deck bar, 3 tactical alerts, and zero-overshoot motion.",
+  "version": "1.1.0",
+  "description": "Aerospace telemetry HUD featuring beveled corners, glowing dual-edge rails, custom docked deck bar, 3 tactical palettes, and zero-overshoot motion.",
   "badge": "HUD",
   "baseSkin": "bento",
   "supportsBuiltInPalettes": true,
@@ -22,7 +22,9 @@
       "bgSurface": "#081422",
       "bgSurfaceSubtle": "#0D2036",
       "webFrameBg": "#020509",
-      "dockBg": "rgba(6, 16, 28, 0.94)"
+      "dockBg": "rgba(6, 16, 28, 0.90)",
+      "userBubbleBg": "rgba(0, 240, 255, 0.14)",
+      "aiBubbleBg": "rgba(8, 20, 34, 0.90)"
     },
     {
       "id": "aegis-red-alert",
@@ -35,7 +37,9 @@
       "bgSurface": "#19090D",
       "bgSurfaceSubtle": "#281017",
       "webFrameBg": "#070204",
-      "dockBg": "rgba(22, 8, 12, 0.94)"
+      "dockBg": "rgba(22, 8, 12, 0.92)",
+      "userBubbleBg": "rgba(255, 42, 75, 0.16)",
+      "aiBubbleBg": "rgba(25, 9, 13, 0.90)"
     },
     {
       "id": "aegis-solar-amber",
@@ -48,23 +52,42 @@
       "bgSurface": "#171208",
       "bgSurfaceSubtle": "#241C0C",
       "webFrameBg": "#050402",
-      "dockBg": "rgba(20, 15, 7, 0.94)"
+      "dockBg": "rgba(20, 15, 7, 0.92)",
+      "userBubbleBg": "rgba(255, 184, 0, 0.16)",
+      "aiBubbleBg": "rgba(23, 18, 8, 0.90)"
     }
   ],
   "layout": {
     "navBarStyle": "classic_bar",
     "settingsLayout": "bento_grid",
-    "switchStyle": "neko"
+    "switchStyle": "neko",
+    "composerStyle": "bento_macropad"
+  },
+  "dock": {
+    "placement": "docked",
+    "radius": 0,
+    "height": 62,
+    "blur": true,
+    "borderWidth": 1.5,
+    "borderPosition": "top_only",
+    "borderAccentMix": 0.72,
+    "glowOpacity": 0.28,
+    "indicatorStyle": "top_line",
+    "indicatorRadius": 2,
+    "labelMode": "always",
+    "uppercaseLabels": true
   },
   "surfaces": {
     "surfaceMode": "glass",
+    "cardFrameStyle": "hud_dual_edge",
     "cardBorderAccentMix": 0.65,
-    "cardGlowOpacity": 0.32,
+    "cardGlowOpacity": 0.30,
     "cardGlowRadius": 14,
     "keycapLipWidth": 2
   },
   "geometry": {
-    "cardRadius": 4,
+    "cardRadius": 6,
+    "cardCornerRadii": [2, 14, 2, 14],
     "cardBorderWidth": 1.5,
     "buttonRadius": 3,
     "pillRadius": 3,

@@ -89,6 +89,202 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({
     });
   }, [activeIdx, skin.animation, slideAnim, scaleAnims, m3PillAnims]);
 
+  if (skin.dockConfig) {
+    const dock = skin.dockConfig;
+    const placement = dock.placement ?? (skin.dockRadius > 0 ? 'floating' : 'docked');
+    const isFloating = placement === 'floating';
+    const dockRadius = dock.radius ?? (isFloating ? skin.dockRadius : 0);
+    const dockHeight = dock.height ?? (isFloating ? 58 : 62);
+    const marginH = isFloating ? (dock.marginHorizontal ?? 18) : 0;
+    const borderPos = dock.borderPosition ?? (isFloating ? 'all' : 'top_only');
+    const borderW = borderPos === 'none' ? 0 : (dock.borderWidth ?? 1.25);
+    const accentMix = dock.borderAccentMix ?? 0.32;
+    const borderCol = `rgba(${palette.accentRgb}, ${accentMix})`;
+    const indicatorStyle = dock.indicatorStyle ?? 'pill';
+    const indicatorRadius = dock.indicatorRadius ?? Math.min(20, Math.max(4, dockRadius));
+    const labelMode = dock.labelMode ?? 'always';
+    const uppercase = dock.uppercaseLabels === true;
+    const useBlur = dock.blur === true;
+    const glowOpacity = dock.glowOpacity ?? 0;
+
+    return (
+      <Animated.View
+        pointerEvents={visible ? (isFloating ? 'box-none' : 'auto') : 'none'}
+        style={[
+          isFloating
+            ? [
+                styles.dockContainer,
+                {
+                  bottom: Math.max(12, insets.bottom + 6) + (dock.marginBottom ?? 0),
+                  paddingHorizontal: marginH,
+                },
+              ]
+            : styles.dockedBarContainer,
+          dockAnimatedStyle,
+        ]}
+      >
+        <View
+          style={{
+            width: '100%',
+            maxWidth: isFloating ? 380 : undefined,
+            borderRadius: dockRadius,
+            ...(glowOpacity > 0
+              ? {
+                  shadowColor: palette.accent,
+                  shadowOffset: { width: 0, height: isFloating ? 8 : -3 },
+                  shadowOpacity: glowOpacity,
+                  shadowRadius: 14,
+                  elevation: 10,
+                }
+              : null),
+          }}
+        >
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-around',
+              width: '100%',
+              minHeight: dockHeight,
+              borderRadius: dockRadius,
+              overflow: 'hidden',
+              backgroundColor: palette.dockBg,
+              paddingHorizontal: isFloating ? 8 : 6,
+              paddingTop: isFloating ? 4 : 6,
+              paddingBottom: isFloating ? 4 : Math.max(8, insets.bottom),
+              ...(borderPos === 'all' && borderW > 0
+                ? { borderWidth: borderW, borderColor: borderCol }
+                : borderPos === 'top_only' && borderW > 0
+                  ? { borderTopWidth: borderW, borderTopColor: borderCol }
+                  : null),
+              ...(useBlur && Platform.OS === 'web'
+                ? ({ backdropFilter: 'blur(22px) saturate(170%)' } as any)
+                : null),
+            }}
+          >
+            {useBlur && Platform.OS !== 'web' && (
+              <SafeBlurView
+                intensity={Platform.OS === 'android' ? 75 : 55}
+                blurReductionFactor={3}
+                tint="systemUltraThinMaterialDark"
+                blurMethod="dimezisBlurViewSdk31Plus"
+                blurTarget={blurTargetRef}
+                style={[StyleSheet.absoluteFill, { borderRadius: dockRadius }]}
+                pointerEvents="none"
+              />
+            )}
+
+            {TAB_ITEMS.map(({ key, labelKey, Icon }, idx) => {
+              const isActive = activeTab === key;
+              const showLabel =
+                labelMode === 'always' || (labelMode === 'active_only' && isActive);
+              const rawLabel = t(labelKey);
+              const labelText = uppercase ? rawLabel.toUpperCase() : rawLabel;
+
+              return (
+                <TouchableOpacity
+                  key={key}
+                  style={styles.dockedTabItem}
+                  onPress={() => onTabChange(key)}
+                  activeOpacity={0.8}
+                >
+                  <Animated.View
+                    style={{
+                      transform: [{ scale: scaleAnims[idx] }],
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      paddingVertical: 5,
+                      paddingHorizontal: 12,
+                      borderRadius: indicatorRadius,
+                      position: 'relative',
+                      backgroundColor:
+                        isActive && indicatorStyle === 'pill'
+                          ? `rgba(${palette.accentRgb}, 0.16)`
+                          : isActive && indicatorStyle === 'filled_block'
+                            ? palette.accent
+                            : 'transparent',
+                      borderWidth: isActive && indicatorStyle === 'pill' ? 1 : 0,
+                      borderColor:
+                        isActive && indicatorStyle === 'pill'
+                          ? `rgba(${palette.accentRgb}, 0.45)`
+                          : 'transparent',
+                    }}
+                  >
+                    {isActive && indicatorStyle === 'top_line' && (
+                      <View
+                        pointerEvents="none"
+                        style={{
+                          position: 'absolute',
+                          top: -6,
+                          width: 28,
+                          height: 2.5,
+                          borderRadius: 2,
+                          backgroundColor: palette.accent,
+                        }}
+                      />
+                    )}
+                    <Icon
+                      size={labelMode === 'hidden' ? 22 : 19}
+                      color={
+                        isActive
+                          ? indicatorStyle === 'filled_block'
+                            ? '#06080D'
+                            : palette.accent
+                          : 'rgba(255, 255, 255, 0.56)'
+                      }
+                    />
+                    {showLabel && (
+                      <Text
+                        numberOfLines={1}
+                        style={{
+                          fontSize: uppercase ? 9.5 : 10.5,
+                          fontWeight: isActive ? '800' : '600',
+                          letterSpacing: uppercase ? 0.7 : 0.15,
+                          marginTop: 2,
+                          color: isActive
+                            ? indicatorStyle === 'filled_block'
+                              ? '#06080D'
+                              : '#FFFFFF'
+                            : 'rgba(255, 255, 255, 0.56)',
+                        }}
+                      >
+                        {labelText}
+                      </Text>
+                    )}
+                    {isActive && indicatorStyle === 'underline' && (
+                      <View
+                        pointerEvents="none"
+                        style={{
+                          marginTop: 3,
+                          width: 20,
+                          height: 2,
+                          borderRadius: 2,
+                          backgroundColor: palette.accent,
+                        }}
+                      />
+                    )}
+                    {isActive && indicatorStyle === 'dot' && (
+                      <View
+                        pointerEvents="none"
+                        style={{
+                          marginTop: 3,
+                          width: 4,
+                          height: 4,
+                          borderRadius: 2,
+                          backgroundColor: palette.accent,
+                        }}
+                      />
+                    )}
+                  </Animated.View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      </Animated.View>
+    );
+  }
+
   if (skin.navBarStyle === 'm3_nav_bar') {
     return (
       <Animated.View
@@ -169,7 +365,7 @@ export const CapsuleDock: React.FC<CapsuleDockProps> = ({
           styles.dockedBarContainer,
           dockAnimatedStyle,
           {
-            backgroundColor: '#181818',
+            backgroundColor: palette.dockBg,
             borderTopWidth: 1,
             borderTopColor: 'rgba(255, 255, 255, 0.08)',
             paddingBottom: Math.max(8, insets.bottom),

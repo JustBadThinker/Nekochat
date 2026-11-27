@@ -68,16 +68,25 @@ const ThemeLivePreview: React.FC<{
   const accent = packDetail?.palettes[0]?.accent || packDetail?.palette?.accent || item.previewSwatches[2] || '#D4FF00';
   const accentMuted = packDetail?.palettes[0]?.accentMuted || packDetail?.palette?.accentMuted || item.previewSwatches[3] || accent;
   const dockBg = packDetail?.palettes[0]?.dockBg || packDetail?.palette?.dockBg || bgSurface;
-  const userBubbleBg = packDetail?.surfaces?.userBubbleBg || `${accent}33`;
-  const aiBubbleBg = packDetail?.surfaces?.aiBubbleBg || bgSurface;
+  const userBubbleBg =
+    packDetail?.palettes[0]?.userBubbleBg || packDetail?.surfaces?.userBubbleBg || `${accent}33`;
+  const aiBubbleBg =
+    packDetail?.palettes[0]?.aiBubbleBg || packDetail?.surfaces?.aiBubbleBg || bgSurface;
 
+  const cornerRadii = packDetail?.geometry?.cardCornerRadii;
   const cardRadius = Math.min(20, packDetail?.geometry?.cardRadius ?? 16);
   const bubbleRadius = Math.min(18, packDetail?.geometry?.bubbleRadius ?? 14);
   const tailRadius = Math.min(8, packDetail?.geometry?.bubbleTailRadius ?? 4);
   const buttonRadius = Math.min(999, packDetail?.geometry?.buttonRadius ?? 12);
-  const dockRadius = Math.min(22, packDetail?.geometry?.dockRadius ?? 18);
+  const dockCfg = packDetail?.dock;
+  const dockPlacement = dockCfg?.placement ?? ((packDetail?.geometry?.dockRadius ?? 18) > 0 ? 'floating' : 'docked');
+  const dockRadius = Math.min(22, dockCfg?.radius ?? packDetail?.geometry?.dockRadius ?? (dockPlacement === 'floating' ? 18 : 0));
+  const dockBorderColor = `${accent}${Math.round((dockCfg?.borderAccentMix ?? 0.35) * 255).toString(16).padStart(2, '0')}`;
+  const cardFrame = packDetail?.surfaces?.cardFrameStyle;
   const lipWidth =
-    packDetail?.baseSkin === 'bento' ? (packDetail?.surfaces?.keycapLipWidth ?? 3) : 1;
+    packDetail?.baseSkin === 'bento' && (!cardFrame || cardFrame === 'keycap')
+      ? (packDetail?.surfaces?.keycapLipWidth ?? 3)
+      : 1;
 
   const hasRemoteShot = Boolean(item.previewImage && !imgFailed);
 
@@ -88,8 +97,23 @@ const ThemeLivePreview: React.FC<{
         {
           height: large ? 178 : 112,
           backgroundColor: bgDark,
-          borderRadius: Math.max(10, cardRadius),
-          borderColor: `${accent}44`,
+          ...(cornerRadii
+            ? {
+                borderTopLeftRadius: Math.min(20, cornerRadii[0]),
+                borderTopRightRadius: Math.min(20, cornerRadii[1]),
+                borderBottomRightRadius: Math.min(20, cornerRadii[2]),
+                borderBottomLeftRadius: Math.min(20, cornerRadii[3]),
+              }
+            : { borderRadius: Math.max(4, cardRadius) }),
+          borderColor:
+            cardFrame === 'neon_frame' || cardFrame === 'hud_dual_edge'
+              ? `${accent}99`
+              : `${accent}44`,
+          ...(cardFrame === 'hud_dual_edge'
+            ? { borderTopWidth: 2, borderBottomWidth: 2, borderTopColor: accent, borderBottomColor: `${accent}99` }
+            : cardFrame === 'accent_left'
+              ? { borderLeftWidth: 3.5, borderLeftColor: accent }
+              : null),
         },
       ]}
     >
@@ -156,11 +180,24 @@ const ThemeLivePreview: React.FC<{
             {
               backgroundColor: dockBg,
               borderRadius: dockRadius,
-              borderColor: `${accent}44`,
+              borderColor: dockBorderColor,
+              marginHorizontal: dockPlacement === 'floating' ? 10 : -10,
+              marginBottom: dockPlacement === 'docked' ? -10 : 0,
+              paddingBottom: dockPlacement === 'docked' ? 8 : 5,
             },
           ]}
         >
-          <View style={[styles.previewDockPill, { backgroundColor: accent, borderRadius: buttonRadius }]} />
+          <View
+            style={[
+              styles.previewDockPill,
+              {
+                backgroundColor:
+                  dockCfg?.indicatorStyle === 'dot' ? accent : accent,
+                borderRadius: dockCfg?.indicatorStyle === 'top_line' || dockCfg?.indicatorStyle === 'underline' ? 1 : buttonRadius,
+                height: dockCfg?.indicatorStyle === 'top_line' || dockCfg?.indicatorStyle === 'underline' ? 3 : 7,
+              },
+            ]}
+          />
           <View style={[styles.previewDockDot, { backgroundColor: accentMuted }]} />
           <View style={[styles.previewDockDot, { backgroundColor: 'rgba(255,255,255,0.28)' }]} />
         </View>
@@ -573,14 +610,18 @@ export const ThemeStoreModal: React.FC<ThemeStoreModalProps> = ({
                 </View>
 
                 <View style={[styles.specCell, { backgroundColor: palette.bgSurfaceSubtle }]}>
-                  <Text style={styles.specLabel}>GEOMETRY</Text>
+                  <Text style={styles.specLabel}>GEOMETRY & DOCK</Text>
                   <Text style={styles.specValue}>
-                    Card {detailPack?.geometry?.cardRadius ?? 20}px • Bubble{' '}
-                    {detailPack?.geometry?.bubbleRadius ?? 20}px
+                    {detailPack?.geometry?.cardCornerRadii
+                      ? `Corners [${detailPack.geometry.cardCornerRadii.join('/')}]`
+                      : `Card ${detailPack?.geometry?.cardRadius ?? 20}px`}{' '}
+                    • Bubble {detailPack?.geometry?.bubbleRadius ?? 20}px
                   </Text>
                   <Text style={styles.specSub}>
-                    Sheet {detailPack?.geometry?.sheetRadius ?? 26}px • Surface:{' '}
-                    {detailPack?.surfaces?.surfaceMode || 'skin default'}
+                    Frame: {detailPack?.surfaces?.cardFrameStyle || 'default'} • Dock:{' '}
+                    {detailPack?.dock
+                      ? `${detailPack.dock.placement || 'custom'} (${detailPack.dock.indicatorStyle || 'pill'})`
+                      : detailPack?.layout?.navBarStyle || 'skin default'}
                   </Text>
                 </View>
               </View>

@@ -168,12 +168,70 @@ test('stripJsonComments preserves https URLs while stripping JSONC comments and 
   assert.equal(validatedStarter.palettes.length, 2);
 });
 
+test('validateThemePack validates custom dock, cardFrameStyle, asymmetric cardCornerRadii, composerStyle & per-palette bubbles', () => {
+  const hud = validateThemePack({
+    schemaVersion: 1,
+    id: 'custom-dock-hud',
+    name: 'Custom Dock HUD',
+    baseSkin: 'bento',
+    layout: {
+      composerStyle: 'ios_glass',
+    },
+    dock: {
+      placement: 'docked',
+      radius: 0,
+      marginHorizontal: 99,
+      height: 120,
+      blur: true,
+      borderWidth: 2,
+      borderPosition: 'top_only',
+      borderAccentMix: 2,
+      glowOpacity: 0.4,
+      indicatorStyle: 'top_line',
+      labelMode: 'active_only',
+      uppercaseLabels: true,
+    },
+    surfaces: {
+      cardFrameStyle: 'hud_dual_edge',
+    },
+    geometry: {
+      cardCornerRadii: [2, 100, -5, 14],
+    },
+    palettes: [
+      {
+        id: 'hud-cyan',
+        name: 'HUD Cyan',
+        accent: '#00F0FF',
+        bgDark: '#040A12',
+        bgSurface: '#081422',
+        bgSurfaceSubtle: '#0D2036',
+        dockBg: 'rgba(6, 16, 28, 0.90)',
+        userBubbleBg: 'rgba(0, 240, 255, 0.14)',
+        aiBubbleBg: '#081422',
+      },
+    ],
+  });
+
+  assert.ok(hud);
+  assert.equal(hud.layout?.composerStyle, 'ios_glass');
+  assert.equal(hud.dock?.placement, 'docked');
+  assert.equal(hud.dock?.marginHorizontal, 48);
+  assert.equal(hud.dock?.height, 78);
+  assert.equal(hud.dock?.borderAccentMix, 1);
+  assert.equal(hud.dock?.indicatorStyle, 'top_line');
+  assert.equal(hud.dock?.labelMode, 'active_only');
+  assert.equal(hud.dock?.uppercaseLabels, true);
+  assert.equal(hud.surfaces?.cardFrameStyle, 'hud_dual_edge');
+  assert.deepEqual(hud.geometry?.cardCornerRadii, [2, 64, 0, 14]);
+  assert.equal(hud.palettes[0].userBubbleBg, 'rgba(0, 240, 255, 0.14)');
+});
+
 test('themes/index.json and every themes/packs/*.json pass strict validation', () => {
   const catalogPath = path.resolve(process.cwd(), 'themes/index.json');
   const catalogRaw = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
   const items = validateThemeCatalog(catalogRaw);
 
-  assert.ok(items.length >= 6);
+  assert.ok(items.length >= 7);
   for (const item of items) {
     const packPath = path.resolve(process.cwd(), `themes/packs/${item.id}.json`);
     assert.equal(fs.existsSync(packPath), true, `Missing pack file for ${item.id}`);
@@ -184,6 +242,12 @@ test('themes/index.json and every themes/packs/*.json pass strict validation', (
     assert.equal(validated.baseSkin, item.baseSkin);
     if (item.id === 'catppuccin-mocha' || item.id === 'crt-phosphor') {
       assert.equal(validated.palettes.length, 2);
+    }
+    if (item.id === 'aegis-scifi-hud') {
+      assert.equal(validated.palettes.length, 3);
+      assert.equal(validated.dock?.indicatorStyle, 'top_line');
+      assert.equal(validated.surfaces?.cardFrameStyle, 'hud_dual_edge');
+      assert.deepEqual(validated.geometry?.cardCornerRadii, [2, 14, 2, 14]);
     }
   }
 });

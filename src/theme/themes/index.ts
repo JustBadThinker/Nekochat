@@ -41,6 +41,8 @@ function namedPaletteToThemePalette(
     bgSurfaceSubtle: p.bgSurfaceSubtle,
     webFrameBg: p.webFrameBg || p.bgDark,
     dockBg: p.dockBg,
+    ...(p.userBubbleBg ? { userBubbleBg: p.userBubbleBg } : {}),
+    ...(p.aiBubbleBg ? { aiBubbleBg: p.aiBubbleBg } : {}),
   };
 }
 
@@ -132,6 +134,8 @@ export function resolveSkinWithPack(
     ...(l?.navBarStyle ? { navBarStyle: l.navBarStyle } : {}),
     ...(l?.settingsLayout ? { settingsLayout: l.settingsLayout } : {}),
     ...(l?.switchStyle ? { switchStyle: l.switchStyle } : {}),
+    ...(l?.composerStyle ? { composerStyle: l.composerStyle } : {}),
+    ...(pack.dock ? { dockConfig: pack.dock } : {}),
     ...(s?.surfaceMode ? { surfaceMode: s.surfaceMode } : {}),
     ...(applyFixedColors
       ? {
@@ -145,11 +149,13 @@ export function resolveSkinWithPack(
           surfaceSubtleBg: undefined,
         }),
     ...(s &&
-    (s.keycapLipWidth !== undefined ||
+    (s.cardFrameStyle !== undefined ||
+      s.keycapLipWidth !== undefined ||
       s.specularRimOpacity !== undefined ||
       (applyFixedColors && (s.userBubbleBg || s.aiBubbleBg)))
       ? {
           surfaceOverrides: {
+            ...(s.cardFrameStyle !== undefined ? { cardFrameStyle: s.cardFrameStyle } : {}),
             ...(s.keycapLipWidth !== undefined ? { keycapLipWidth: s.keycapLipWidth } : {}),
             ...(s.specularRimOpacity !== undefined ? { specularRimOpacity: s.specularRimOpacity } : {}),
             ...(applyFixedColors && s.userBubbleBg ? { userBubbleBg: s.userBubbleBg } : {}),
@@ -161,6 +167,7 @@ export function resolveSkinWithPack(
     ...(s?.cardGlowOpacity !== undefined ? { cardGlowOpacity: s.cardGlowOpacity } : {}),
     ...(s?.cardGlowRadius !== undefined ? { cardGlowRadius: s.cardGlowRadius } : {}),
     ...(g?.cardRadius !== undefined ? { cardRadius: g.cardRadius } : {}),
+    ...(g?.cardCornerRadii ? { cardCornerRadii: g.cardCornerRadii } : {}),
     ...(g?.cardBorderWidth !== undefined ? { cardBorderWidth: g.cardBorderWidth } : {}),
     ...(g?.buttonRadius !== undefined ? { buttonRadius: g.buttonRadius } : {}),
     ...(g?.pillRadius !== undefined ? { pillRadius: g.pillRadius } : {}),
@@ -247,22 +254,39 @@ export function getCardSurfaceStyle(palette: ThemePalette, skin: UiSkinTokens): 
         : 'rgba(255, 255, 255, 0.08)';
 
   const backgroundColor = getSurfaceBg(palette, skin);
+  const radiiStyle: ViewStyle = skin.cardCornerRadii
+    ? {
+        borderTopLeftRadius: skin.cardCornerRadii[0],
+        borderTopRightRadius: skin.cardCornerRadii[1],
+        borderBottomRightRadius: skin.cardCornerRadii[2],
+        borderBottomLeftRadius: skin.cardCornerRadii[3],
+      }
+    : { borderRadius: skin.cardRadius };
 
-  return {
-    borderRadius: skin.cardRadius,
-    borderWidth: skin.cardBorderWidth,
-    borderColor: skin.cardBorderWidth > 0 ? borderColor : 'transparent',
-    ...(skin.id === 'bento'
-      ? {
+  const frameStyle = skin.surfaceOverrides?.cardFrameStyle;
+  let frameOverrides: ViewStyle;
+
+  if (frameStyle && frameStyle !== 'default') {
+    switch (frameStyle) {
+      case 'flat':
+        frameOverrides = {
+          borderWidth: skin.cardBorderWidth,
+          borderColor: skin.cardBorderWidth > 0 ? borderColor : 'transparent',
+        };
+        break;
+      case 'keycap':
+        frameOverrides = {
           borderWidth: skin.cardBorderWidth || 1.25,
-          borderColor: 'rgba(255, 255, 255, 0.11)',
+          borderColor: borderColor,
           borderTopColor: 'rgba(255, 255, 255, 0.17)',
           borderBottomWidth: skin.surfaceOverrides?.keycapLipWidth ?? 3.5,
           borderBottomColor: 'rgba(0, 0, 0, 0.52)',
-        }
-      : {}),
-    ...(skin.id === 'ios'
-      ? {
+        };
+        break;
+      case 'glass_rim':
+        frameOverrides = {
+          borderWidth: skin.cardBorderWidth || 1,
+          borderColor: 'rgba(255, 255, 255, 0.22)',
           borderTopColor: `rgba(255, 255, 255, ${skin.surfaceOverrides?.specularRimOpacity ?? 0.46})`,
           borderBottomColor: 'rgba(0, 0, 0, 0.42)',
           shadowColor: '#000000',
@@ -270,8 +294,63 @@ export function getCardSurfaceStyle(palette: ThemePalette, skin: UiSkinTokens): 
           shadowOpacity: 0.48,
           shadowRadius: 20,
           elevation: 8,
-        }
-      : {}),
+        };
+        break;
+      case 'neon_frame':
+        frameOverrides = {
+          borderWidth: skin.cardBorderWidth || 1.25,
+          borderColor: `rgba(${palette.accentRgb}, ${Math.max(0.35, skin.cardBorderAccentMix)})`,
+        };
+        break;
+      case 'accent_left':
+        frameOverrides = {
+          borderWidth: skin.cardBorderWidth || 1,
+          borderColor: 'rgba(255, 255, 255, 0.10)',
+          borderLeftWidth: 3.5,
+          borderLeftColor: palette.accent,
+        };
+        break;
+      case 'hud_dual_edge':
+        frameOverrides = {
+          borderWidth: 1,
+          borderColor: `rgba(${palette.accentRgb}, 0.22)`,
+          borderTopWidth: Math.max(1.5, skin.cardBorderWidth || 1.5),
+          borderTopColor: `rgba(${palette.accentRgb}, 0.78)`,
+          borderBottomWidth: Math.max(1.5, skin.cardBorderWidth || 1.5),
+          borderBottomColor: `rgba(${palette.accentRgb}, 0.48)`,
+        };
+        break;
+    }
+  } else {
+    frameOverrides = {
+      borderWidth: skin.cardBorderWidth,
+      borderColor: skin.cardBorderWidth > 0 ? borderColor : 'transparent',
+      ...(skin.id === 'bento'
+        ? {
+            borderWidth: skin.cardBorderWidth || 1.25,
+            borderColor: 'rgba(255, 255, 255, 0.11)',
+            borderTopColor: 'rgba(255, 255, 255, 0.17)',
+            borderBottomWidth: skin.surfaceOverrides?.keycapLipWidth ?? 3.5,
+            borderBottomColor: 'rgba(0, 0, 0, 0.52)',
+          }
+        : {}),
+      ...(skin.id === 'ios'
+        ? {
+            borderTopColor: `rgba(255, 255, 255, ${skin.surfaceOverrides?.specularRimOpacity ?? 0.46})`,
+            borderBottomColor: 'rgba(0, 0, 0, 0.42)',
+            shadowColor: '#000000',
+            shadowOffset: { width: 0, height: 10 },
+            shadowOpacity: 0.48,
+            shadowRadius: 20,
+            elevation: 8,
+          }
+        : {}),
+    };
+  }
+
+  return {
+    ...radiiStyle,
+    ...frameOverrides,
     backgroundColor,
     ...(skin.cardGlowOpacity > 0
       ? {
@@ -360,9 +439,10 @@ export function getBubbleSurfaceStyle(
               }
             : {};
 
-  const customBubbleBg = isUser
-    ? skin.surfaceOverrides?.userBubbleBg
-    : skin.surfaceOverrides?.aiBubbleBg;
+  const paletteBubbleBg = isUser ? palette.userBubbleBg : palette.aiBubbleBg;
+  const customBubbleBg =
+    paletteBubbleBg ||
+    (isUser ? skin.surfaceOverrides?.userBubbleBg : skin.surfaceOverrides?.aiBubbleBg);
 
   return {
     ...cornerRadii,

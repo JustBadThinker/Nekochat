@@ -16,6 +16,38 @@ export type ThemeEasingSpec =
 
 export type ThemePackBaseSkin = 'bento' | 'janitor' | 'material' | 'ios';
 
+export type ThemePackComposerStyle =
+  | 'bento_macropad'
+  | 'classic_pill'
+  | 'material_pill'
+  | 'ios_glass';
+
+export type ThemePackCardFrameStyle =
+  | 'default'
+  | 'flat'
+  | 'keycap'
+  | 'glass_rim'
+  | 'neon_frame'
+  | 'accent_left'
+  | 'hud_dual_edge';
+
+export interface ThemePackDockConfig {
+  placement?: 'floating' | 'docked';
+  radius?: number;
+  marginHorizontal?: number;
+  marginBottom?: number;
+  height?: number;
+  blur?: boolean;
+  borderWidth?: number;
+  borderPosition?: 'all' | 'top_only' | 'none';
+  borderAccentMix?: number;
+  glowOpacity?: number;
+  indicatorStyle?: 'pill' | 'underline' | 'top_line' | 'dot' | 'filled_block' | 'none';
+  indicatorRadius?: number;
+  labelMode?: 'always' | 'active_only' | 'hidden';
+  uppercaseLabels?: boolean;
+}
+
 export interface ThemePackPalette {
   accent: string;
   accentMuted: string;
@@ -25,6 +57,8 @@ export interface ThemePackPalette {
   bgSurfaceSubtle: string;
   webFrameBg?: string;
   dockBg: string;
+  userBubbleBg?: string;
+  aiBubbleBg?: string;
 }
 
 export interface ThemePackNamedPalette extends ThemePackPalette {
@@ -37,10 +71,12 @@ export interface ThemePackLayout {
   navBarStyle?: 'floating_capsule' | 'classic_bar' | 'm3_nav_bar' | 'ios_tab_bar';
   settingsLayout?: 'bento_grid' | 'm3_list' | 'ios_inset_grouped';
   switchStyle?: 'neko' | 'm3' | 'ios';
+  composerStyle?: ThemePackComposerStyle;
 }
 
 export interface ThemePackSurfaces {
   surfaceMode?: 'oled' | 'glass' | 'tonal' | 'frosted';
+  cardFrameStyle?: ThemePackCardFrameStyle;
   screenBg?: string;
   surfaceBg?: string;
   surfaceSubtleBg?: string;
@@ -55,6 +91,7 @@ export interface ThemePackSurfaces {
 
 export interface ThemePackGeometry {
   cardRadius?: number;
+  cardCornerRadii?: [number, number, number, number];
   cardBorderWidth?: number;
   buttonRadius?: number;
   pillRadius?: number;
@@ -115,6 +152,7 @@ export interface NekoThemePack {
   palette?: ThemePackPalette;
   palettes: ThemePackNamedPalette[];
   layout?: ThemePackLayout;
+  dock?: ThemePackDockConfig;
   surfaces?: ThemePackSurfaces;
   geometry?: ThemePackGeometry;
   animation?: ThemePackAnimation;
@@ -145,6 +183,32 @@ const VALID_SURFACE_MODES = new Set(['oled', 'glass', 'tonal', 'frosted']);
 const VALID_NAV_STYLES = new Set(['floating_capsule', 'classic_bar', 'm3_nav_bar', 'ios_tab_bar']);
 const VALID_SETTINGS_LAYOUTS = new Set(['bento_grid', 'm3_list', 'ios_inset_grouped']);
 const VALID_SWITCH_STYLES = new Set(['neko', 'm3', 'ios']);
+const VALID_COMPOSER_STYLES = new Set<ThemePackComposerStyle>([
+  'bento_macropad',
+  'classic_pill',
+  'material_pill',
+  'ios_glass',
+]);
+const VALID_CARD_FRAMES = new Set<ThemePackCardFrameStyle>([
+  'default',
+  'flat',
+  'keycap',
+  'glass_rim',
+  'neon_frame',
+  'accent_left',
+  'hud_dual_edge',
+]);
+const VALID_DOCK_PLACEMENTS = new Set(['floating', 'docked']);
+const VALID_DOCK_BORDER_POS = new Set(['all', 'top_only', 'none']);
+const VALID_DOCK_INDICATORS = new Set([
+  'pill',
+  'underline',
+  'top_line',
+  'dot',
+  'filled_block',
+  'none',
+]);
+const VALID_DOCK_LABELS = new Set(['always', 'active_only', 'hidden']);
 const VALID_EASING_NAMES = new Set([
   'cubicOut',
   'quadOut',
@@ -301,6 +365,8 @@ function validatePaletteFields(rawPal: unknown): ThemePackPalette | null {
     bgSurfaceSubtle: p.bgSurfaceSubtle.trim(),
     dockBg: p.dockBg.trim(),
     ...(isValidCssColor(p.webFrameBg) ? { webFrameBg: p.webFrameBg.trim() } : {}),
+    ...(isValidCssColor(p.userBubbleBg) ? { userBubbleBg: p.userBubbleBg.trim() } : {}),
+    ...(isValidCssColor(p.aiBubbleBg) ? { aiBubbleBg: p.aiBubbleBg.trim() } : {}),
   };
 }
 
@@ -321,6 +387,17 @@ function validateEasingSpec(raw: unknown): ThemeEasingSpec | undefined {
     ];
   }
   return undefined;
+}
+
+function validateCornerRadii(raw: unknown): [number, number, number, number] | undefined {
+  if (!Array.isArray(raw) || raw.length !== 4) return undefined;
+  if (!raw.every(v => typeof v === 'number' && Number.isFinite(v))) return undefined;
+  return [
+    Math.min(64, Math.max(0, raw[0])),
+    Math.min(64, Math.max(0, raw[1])),
+    Math.min(64, Math.max(0, raw[2])),
+    Math.min(64, Math.max(0, raw[3])),
+  ];
 }
 
 function normalizeTags(raw: unknown): string[] {
@@ -346,10 +423,6 @@ function pickDefined<T extends Record<string, any>>(obj: T): Partial<T> {
 
 /**
  * Validates and clamps an untrusted JSON Theme Pack object.
- * Supports:
- * - Full Packs with multiple custom color schemes (`palettes: [...]`)
- * - Legacy / Lite Packs with a single `palette` object (auto-normalized into `palettes[0]`)
- * - Skin-Only Packs omitting `palette`/`palettes` (works purely with built-in color schemes)
  */
 export function validateThemePack(raw: unknown): NekoThemePack | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -369,7 +442,6 @@ export function validateThemePack(raw: unknown): NekoThemePack | null {
 
   const description = cleanStr(obj.description, 280);
 
-  // If `palette` was explicitly supplied, it must be valid.
   let primaryPalette: ThemePackPalette | undefined;
   if (obj.palette !== undefined) {
     const validatedSingle = validatePaletteFields(obj.palette);
@@ -419,6 +491,8 @@ export function validateThemePack(raw: unknown): NekoThemePack | null {
       bgSurfaceSubtle: first.bgSurfaceSubtle,
       dockBg: first.dockBg,
       ...(first.webFrameBg ? { webFrameBg: first.webFrameBg } : {}),
+      ...(first.userBubbleBg ? { userBubbleBg: first.userBubbleBg } : {}),
+      ...(first.aiBubbleBg ? { aiBubbleBg: first.aiBubbleBg } : {}),
     };
   }
 
@@ -436,9 +510,34 @@ export function validateThemePack(raw: unknown): NekoThemePack | null {
       navBarStyle: VALID_NAV_STYLES.has(l.navBarStyle) ? l.navBarStyle : undefined,
       settingsLayout: VALID_SETTINGS_LAYOUTS.has(l.settingsLayout) ? l.settingsLayout : undefined,
       switchStyle: VALID_SWITCH_STYLES.has(l.switchStyle) ? l.switchStyle : undefined,
+      composerStyle: VALID_COMPOSER_STYLES.has(l.composerStyle) ? l.composerStyle : undefined,
     });
     if (Object.keys(cleanedLayout).length > 0) {
       layout = cleanedLayout;
+    }
+  }
+
+  let dock: ThemePackDockConfig | undefined;
+  if (obj.dock && typeof obj.dock === 'object') {
+    const d = obj.dock as Record<string, any>;
+    const cleanedDock = pickDefined<ThemePackDockConfig>({
+      placement: VALID_DOCK_PLACEMENTS.has(d.placement) ? d.placement : undefined,
+      radius: clampNum(d.radius, 0, 999),
+      marginHorizontal: clampNum(d.marginHorizontal, 0, 48),
+      marginBottom: clampNum(d.marginBottom, 0, 28),
+      height: clampNum(d.height, 52, 78),
+      blur: typeof d.blur === 'boolean' ? d.blur : undefined,
+      borderWidth: clampNum(d.borderWidth, 0, 4),
+      borderPosition: VALID_DOCK_BORDER_POS.has(d.borderPosition) ? d.borderPosition : undefined,
+      borderAccentMix: clampNum(d.borderAccentMix, 0, 1),
+      glowOpacity: clampNum(d.glowOpacity, 0, 1),
+      indicatorStyle: VALID_DOCK_INDICATORS.has(d.indicatorStyle) ? d.indicatorStyle : undefined,
+      indicatorRadius: clampNum(d.indicatorRadius, 0, 999),
+      labelMode: VALID_DOCK_LABELS.has(d.labelMode) ? d.labelMode : undefined,
+      uppercaseLabels: typeof d.uppercaseLabels === 'boolean' ? d.uppercaseLabels : undefined,
+    });
+    if (Object.keys(cleanedDock).length > 0) {
+      dock = cleanedDock;
     }
   }
 
@@ -447,6 +546,7 @@ export function validateThemePack(raw: unknown): NekoThemePack | null {
     const s = obj.surfaces as Record<string, any>;
     const cleanedSurfaces = pickDefined<ThemePackSurfaces>({
       surfaceMode: VALID_SURFACE_MODES.has(s.surfaceMode) ? s.surfaceMode : undefined,
+      cardFrameStyle: VALID_CARD_FRAMES.has(s.cardFrameStyle) ? s.cardFrameStyle : undefined,
       screenBg: isValidCssColor(s.screenBg) ? s.screenBg.trim() : undefined,
       surfaceBg: isValidCssColor(s.surfaceBg) ? s.surfaceBg.trim() : undefined,
       surfaceSubtleBg: isValidCssColor(s.surfaceSubtleBg) ? s.surfaceSubtleBg.trim() : undefined,
@@ -468,6 +568,7 @@ export function validateThemePack(raw: unknown): NekoThemePack | null {
     const g = obj.geometry as Record<string, any>;
     const cleanedGeo = pickDefined<ThemePackGeometry>({
       cardRadius: clampNum(g.cardRadius, 0, 999),
+      cardCornerRadii: validateCornerRadii(g.cardCornerRadii),
       cardBorderWidth: clampNum(g.cardBorderWidth, 0, 6),
       buttonRadius: clampNum(g.buttonRadius, 0, 999),
       pillRadius: clampNum(g.pillRadius, 0, 999),
@@ -539,6 +640,7 @@ export function validateThemePack(raw: unknown): NekoThemePack | null {
     ...(primaryPalette ? { palette: primaryPalette } : {}),
     palettes,
     ...(layout ? { layout } : {}),
+    ...(dock ? { dock } : {}),
     ...(surfaces ? { surfaces } : {}),
     ...(geometry ? { geometry } : {}),
     ...(animation ? { animation } : {}),

@@ -1,10 +1,17 @@
 import type { EasingFunction } from 'react-native';
-import type { ThemeEasingSpec } from '../themePackSchema';
+import type {
+  ThemeEasingSpec,
+  ThemePackCardFrameStyle,
+  ThemePackComposerStyle,
+  ThemePackDockConfig,
+} from '../themePackSchema';
 
 export type UiSkinId = 'bento' | 'janitor' | 'material' | 'ios';
 export type NavBarStyle = 'floating_capsule' | 'classic_bar' | 'm3_nav_bar' | 'ios_tab_bar';
 export type SettingsLayoutStyle = 'bento_grid' | 'm3_list' | 'ios_inset_grouped';
 export type SwitchStyle = 'neko' | 'm3' | 'ios';
+export type ComposerStyle = ThemePackComposerStyle;
+export type CardFrameStyle = ThemePackCardFrameStyle;
 
 export interface SkinAnimationConfig {
   mode: 'spring' | 'timing';
@@ -37,6 +44,7 @@ export interface SkinAnimationConfig {
 }
 
 export interface UiSkinSurfaceOverrides {
+  cardFrameStyle?: CardFrameStyle;
   keycapLipWidth?: number;
   specularRimOpacity?: number;
   userBubbleBg?: string;
@@ -58,7 +66,10 @@ export interface UiSkinTokens {
   navBarStyle: NavBarStyle;
   settingsLayout: SettingsLayoutStyle;
   switchStyle: SwitchStyle;
+  composerStyle?: ComposerStyle;
+  dockConfig?: ThemePackDockConfig;
   cardRadius: number;
+  cardCornerRadii?: [number, number, number, number];
   cardBorderWidth: number;
   cardBorderAccentMix: number;
   cardGlowOpacity: number;

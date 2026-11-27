@@ -134,6 +134,8 @@ export function getAllInstalledPalettesSync(): ThemePalette[] {
         bgSurfaceSubtle: p.bgSurfaceSubtle,
         webFrameBg: p.webFrameBg || p.bgDark,
         dockBg: p.dockBg,
+        ...(p.userBubbleBg ? { userBubbleBg: p.userBubbleBg } : {}),
+        ...(p.aiBubbleBg ? { aiBubbleBg: p.aiBubbleBg } : {}),
       });
     }
   }

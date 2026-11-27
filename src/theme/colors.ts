@@ -29,6 +29,8 @@ export interface ThemePalette {
   bgSurfaceSubtle: string;
   webFrameBg: string;
   dockBg: string;
+  userBubbleBg?: string;
+  aiBubbleBg?: string;
 }
 
 export const THEME_PALETTES: Record<ThemeId, ThemePalette> = {
