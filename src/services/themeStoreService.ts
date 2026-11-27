@@ -20,6 +20,7 @@ import nordFrostRaw from '../../themes/packs/nord-frost.json';
 import rosePineRaw from '../../themes/packs/rose-pine-velvet.json';
 import crtPhosphorRaw from '../../themes/packs/crt-phosphor.json';
 import draculaObsidianRaw from '../../themes/packs/dracula-obsidian.json';
+import aegisScifiRaw from '../../themes/packs/aegis-scifi-hud.json';
 
 export const THEME_CATALOG_URL =
   'https://raw.githubusercontent.com/JustBadThinker/Nekochat/main/themes/index.json';
@@ -38,6 +39,7 @@ const STARTER_PACK_MAP: Record<string, NekoThemePack> = (() => {
     rosePineRaw,
     crtPhosphorRaw,
     draculaObsidianRaw,
+    aegisScifiRaw,
   ]) {
     const validated = validateThemePack(raw);
     if (validated) map[validated.id] = validated;

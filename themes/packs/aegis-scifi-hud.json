@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "id": "aegis-scifi-hud",
+  "name": "Aegis Orbital HUD",
+  "author": "NekoChat",
+  "version": "1.0.0",
+  "description": "Sharp aerospace telemetry HUD with razor-edged framing, glowing instrument borders, docked deck bar, 3 tactical alerts, and zero-overshoot motion.",
+  "badge": "HUD",
+  "baseSkin": "bento",
+  "supportsBuiltInPalettes": true,
+  "defaultPaletteId": "aegis-orbital-cyan",
+  "tags": ["Sci-Fi", "Neon", "HUD"],
+  "palettes": [
+    {
+      "id": "aegis-orbital-cyan",
+      "name": "Orbital Cyan Telemetry",
+      "desc": "Deep orbital void (#040A12) + HUD Laser Cyan (#00F0FF)",
+      "accent": "#00F0FF",
+      "accentMuted": "#0EA5E9",
+      "accentRgb": "0, 240, 255",
+      "bgDark": "#040A12",
+      "bgSurface": "#081422",
+      "bgSurfaceSubtle": "#0D2036",
+      "webFrameBg": "#020509",
+      "dockBg": "rgba(6, 16, 28, 0.94)"
+    },
+    {
+      "id": "aegis-red-alert",
+      "name": "Red Alert Tactical",
+      "desc": "Blackout hull (#0E0507) + Critical Crimson HUD (#FF2A4B)",
+      "accent": "#FF2A4B",
+      "accentMuted": "#E11D48",
+      "accentRgb": "255, 42, 75",
+      "bgDark": "#0E0507",
+      "bgSurface": "#19090D",
+      "bgSurfaceSubtle": "#281017",
+      "webFrameBg": "#070204",
+      "dockBg": "rgba(22, 8, 12, 0.94)"
+    },
+    {
+      "id": "aegis-solar-amber",
+      "name": "Solar Command Gold",
+      "desc": "Command deck (#0B0905) + Tactical Amber HUD (#FFB800)",
+      "accent": "#FFB800",
+      "accentMuted": "#D97706",
+      "accentRgb": "255, 184, 0",
+      "bgDark": "#0B0905",
+      "bgSurface": "#171208",
+      "bgSurfaceSubtle": "#241C0C",
+      "webFrameBg": "#050402",
+      "dockBg": "rgba(20, 15, 7, 0.94)"
+    }
+  ],
+  "layout": {
+    "navBarStyle": "classic_bar",
+    "settingsLayout": "bento_grid",
+    "switchStyle": "neko"
+  },
+  "surfaces": {
+    "surfaceMode": "glass",
+    "cardBorderAccentMix": 0.65,
+    "cardGlowOpacity": 0.32,
+    "cardGlowRadius": 14,
+    "keycapLipWidth": 2
+  },
+  "geometry": {
+    "cardRadius": 4,
+    "cardBorderWidth": 1.5,
+    "buttonRadius": 3,
+    "pillRadius": 3,
+    "inputRadius": 4,
+    "sheetRadius": 8,
+    "grabberWidth": 52,
+    "grabberHeight": 3,
+    "bubbleRadius": 6,
+    "bubbleTailRadius": 0,
+    "bubbleBorderWidth": 1.25,
+    "dockRadius": 0,
+    "dockBorderWidth": 1.5,
+    "pressScale": 0.96
+  },
+  "animation": {
+    "mode": "timing",
+    "speedScale": 0.72,
+    "easing": [0.16, 1, 0.3, 1],
+    "enterDuration": 150,
+    "enterTranslateY": 6,
+    "enterScaleFrom": 0.98,
+    "pressDuration": 75,
+    "pressScale": 0.96,
+    "sheetOpenDuration": 185,
+    "sheetCloseDuration": 145,
+    "screenExitDuration": 150,
+    "tabFadeDuration": 120,
+    "composerDuration": 155,
+    "collapsibleDuration": 130
+  }
+}

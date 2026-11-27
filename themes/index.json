@@ -79,6 +79,19 @@
       "previewSwatches": ["#14151F", "#212230", "#BD93F9", "#FF79C6"],
       "motionSummary": "Punchy fast spring • 0.88x",
       "packUrl": "https://raw.githubusercontent.com/JustBadThinker/Nekochat/main/themes/packs/dracula-obsidian.json"
+    },
+    {
+      "id": "aegis-scifi-hud",
+      "name": "Aegis Orbital HUD",
+      "author": "NekoChat",
+      "version": "1.0.0",
+      "description": "Sharp aerospace telemetry HUD with razor-edged framing, glowing instrument borders, docked deck bar, 3 tactical alerts, and zero-overshoot motion.",
+      "badge": "HUD",
+      "baseSkin": "bento",
+      "tags": ["Sci-Fi", "Neon", "HUD"],
+      "previewSwatches": ["#040A12", "#081422", "#00F0FF", "#FF2A4B"],
+      "motionSummary": "0.72x HUD telemetry • 3 palettes",
+      "packUrl": "https://raw.githubusercontent.com/JustBadThinker/Nekochat/main/themes/packs/aegis-scifi-hud.json"
     }
   ]
 }

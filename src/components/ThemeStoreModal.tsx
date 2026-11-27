@@ -46,7 +46,7 @@ interface ThemeStoreModalProps {
   onPackUninstalled?: (packId: string) => Promise<void> | void;
 }
 
-const FILTER_TAGS = ['All', 'Installed', 'Pastel', 'Neon', 'Minimal', 'Retro'] as const;
+const FILTER_TAGS = ['All', 'Installed', 'Sci-Fi', 'Pastel', 'Neon', 'Minimal', 'Retro'] as const;
 type FilterTag = (typeof FILTER_TAGS)[number];
 
 const BASE_SKIN_LABELS: Record<string, string> = {
