@@ -274,6 +274,16 @@ export const ThemeStoreModal: React.FC<ThemeStoreModalProps> = ({
     return catalog.filter(item => item.tags.some(t => t.toLowerCase() === target));
   }, [catalog, selectedFilter, installedSet]);
 
+  const installedItems = useMemo(
+    () => filteredCatalog.filter(item => installedSet.has(item.id)),
+    [filteredCatalog, installedSet]
+  );
+
+  const exploreItems = useMemo(
+    () => filteredCatalog.filter(item => !installedSet.has(item.id)),
+    [filteredCatalog, installedSet]
+  );
+
   const handleRefresh = async () => {
     setRefreshing(true);
     setNotice(null);
@@ -332,6 +342,120 @@ export const ThemeStoreModal: React.FC<ThemeStoreModalProps> = ({
   const detailPack = selectedItem ? getPreviewPackSync(selectedItem.id) : null;
   const isDetailInstalled = selectedItem ? installedSet.has(selectedItem.id) : false;
   const isDetailActive = selectedItem ? activePackId === selectedItem.id : false;
+
+  const renderSectionDivider = (label: string, count: number) => (
+    <View style={styles.sectionDividerRow}>
+      <Text style={styles.sectionDividerLabel}>{label}</Text>
+      <View style={styles.sectionDividerLine} />
+      <View style={[styles.sectionCountBadge, { backgroundColor: palette.bgSurfaceSubtle }]}>
+        <Text style={styles.sectionCountText}>{count}</Text>
+      </View>
+    </View>
+  );
+
+  const renderThemeCard = (item: ThemePackManifestItem) => {
+    const isInstalled = installedSet.has(item.id);
+    const isActive = activePackId === item.id;
+    const isBusy = busyPackId === item.id;
+    const previewPack = getPreviewPackSync(item.id);
+
+    return (
+      <TouchableOpacity
+        key={item.id}
+        activeOpacity={0.85}
+        onPress={() => setSelectedItem(item)}
+        style={[
+          styles.themeCard,
+          {
+            backgroundColor: palette.bgSurface,
+            borderRadius: skin.cardRadius,
+            borderColor: isActive ? palette.accent : 'rgba(255, 255, 255, 0.1)',
+          },
+        ]}
+      >
+        <ThemeLivePreview item={item} packDetail={previewPack} />
+
+        <View style={styles.cardBody}>
+          <View style={styles.cardTitleRow}>
+            <Text style={styles.cardTitle} numberOfLines={1}>
+              {item.name}
+            </Text>
+            <View style={[styles.skinPill, { backgroundColor: palette.bgSurfaceSubtle }]}>
+              <Text style={styles.skinPillText}>
+                {BASE_SKIN_LABELS[item.baseSkin] || item.baseSkin}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.cardDesc} numberOfLines={2}>
+            {item.description}
+          </Text>
+
+          <View style={styles.cardDivider} />
+
+          <View style={styles.cardFooterRow}>
+            <View style={{ flex: 1 }}>
+              <View style={styles.swatchesRow}>
+                {item.previewSwatches.map((hex, i) => (
+                  <View
+                    key={`${item.id}-sw-${i}`}
+                    style={[styles.swatchDot, { backgroundColor: hex }]}
+                  />
+                ))}
+                <Text style={styles.motionText} numberOfLines={1}>
+                  {item.motionSummary}
+                </Text>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              disabled={isBusy}
+              onPress={() => {
+                if (!isActive) {
+                  void handleInstallOrApply(item, true);
+                }
+              }}
+              activeOpacity={0.82}
+              style={[
+                styles.actionBtn,
+                {
+                  borderRadius: Math.min(18, skin.buttonRadius),
+                  backgroundColor: isActive
+                    ? `rgba(${palette.accentRgb}, 0.18)`
+                    : isInstalled
+                      ? palette.bgSurfaceSubtle
+                      : palette.accent,
+                  borderColor: isActive ? palette.accent : 'transparent',
+                  borderWidth: isActive ? 1 : 0,
+                },
+              ]}
+            >
+              {isBusy ? (
+                <ActivityIndicator
+                  size="small"
+                  color={isInstalled ? palette.accent : '#0A0D12'}
+                />
+              ) : isActive ? (
+                <>
+                  <Check size={13} color={palette.accent} />
+                  <Text style={[styles.actionBtnText, { color: palette.accent }]}>
+                    Active
+                  </Text>
+                </>
+              ) : isInstalled ? (
+                <Text style={[styles.actionBtnText, { color: '#FFFFFF' }]}>Apply</Text>
+              ) : (
+                <>
+                  <Download size={13} color="#0A0D12" />
+                  <Text style={[styles.actionBtnText, { color: '#0A0D12' }]}>Install</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <BottomSheetModal
@@ -441,6 +565,8 @@ export const ThemeStoreModal: React.FC<ThemeStoreModalProps> = ({
               })}
             </View>
 
+            <View style={styles.headerDivider} />
+
             <BottomSheetScrollView
               style={{ flex: 1 }}
               contentContainerStyle={styles.scrollContent}
@@ -453,119 +579,22 @@ export const ThemeStoreModal: React.FC<ThemeStoreModalProps> = ({
                     Tap All to browse every theme pack or install one to see it here.
                   </Text>
                 </View>
+              ) : selectedFilter === 'All' && installedItems.length > 0 ? (
+                <>
+                  {renderSectionDivider('INSTALLED', installedItems.length)}
+                  {installedItems.map(renderThemeCard)}
+                  {exploreItems.length > 0 && (
+                    <>
+                      {renderSectionDivider('EXPLORE CATALOG', exploreItems.length)}
+                      {exploreItems.map(renderThemeCard)}
+                    </>
+                  )}
+                </>
               ) : (
-                filteredCatalog.map(item => {
-                  const isInstalled = installedSet.has(item.id);
-                  const isActive = activePackId === item.id;
-                  const isBusy = busyPackId === item.id;
-                  const previewPack = getPreviewPackSync(item.id);
-
-                  return (
-                    <TouchableOpacity
-                      key={item.id}
-                      activeOpacity={0.85}
-                      onPress={() => setSelectedItem(item)}
-                      style={[
-                        styles.themeCard,
-                        {
-                          backgroundColor: palette.bgSurface,
-                          borderRadius: skin.cardRadius,
-                          borderColor: isActive
-                            ? palette.accent
-                            : 'rgba(255, 255, 255, 0.1)',
-                        },
-                      ]}
-                    >
-                      <ThemeLivePreview item={item} packDetail={previewPack} />
-
-                      <View style={styles.cardBody}>
-                        <View style={styles.cardTitleRow}>
-                          <Text style={styles.cardTitle} numberOfLines={1}>
-                            {item.name}
-                          </Text>
-                          <View
-                            style={[
-                              styles.skinPill,
-                              { backgroundColor: palette.bgSurfaceSubtle },
-                            ]}
-                          >
-                            <Text style={styles.skinPillText}>
-                              {BASE_SKIN_LABELS[item.baseSkin] || item.baseSkin}
-                            </Text>
-                          </View>
-                        </View>
-
-                        <Text style={styles.cardDesc} numberOfLines={2}>
-                          {item.description}
-                        </Text>
-
-                        <View style={styles.cardFooterRow}>
-                          <View style={{ flex: 1 }}>
-                            <View style={styles.swatchesRow}>
-                              {item.previewSwatches.map((hex, i) => (
-                                <View
-                                  key={`${item.id}-sw-${i}`}
-                                  style={[styles.swatchDot, { backgroundColor: hex }]}
-                                />
-                              ))}
-                              <Text style={styles.motionText} numberOfLines={1}>
-                                {item.motionSummary}
-                              </Text>
-                            </View>
-                          </View>
-
-                          <TouchableOpacity
-                            disabled={isBusy}
-                            onPress={() => {
-                              if (!isActive) {
-                                void handleInstallOrApply(item, true);
-                              }
-                            }}
-                            activeOpacity={0.82}
-                            style={[
-                              styles.actionBtn,
-                              {
-                                borderRadius: Math.min(18, skin.buttonRadius),
-                                backgroundColor: isActive
-                                  ? `rgba(${palette.accentRgb}, 0.18)`
-                                  : isInstalled
-                                    ? palette.bgSurfaceSubtle
-                                    : palette.accent,
-                                borderColor: isActive ? palette.accent : 'transparent',
-                                borderWidth: isActive ? 1 : 0,
-                              },
-                            ]}
-                          >
-                            {isBusy ? (
-                              <ActivityIndicator
-                                size="small"
-                                color={isInstalled ? palette.accent : '#0A0D12'}
-                              />
-                            ) : isActive ? (
-                              <>
-                                <Check size={13} color={palette.accent} />
-                                <Text style={[styles.actionBtnText, { color: palette.accent }]}>
-                                  Active
-                                </Text>
-                              </>
-                            ) : isInstalled ? (
-                              <Text style={[styles.actionBtnText, { color: '#FFFFFF' }]}>
-                                Apply
-                              </Text>
-                            ) : (
-                              <>
-                                <Download size={13} color="#0A0D12" />
-                                <Text style={[styles.actionBtnText, { color: '#0A0D12' }]}>
-                                  Install
-                                </Text>
-                              </>
-                            )}
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })
+                <>
+                  {renderSectionDivider(selectedFilter.toUpperCase(), filteredCatalog.length)}
+                  {filteredCatalog.map(renderThemeCard)}
+                </>
               )}
             </BottomSheetScrollView>
           </>
@@ -575,6 +604,7 @@ export const ThemeStoreModal: React.FC<ThemeStoreModalProps> = ({
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
+            <View style={styles.headerDivider} />
             <ThemeLivePreview item={selectedItem} packDetail={detailPack} large />
 
             <View style={[styles.detailCard, { backgroundColor: palette.bgSurface, borderRadius: skin.cardRadius }]}>
@@ -595,6 +625,8 @@ export const ThemeStoreModal: React.FC<ThemeStoreModalProps> = ({
                   </View>
                 ))}
               </View>
+
+              <View style={styles.detailDivider} />
 
               {/* Specs Grid */}
               <View style={styles.specsGrid}>
@@ -627,6 +659,7 @@ export const ThemeStoreModal: React.FC<ThemeStoreModalProps> = ({
               </View>
 
               {/* Bundled Color Schemes & Swatches */}
+              <View style={styles.detailDivider} />
               {detailPack && detailPack.palettes.length > 0 ? (
                 <>
                   <Text style={[styles.specLabel, { marginTop: 14, marginBottom: 8 }]}>
@@ -801,7 +834,50 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
+    marginBottom: 10,
+  },
+  headerDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     marginBottom: 12,
+  },
+  sectionDividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+    marginBottom: 2,
+  },
+  sectionDividerLabel: {
+    color: '#94A3B8',
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.85,
+  },
+  sectionDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.09)',
+  },
+  sectionCountBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  sectionCountText: {
+    color: '#CBD5E1',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  cardDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.07)',
+    marginVertical: 4,
+  },
+  detailDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    marginVertical: 14,
   },
   filterChip: {
     paddingHorizontal: 11,

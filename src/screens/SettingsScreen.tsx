@@ -91,7 +91,7 @@ import { HelpCenterModal } from '../components/HelpCenterModal';
 import { CapabilityMatrixModal } from '../components/CapabilityMatrixModal';
 import { ThemeStoreModal } from '../components/ThemeStoreModal';
 import { NekoSwitch } from '../components/NekoSwitch';
-import { AnimatedChevron, AnimatedCollapsible } from '../components/SmoothTransition';
+import { AnimatedChevron, AnimatedCollapsible, AnimatedTabTransition } from '../components/SmoothTransition';
 import {
   checkFollowedCreatorDropsNow,
   requestNotificationPermissionsAsync,
@@ -231,6 +231,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [selectedSkin, setSelectedSkin] = useState<UiSkinId>(
     (settings?.uiSkin as UiSkinId) || 'bento'
   );
+  const [themingTab, setThemingTab] = useState<'skins' | 'colors'>('skins');
 
   // Vault State
   const [vaultJson, setVaultJson] = useState('');
@@ -254,7 +255,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     try {
       const profile = await tasteEngineService.buildUserTasteProfile(force);
       setTasteProfile(profile);
-    } catch {}
+    } catch { }
   };
 
   useEffect(() => {
@@ -292,7 +293,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       setTtsConfig(tc);
       const ic = await imageGenService.loadConfig();
       setImageConfig(ic);
-    } catch {}
+    } catch { }
   };
 
   const handleSaveTtsConfig = async (updates: Partial<TtsConfig>) => {
@@ -345,16 +346,16 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           (active.provider === 'openrouter'
             ? 'prov_openrouter'
             : active.provider === 'openai'
-            ? 'prov_openai'
-            : active.provider === 'custom' || active.customEndpoint
-            ? 'prov_custom'
-            : 'prov_gemini');
+              ? 'prov_openai'
+              : active.provider === 'custom' || active.customEndpoint
+                ? 'prov_custom'
+                : 'prov_gemini');
         setSelectedProviderId(inferredId);
         setCustomEndpoint(active.baseUrl || active.customEndpoint || '');
         setApiKey(active.apiKey || '');
         setModel(active.model || active.defaultModel || (inferredId.includes('gemini') ? 'gemini-2.5-flash' : 'gpt-4o-mini'));
       }
-    } catch {}
+    } catch { }
   };
 
   const handleSelectProvider = (provId: string) => {
@@ -366,10 +367,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     if (found) {
       setCustomEndpoint(
         found.baseUrl ||
-          found.customEndpoint ||
-          (provId === 'prov_openrouter'
-            ? 'https://openrouter.ai/api/v1'
-            : provId === 'prov_gemini'
+        found.customEndpoint ||
+        (provId === 'prov_openrouter'
+          ? 'https://openrouter.ai/api/v1'
+          : provId === 'prov_gemini'
             ? ''
             : 'https://api.openai.com/v1')
       );
@@ -396,18 +397,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     const provType = selectedProviderId.includes('gemini')
       ? 'gemini'
       : selectedProviderId.includes('openrouter')
-      ? 'openrouter'
-      : selectedProviderId.includes('openai')
-      ? 'openai'
-      : 'custom';
+        ? 'openrouter'
+        : selectedProviderId.includes('openai')
+          ? 'openai'
+          : 'custom';
 
     const cleanEndpoint = customEndpoint.trim();
     const defaultModelForType =
       provType === 'gemini'
         ? 'gemini-2.5-flash'
         : provType === 'openrouter'
-        ? 'anthropic/claude-3.5-sonnet'
-        : 'gpt-4o-mini';
+          ? 'anthropic/claude-3.5-sonnet'
+          : 'gpt-4o-mini';
 
     return {
       ...config,
@@ -817,543 +818,573 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               />
             </>
           )}
-        <View style={styles.healthCardHeader}>
-          <View style={styles.healthTitleRow}>
-            <Activity size={18} color={palette.accent} style={{ marginRight: 8 }} />
-            <Text style={styles.healthTitle}>{t('settings.healthTitle')}</Text>
-          </View>
-
-          <TouchableOpacity
-            style={styles.healthPingBtn}
-            onPress={() => { testAllServices(); }}
-            disabled={testingHealth}
-            activeOpacity={0.8}
-          >
-            <RefreshCw
-              size={12}
-              color="#000000"
-              style={[testingHealth && { transform: [{ rotate: '45deg' }] }, { marginRight: 4 }]}
-            />
-            <Text style={styles.healthPingBtnText}>
-              {testingHealth ? 'Testing...' : 'Test All'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* 4 Health Status Bars (100% Real Live Readings — Zero Fake Latency) */}
-        <View style={styles.healthGrid}>
-          {/* Service 1: Active LLM Engine */}
-          <View
-            style={[
-              styles.healthItemBox,
-              isM3 && {
-                backgroundColor: getM3TonalContainer(palette, 'high'),
-                borderRadius: 18,
-                borderWidth: 0,
-              },
-              isNekoBento && {
-                borderRadius: 14,
-                borderBottomWidth: 2.5,
-                borderBottomColor: 'rgba(0, 0, 0, 0.42)',
-              },
-            ]}
-          >
-            <View style={styles.healthItemTop}>
-              <View
-                style={
-                  !hasTested
-                    ? styles.statusDotGray
-                    : healthStatus.llm.ok
-                    ? styles.statusDotGreen
-                    : styles.statusDotRed
-                }
-              />
-              <Text style={styles.healthItemName} numberOfLines={1}>
-                LLM Engine ({healthStatus.llm.label})
-              </Text>
+          <View style={styles.healthCardHeader}>
+            <View style={styles.healthTitleRow}>
+              <Activity size={18} color={palette.accent} style={{ marginRight: 8 }} />
+              <Text style={styles.healthTitle}>{t('settings.healthTitle')}</Text>
             </View>
-            <Text style={healthStatus.llm.ok ? styles.latencyText : styles.latencyTextOffline}>
-              {!hasTested ? 'Testing...' : healthStatus.llm.ok ? `${healthStatus.llm.latencyMs}ms` : 'Offline'}
-            </Text>
-            <Text style={styles.statusLabelText} numberOfLines={1}>
-              {!hasTested
-                ? 'Testing connection...'
-                : healthStatus.llm.ok
-                ? '🟢 Optimal Connection'
-                : `🔴 ${healthStatus.llm.error || 'Check API Key'}`}
-            </Text>
-          </View>
 
-          {/* Service 2: Chub.ai Community API */}
-          <View
-            style={[
-              styles.healthItemBox,
-              isM3 && {
-                backgroundColor: getM3TonalContainer(palette, 'high'),
-                borderRadius: 18,
-                borderWidth: 0,
-              },
-              isNekoBento && {
-                borderRadius: 14,
-                borderBottomWidth: 2.5,
-                borderBottomColor: 'rgba(0, 0, 0, 0.42)',
-              },
-            ]}
-          >
-            <View style={styles.healthItemTop}>
-              <View
-                style={
-                  !hasTested
-                    ? styles.statusDotGray
-                    : healthStatus.chub.ok
-                    ? styles.statusDotGreen
-                    : styles.statusDotRed
-                }
-              />
-              <Text style={styles.healthItemName} numberOfLines={1}>
-                Chub.ai Catalog
-              </Text>
-            </View>
-            <Text style={healthStatus.chub.ok ? styles.latencyText : styles.latencyTextOffline}>
-              {!hasTested ? 'Testing...' : healthStatus.chub.ok ? `${healthStatus.chub.latencyMs}ms` : 'Offline'}
-            </Text>
-            <Text style={styles.statusLabelText} numberOfLines={1}>
-              {!hasTested
-                ? 'Testing connection...'
-                : healthStatus.chub.ok
-                ? '🟢 Online & Synced'
-                : `🔴 ${healthStatus.chub.error || 'Catalog Unreachable'}`}
-            </Text>
-          </View>
-
-          {/* Service 3: Datacat Janitor Mirror */}
-          <View
-            style={[
-              styles.healthItemBox,
-              isM3 && {
-                backgroundColor: getM3TonalContainer(palette, 'high'),
-                borderRadius: 18,
-                borderWidth: 0,
-              },
-              isNekoBento && {
-                borderRadius: 14,
-                borderBottomWidth: 2.5,
-                borderBottomColor: 'rgba(0, 0, 0, 0.42)',
-              },
-            ]}
-          >
-            <View style={styles.healthItemTop}>
-              <View
-                style={
-                  !hasTested
-                    ? styles.statusDotGray
-                    : healthStatus.datacat.ok
-                    ? styles.statusDotGreen
-                    : styles.statusDotRed
-                }
-              />
-              <Text style={styles.healthItemName} numberOfLines={1}>
-                Datacat / Janitor
-              </Text>
-            </View>
-            <Text style={healthStatus.datacat.ok ? styles.latencyText : styles.latencyTextOffline}>
-              {!hasTested ? 'Testing...' : healthStatus.datacat.ok ? `${healthStatus.datacat.latencyMs}ms` : 'Offline'}
-            </Text>
-            <Text style={styles.statusLabelText} numberOfLines={1}>
-              {!hasTested
-                ? 'Testing connection...'
-                : healthStatus.datacat.ok
-                ? '🟢 Connected Session'
-                : `🔴 ${healthStatus.datacat.error || 'Proxy Offline (Port 3001)'}`}
-            </Text>
-          </View>
-
-          {/* Service 4: Image Generation Engine */}
-          <View
-            style={[
-              styles.healthItemBox,
-              isM3 && {
-                backgroundColor: getM3TonalContainer(palette, 'high'),
-                borderRadius: 18,
-                borderWidth: 0,
-              },
-              isNekoBento && {
-                borderRadius: 14,
-                borderBottomWidth: 2.5,
-                borderBottomColor: 'rgba(0, 0, 0, 0.42)',
-              },
-            ]}
-          >
-            <View style={styles.healthItemTop}>
-              <View
-                style={
-                  !hasTested
-                    ? styles.statusDotGray
-                    : healthStatus.imageGen.ok
-                    ? styles.statusDotGreen
-                    : styles.statusDotRed
-                }
-              />
-              <Text style={styles.healthItemName} numberOfLines={1}>
-                Image Gen (Flux)
-              </Text>
-            </View>
-            <Text style={healthStatus.imageGen.ok ? styles.latencyText : styles.latencyTextOffline}>
-              {!hasTested ? 'Testing...' : healthStatus.imageGen.ok ? `${healthStatus.imageGen.latencyMs}ms` : 'Offline'}
-            </Text>
-            <Text style={styles.statusLabelText} numberOfLines={1}>
-              {!hasTested
-                ? 'Testing connection...'
-                : healthStatus.imageGen.ok
-                ? '🟢 Ready for Render'
-                : `🔴 ${healthStatus.imageGen.error || 'Image Service Offline'}`}
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* 2. ADAPTIVE CONTROL PANEL (Bento Grid / M3 List / iOS InsetGrouped)*/}
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      <Text style={styles.gridSectionHeading}>{t('settings.controlPanel')}</Text>
-
-      {(() => {
-        const controlItems = [
-          {
-            key: 'api',
-            Icon: Key,
-            title: t('settings.aiEngine'),
-            subtitle: t('settings.aiEngineSub'),
-            badge: '3 Engines Active',
-            accentBadge: true,
-            onPress: () => {
-              setAiModalTab('llm');
-              setActiveModal('api');
-            },
-          },
-          {
-            key: 'taste',
-            Icon: Brain,
-            title: 'For You & Taste',
-            subtitle: '100% On-Device • Tags, Focus & Reset',
-            badge: tasteProfile?.learningPaused
-              ? 'Paused'
-              : `${tasteProfile?.topLearnedTags.length || 0} Tags`,
-            accentBadge: Boolean(
-              !tasteProfile?.learningPaused && (tasteProfile?.topLearnedTags.length || 0) > 0
-            ),
-            onPress: () => {
-              setTasteNotice(null);
-              loadTasteProfile(true);
-              setActiveModal('taste');
-            },
-          },
-          {
-            key: 'vault',
-            Icon: ShieldCheck,
-            title: t('settings.dataVault'),
-            subtitle: t('settings.dataVaultSub'),
-            badge: 'Sanitized',
-            accentBadge: false,
-            onPress: () => setActiveModal('vault'),
-          },
-          {
-            key: 'theming',
-            Icon: Palette,
-            title: t('settings.theming'),
-            subtitle: t('settings.themingSub'),
-            badge: `${skin.badge} • ${selectedTheme.charAt(0).toUpperCase() + selectedTheme.slice(1)}`,
-            accentBadge: false,
-            onPress: () => setActiveModal('theming'),
-          },
-          {
-            key: 'tokens',
-            Icon: Cpu,
-            title: t('settings.tokens'),
-            subtitle: t('settings.tokensSub'),
-            badge: `${contextLimit} BPE`,
-            accentBadge: false,
-            onPress: () => setActiveModal('tokens'),
-          },
-          {
-            key: 'language',
-            Icon: Globe,
-            title:
-              t('nav.settings') === 'Pengaturan'
-                ? 'Bahasa'
-                : t('nav.settings') === '設定'
-                  ? '言語'
-                  : t('nav.settings') === 'Paramètres'
-                    ? 'Langue'
-                    : 'Language',
-            subtitle: t('settings.languageSub'),
-            badge: `${(LANGUAGE_OPTIONS.find(l => l.id === selectedUiLang) || LANGUAGE_OPTIONS[0]).flag} ${(LANGUAGE_OPTIONS.find(l => l.id === selectedUiLang) || LANGUAGE_OPTIONS[0]).nativeName}`,
-            accentBadge: false,
-            onPress: () => setActiveModal('language'),
-          },
-          {
-            key: 'notifications',
-            Icon: Bell,
-            title: 'Notifications',
-            subtitle: 'Check-ins, Picks & Creator Drops',
-            badge:
-              settings.notifyMissYou || settings.notifyAlgorithmPicks || settings.notifyFollowedCreators
-                ? 'Active'
-                : 'Off',
-            accentBadge: Boolean(
-              settings.notifyMissYou || settings.notifyAlgorithmPicks || settings.notifyFollowedCreators
-            ),
-            onPress: () => {
-              setNotifyMissYouDraft(!!settings.notifyMissYou);
-              setNotifyAlgoDraft(!!settings.notifyAlgorithmPicks);
-              setNotifyCreatorsDraft(!!settings.notifyFollowedCreators);
-              setNotifyDiscreetDraft(settings.notifyDiscreetMode !== false);
-              setNotifyQuietDraft(settings.notifyQuietHours !== false);
-              setNotifyNotice(null);
-              setActiveModal('notifications');
-            },
-          },
-          {
-            key: 'passcode',
-            Icon: Lock,
-            title: 'Passcode Lock',
-            subtitle: 'App PIN & First-Time Tour',
-            badge: settings.passcodeEnabled && hasPasscodeConfigured(settings) ? 'Enabled' : 'Off',
-            accentBadge: false,
-            onPress: () => {
-              setPasscodeEnabledDraft(!!settings.passcodeEnabled);
-              setPasscodePinDraft('');
-              setPasscodeConfirmDraft('');
-              setPasscodeAutoLockDraft(settings.passcodeAutoLockSec ?? 60);
-              setPasscodeError('');
-              setActiveModal('passcode');
-            },
-          },
-          {
-            key: 'help',
-            Icon: HelpCircle,
-            title: 'Help & Guides',
-            subtitle: 'Lorebooks, BYOK, Skins & Tips',
-            badge: '6 Guides',
-            accentBadge: true,
-            onPress: () => setActiveModal('help'),
-          },
-          {
-            key: 'about',
-            Icon: Sparkles,
-            title: t('settings.about'),
-            subtitle: `${APP_VERSION_LABEL} • Open-Source`,
-            badge: 'FOSS',
-            accentBadge: false,
-            onPress: () => setActiveModal('about'),
-          },
-        ];
-
-        if (skin.settingsLayout === 'ios_inset_grouped') {
-          return (
-            <View
-              style={{
-                borderRadius: 24,
-                backgroundColor: 'rgba(20, 22, 32, 0.60)',
-                borderWidth: 1,
-                borderColor: 'rgba(255, 255, 255, 0.22)',
-                borderTopColor: 'rgba(255, 255, 255, 0.50)',
-                borderBottomColor: 'rgba(0, 0, 0, 0.48)',
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 10 },
-                shadowOpacity: 0.46,
-                shadowRadius: 20,
-                elevation: 8,
-                overflow: 'hidden',
-                marginBottom: 16,
-              }}
+            <TouchableOpacity
+              style={styles.healthPingBtn}
+              onPress={() => { testAllServices(); }}
+              disabled={testingHealth}
+              activeOpacity={0.8}
             >
-              <LinearGradient
-                pointerEvents="none"
-                colors={[
-                  'rgba(255, 255, 255, 0.18)',
-                  'rgba(255, 255, 255, 0.02)',
-                  'rgba(255, 255, 255, 0.08)',
-                ]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={StyleSheet.absoluteFill}
+              <RefreshCw
+                size={12}
+                color="#000000"
+                style={[testingHealth && { transform: [{ rotate: '45deg' }] }, { marginRight: 4 }]}
               />
+              <Text style={styles.healthPingBtnText}>
+                {testingHealth ? 'Testing...' : 'Test All'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* 4 Health Status Bars (100% Real Live Readings — Zero Fake Latency) */}
+          <View style={styles.healthGrid}>
+            {/* Service 1: Active LLM Engine */}
+            <View
+              style={[
+                styles.healthItemBox,
+                isM3 && {
+                  backgroundColor: getM3TonalContainer(palette, 'high'),
+                  borderRadius: 18,
+                  borderWidth: 0,
+                },
+                isNekoBento && {
+                  borderRadius: 14,
+                  borderBottomWidth: 2.5,
+                  borderBottomColor: 'rgba(0, 0, 0, 0.42)',
+                },
+              ]}
+            >
+              <View style={styles.healthItemTop}>
+                <View
+                  style={
+                    !hasTested
+                      ? styles.statusDotGray
+                      : healthStatus.llm.ok
+                        ? styles.statusDotGreen
+                        : styles.statusDotRed
+                  }
+                />
+                <Text style={styles.healthItemName} numberOfLines={1}>
+                  LLM Engine ({healthStatus.llm.label})
+                </Text>
+              </View>
+              <Text style={healthStatus.llm.ok ? styles.latencyText : styles.latencyTextOffline}>
+                {!hasTested ? 'Testing...' : healthStatus.llm.ok ? `${healthStatus.llm.latencyMs}ms` : 'Offline'}
+              </Text>
+              <Text style={styles.statusLabelText} numberOfLines={1}>
+                {!hasTested
+                  ? 'Testing connection...'
+                  : healthStatus.llm.ok
+                    ? '🟢 Optimal Connection'
+                    : `🔴 ${healthStatus.llm.error || 'Check API Key'}`}
+              </Text>
+            </View>
+
+            {/* Service 2: Chub.ai Community API */}
+            <View
+              style={[
+                styles.healthItemBox,
+                isM3 && {
+                  backgroundColor: getM3TonalContainer(palette, 'high'),
+                  borderRadius: 18,
+                  borderWidth: 0,
+                },
+                isNekoBento && {
+                  borderRadius: 14,
+                  borderBottomWidth: 2.5,
+                  borderBottomColor: 'rgba(0, 0, 0, 0.42)',
+                },
+              ]}
+            >
+              <View style={styles.healthItemTop}>
+                <View
+                  style={
+                    !hasTested
+                      ? styles.statusDotGray
+                      : healthStatus.chub.ok
+                        ? styles.statusDotGreen
+                        : styles.statusDotRed
+                  }
+                />
+                <Text style={styles.healthItemName} numberOfLines={1}>
+                  Chub.ai Catalog
+                </Text>
+              </View>
+              <Text style={healthStatus.chub.ok ? styles.latencyText : styles.latencyTextOffline}>
+                {!hasTested ? 'Testing...' : healthStatus.chub.ok ? `${healthStatus.chub.latencyMs}ms` : 'Offline'}
+              </Text>
+              <Text style={styles.statusLabelText} numberOfLines={1}>
+                {!hasTested
+                  ? 'Testing connection...'
+                  : healthStatus.chub.ok
+                    ? '🟢 Online & Synced'
+                    : `🔴 ${healthStatus.chub.error || 'Catalog Unreachable'}`}
+              </Text>
+            </View>
+
+            {/* Service 3: Datacat Janitor Mirror */}
+            <View
+              style={[
+                styles.healthItemBox,
+                isM3 && {
+                  backgroundColor: getM3TonalContainer(palette, 'high'),
+                  borderRadius: 18,
+                  borderWidth: 0,
+                },
+                isNekoBento && {
+                  borderRadius: 14,
+                  borderBottomWidth: 2.5,
+                  borderBottomColor: 'rgba(0, 0, 0, 0.42)',
+                },
+              ]}
+            >
+              <View style={styles.healthItemTop}>
+                <View
+                  style={
+                    !hasTested
+                      ? styles.statusDotGray
+                      : healthStatus.datacat.ok
+                        ? styles.statusDotGreen
+                        : styles.statusDotRed
+                  }
+                />
+                <Text style={styles.healthItemName} numberOfLines={1}>
+                  Datacat / Janitor
+                </Text>
+              </View>
+              <Text style={healthStatus.datacat.ok ? styles.latencyText : styles.latencyTextOffline}>
+                {!hasTested ? 'Testing...' : healthStatus.datacat.ok ? `${healthStatus.datacat.latencyMs}ms` : 'Offline'}
+              </Text>
+              <Text style={styles.statusLabelText} numberOfLines={1}>
+                {!hasTested
+                  ? 'Testing connection...'
+                  : healthStatus.datacat.ok
+                    ? '🟢 Connected Session'
+                    : `🔴 ${healthStatus.datacat.error || 'Proxy Offline (Port 3001)'}`}
+              </Text>
+            </View>
+
+            {/* Service 4: Image Generation Engine */}
+            <View
+              style={[
+                styles.healthItemBox,
+                isM3 && {
+                  backgroundColor: getM3TonalContainer(palette, 'high'),
+                  borderRadius: 18,
+                  borderWidth: 0,
+                },
+                isNekoBento && {
+                  borderRadius: 14,
+                  borderBottomWidth: 2.5,
+                  borderBottomColor: 'rgba(0, 0, 0, 0.42)',
+                },
+              ]}
+            >
+              <View style={styles.healthItemTop}>
+                <View
+                  style={
+                    !hasTested
+                      ? styles.statusDotGray
+                      : healthStatus.imageGen.ok
+                        ? styles.statusDotGreen
+                        : styles.statusDotRed
+                  }
+                />
+                <Text style={styles.healthItemName} numberOfLines={1}>
+                  Image Gen (Flux)
+                </Text>
+              </View>
+              <Text style={healthStatus.imageGen.ok ? styles.latencyText : styles.latencyTextOffline}>
+                {!hasTested ? 'Testing...' : healthStatus.imageGen.ok ? `${healthStatus.imageGen.latencyMs}ms` : 'Offline'}
+              </Text>
+              <Text style={styles.statusLabelText} numberOfLines={1}>
+                {!hasTested
+                  ? 'Testing connection...'
+                  : healthStatus.imageGen.ok
+                    ? '🟢 Ready for Render'
+                    : `🔴 ${healthStatus.imageGen.error || 'Image Service Offline'}`}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* 2. ADAPTIVE CONTROL PANEL (Bento Grid / M3 List / iOS InsetGrouped)*/}
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        <Text style={styles.gridSectionHeading}>{t('settings.controlPanel')}</Text>
+
+        {(() => {
+          const controlItems = [
+            {
+              key: 'api',
+              Icon: Key,
+              title: t('settings.aiEngine'),
+              subtitle: t('settings.aiEngineSub'),
+              badge: '3 Engines Active',
+              accentBadge: true,
+              onPress: () => {
+                setAiModalTab('llm');
+                setActiveModal('api');
+              },
+            },
+            {
+              key: 'taste',
+              Icon: Brain,
+              title: 'For You & Taste',
+              subtitle: '100% On-Device • Tags, Focus & Reset',
+              badge: tasteProfile?.learningPaused
+                ? 'Paused'
+                : `${tasteProfile?.topLearnedTags.length || 0} Tags`,
+              accentBadge: Boolean(
+                !tasteProfile?.learningPaused && (tasteProfile?.topLearnedTags.length || 0) > 0
+              ),
+              onPress: () => {
+                setTasteNotice(null);
+                loadTasteProfile(true);
+                setActiveModal('taste');
+              },
+            },
+            {
+              key: 'vault',
+              Icon: ShieldCheck,
+              title: t('settings.dataVault'),
+              subtitle: t('settings.dataVaultSub'),
+              badge: 'Sanitized',
+              accentBadge: false,
+              onPress: () => setActiveModal('vault'),
+            },
+            {
+              key: 'theming',
+              Icon: Palette,
+              title: t('settings.theming'),
+              subtitle: t('settings.themingSub'),
+              badge: `${skin.badge} • ${selectedTheme.charAt(0).toUpperCase() + selectedTheme.slice(1)}`,
+              accentBadge: false,
+              onPress: () => setActiveModal('theming'),
+            },
+            {
+              key: 'tokens',
+              Icon: Cpu,
+              title: t('settings.tokens'),
+              subtitle: t('settings.tokensSub'),
+              badge: `${contextLimit} BPE`,
+              accentBadge: false,
+              onPress: () => setActiveModal('tokens'),
+            },
+            {
+              key: 'language',
+              Icon: Globe,
+              title:
+                t('nav.settings') === 'Pengaturan'
+                  ? 'Bahasa'
+                  : t('nav.settings') === '設定'
+                    ? '言語'
+                    : t('nav.settings') === 'Paramètres'
+                      ? 'Langue'
+                      : 'Language',
+              subtitle: t('settings.languageSub'),
+              badge: `${(LANGUAGE_OPTIONS.find(l => l.id === selectedUiLang) || LANGUAGE_OPTIONS[0]).flag} ${(LANGUAGE_OPTIONS.find(l => l.id === selectedUiLang) || LANGUAGE_OPTIONS[0]).nativeName}`,
+              accentBadge: false,
+              onPress: () => setActiveModal('language'),
+            },
+            {
+              key: 'notifications',
+              Icon: Bell,
+              title: 'Notifications',
+              subtitle: 'Check-ins, Picks & Creator Drops',
+              badge:
+                settings.notifyMissYou || settings.notifyAlgorithmPicks || settings.notifyFollowedCreators
+                  ? 'Active'
+                  : 'Off',
+              accentBadge: Boolean(
+                settings.notifyMissYou || settings.notifyAlgorithmPicks || settings.notifyFollowedCreators
+              ),
+              onPress: () => {
+                setNotifyMissYouDraft(!!settings.notifyMissYou);
+                setNotifyAlgoDraft(!!settings.notifyAlgorithmPicks);
+                setNotifyCreatorsDraft(!!settings.notifyFollowedCreators);
+                setNotifyDiscreetDraft(settings.notifyDiscreetMode !== false);
+                setNotifyQuietDraft(settings.notifyQuietHours !== false);
+                setNotifyNotice(null);
+                setActiveModal('notifications');
+              },
+            },
+            {
+              key: 'passcode',
+              Icon: Lock,
+              title: 'Passcode Lock',
+              subtitle: 'App PIN & First-Time Tour',
+              badge: settings.passcodeEnabled && hasPasscodeConfigured(settings) ? 'Enabled' : 'Off',
+              accentBadge: false,
+              onPress: () => {
+                setPasscodeEnabledDraft(!!settings.passcodeEnabled);
+                setPasscodePinDraft('');
+                setPasscodeConfirmDraft('');
+                setPasscodeAutoLockDraft(settings.passcodeAutoLockSec ?? 60);
+                setPasscodeError('');
+                setActiveModal('passcode');
+              },
+            },
+            {
+              key: 'help',
+              Icon: HelpCircle,
+              title: 'Help & Guides',
+              subtitle: 'Lorebooks, BYOK, Skins & Tips',
+              badge: '6 Guides',
+              accentBadge: true,
+              onPress: () => setActiveModal('help'),
+            },
+            {
+              key: 'about',
+              Icon: Sparkles,
+              title: t('settings.about'),
+              subtitle: `${APP_VERSION_LABEL} • Open-Source`,
+              badge: 'FOSS',
+              accentBadge: false,
+              onPress: () => setActiveModal('about'),
+            },
+          ];
+
+          if (skin.settingsLayout === 'ios_inset_grouped') {
+            return (
               <View
-                pointerEvents="none"
                 style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 22,
-                  right: 22,
-                  height: 1,
-                  backgroundColor: 'rgba(255, 255, 255, 0.45)',
+                  borderRadius: 24,
+                  backgroundColor: 'rgba(20, 22, 32, 0.60)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255, 255, 255, 0.22)',
+                  borderTopColor: 'rgba(255, 255, 255, 0.50)',
+                  borderBottomColor: 'rgba(0, 0, 0, 0.48)',
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 10 },
+                  shadowOpacity: 0.46,
+                  shadowRadius: 20,
+                  elevation: 8,
+                  overflow: 'hidden',
+                  marginBottom: 16,
                 }}
-              />
-              {controlItems.map((item, idx) => {
-                const IconComp = item.Icon;
-                return (
-                  <TouchableOpacity
-                    key={item.key}
-                    onPress={item.onPress}
-                    activeOpacity={0.7}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      paddingVertical: 12,
-                      paddingHorizontal: 14,
-                      borderBottomWidth: idx < controlItems.length - 1 ? 0.5 : 0,
-                      borderBottomColor: 'rgba(255, 255, 255, 0.10)',
-                      gap: 12,
-                    }}
-                  >
-                    <View
+              >
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={[
+                    'rgba(255, 255, 255, 0.18)',
+                    'rgba(255, 255, 255, 0.02)',
+                    'rgba(255, 255, 255, 0.08)',
+                  ]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                <View
+                  pointerEvents="none"
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 22,
+                    right: 22,
+                    height: 1,
+                    backgroundColor: 'rgba(255, 255, 255, 0.45)',
+                  }}
+                />
+                {controlItems.map((item, idx) => {
+                  const IconComp = item.Icon;
+                  return (
+                    <TouchableOpacity
+                      key={item.key}
+                      onPress={item.onPress}
+                      activeOpacity={0.7}
                       style={{
-                        width: 30,
-                        height: 30,
-                        borderRadius: 10,
-                        backgroundColor: item.accentBadge ? palette.accent : `rgba(${palette.accentRgb}, 0.18)`,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <IconComp size={16} color={item.accentBadge ? '#000000' : palette.accent} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '500' }}>{item.title}</Text>
-                      <Text style={{ color: 'rgba(235, 235, 245, 0.55)', fontSize: 12, marginTop: 1 }} numberOfLines={1}>
-                        {item.subtitle}
-                      </Text>
-                    </View>
-                    <Text style={{ color: 'rgba(235, 235, 245, 0.5)', fontSize: 13, marginRight: 2 }} numberOfLines={1}>
-                      {item.badge}
-                    </Text>
-                    <ChevronRight size={16} color="rgba(235, 235, 245, 0.35)" />
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          );
-        }
-
-        if (skin.settingsLayout === 'm3_list') {
-          return (
-            <View style={{ gap: 3, marginBottom: 16 }}>
-              {controlItems.map((item, idx) => {
-                const IconComp = item.Icon;
-                const isFirst = idx === 0;
-                const isLast = idx === controlItems.length - 1;
-                return (
-                  <TouchableOpacity
-                    key={item.key}
-                    onPress={item.onPress}
-                    activeOpacity={0.82}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      paddingVertical: 15,
-                      paddingHorizontal: 16,
-                      borderTopLeftRadius: isFirst ? 24 : 6,
-                      borderTopRightRadius: isFirst ? 24 : 6,
-                      borderBottomLeftRadius: isLast ? 24 : 6,
-                      borderBottomRightRadius: isLast ? 24 : 6,
-                      backgroundColor: getM3TonalContainer(palette, 'container'),
-                      gap: 14,
-                    }}
-                  >
-                    <View
-                      style={{
-                        width: 42,
-                        height: 42,
-                        borderRadius: 14,
-                        backgroundColor: item.accentBadge
-                          ? palette.accent
-                          : `rgba(${palette.accentRgb}, 0.16)`,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <IconComp
-                        size={18}
-                        color={item.accentBadge ? palette.bgDark : palette.accent}
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '600' }}>{item.title}</Text>
-                      <Text style={{ color: '#94a3b8', fontSize: 12.5, marginTop: 2 }} numberOfLines={1}>
-                        {item.subtitle}
-                      </Text>
-                    </View>
-                    <View
-                      style={{
-                        paddingHorizontal: 11,
-                        paddingVertical: 5,
-                        borderRadius: 999,
-                        backgroundColor: item.accentBadge
-                          ? `rgba(${palette.accentRgb}, 0.22)`
-                          : getM3TonalContainer(palette, 'high'),
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 11,
-                          fontWeight: '700',
-                          color: item.accentBadge ? palette.accent : '#cbd5e1',
-                        }}
-                      >
-                        {item.badge}
-                      </Text>
-                    </View>
-                    <ChevronRight size={18} color="#94a3b8" />
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          );
-        }
-
-        return (
-          <View style={styles.bentoTwoGrid}>
-            {controlItems.map(item => {
-              const IconComp = item.Icon;
-              const isFeaturedWide = item.key === 'api' || item.key === 'taste';
-              if (isFeaturedWide) {
-                return (
-                  <TouchableOpacity
-                    key={item.key}
-                    style={[
-                      styles.bentoTile,
-                      getCardSurfaceStyle(palette, skin),
-                      {
-                        width: '100%',
                         flexDirection: 'row',
                         alignItems: 'center',
-                        gap: 14,
+                        paddingVertical: 12,
+                        paddingHorizontal: 14,
+                        borderBottomWidth: idx < controlItems.length - 1 ? 0.5 : 0,
+                        borderBottomColor: 'rgba(255, 255, 255, 0.10)',
+                        gap: 12,
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 30,
+                          height: 30,
+                          borderRadius: 10,
+                          backgroundColor: item.accentBadge ? palette.accent : `rgba(${palette.accentRgb}, 0.18)`,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <IconComp size={16} color={item.accentBadge ? '#000000' : palette.accent} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '500' }}>{item.title}</Text>
+                        <Text style={{ color: 'rgba(235, 235, 245, 0.55)', fontSize: 12, marginTop: 1 }} numberOfLines={1}>
+                          {item.subtitle}
+                        </Text>
+                      </View>
+                      <Text style={{ color: 'rgba(235, 235, 245, 0.5)', fontSize: 13, marginRight: 2 }} numberOfLines={1}>
+                        {item.badge}
+                      </Text>
+                      <ChevronRight size={16} color="rgba(235, 235, 245, 0.35)" />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            );
+          }
+
+          if (skin.settingsLayout === 'm3_list') {
+            return (
+              <View style={{ gap: 3, marginBottom: 16 }}>
+                {controlItems.map((item, idx) => {
+                  const IconComp = item.Icon;
+                  const isFirst = idx === 0;
+                  const isLast = idx === controlItems.length - 1;
+                  return (
+                    <TouchableOpacity
+                      key={item.key}
+                      onPress={item.onPress}
+                      activeOpacity={0.82}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
                         paddingVertical: 15,
                         paddingHorizontal: 16,
-                      },
-                    ]}
+                        borderTopLeftRadius: isFirst ? 24 : 6,
+                        borderTopRightRadius: isFirst ? 24 : 6,
+                        borderBottomLeftRadius: isLast ? 24 : 6,
+                        borderBottomRightRadius: isLast ? 24 : 6,
+                        backgroundColor: getM3TonalContainer(palette, 'container'),
+                        gap: 14,
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 42,
+                          height: 42,
+                          borderRadius: 14,
+                          backgroundColor: item.accentBadge
+                            ? palette.accent
+                            : `rgba(${palette.accentRgb}, 0.16)`,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <IconComp
+                          size={18}
+                          color={item.accentBadge ? palette.bgDark : palette.accent}
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '600' }}>{item.title}</Text>
+                        <Text style={{ color: '#94a3b8', fontSize: 12.5, marginTop: 2 }} numberOfLines={1}>
+                          {item.subtitle}
+                        </Text>
+                      </View>
+                      <View
+                        style={{
+                          paddingHorizontal: 11,
+                          paddingVertical: 5,
+                          borderRadius: 999,
+                          backgroundColor: item.accentBadge
+                            ? `rgba(${palette.accentRgb}, 0.22)`
+                            : getM3TonalContainer(palette, 'high'),
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 11,
+                            fontWeight: '700',
+                            color: item.accentBadge ? palette.accent : '#cbd5e1',
+                          }}
+                        >
+                          {item.badge}
+                        </Text>
+                      </View>
+                      <ChevronRight size={18} color="#94a3b8" />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            );
+          }
+
+          return (
+            <View style={styles.bentoTwoGrid}>
+              {controlItems.map(item => {
+                const IconComp = item.Icon;
+                const isFeaturedWide = item.key === 'api' || item.key === 'taste';
+                if (isFeaturedWide) {
+                  return (
+                    <TouchableOpacity
+                      key={item.key}
+                      style={[
+                        styles.bentoTile,
+                        getCardSurfaceStyle(palette, skin),
+                        {
+                          width: '100%',
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 14,
+                          paddingVertical: 15,
+                          paddingHorizontal: 16,
+                        },
+                      ]}
+                      onPress={item.onPress}
+                      activeOpacity={0.8}
+                    >
+                      <View
+                        style={[
+                          styles.tileIconCircle,
+                          { width: 44, height: 44, borderRadius: 14, marginBottom: 0 },
+                        ]}
+                      >
+                        <IconComp size={20} color={palette.accent} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.tileTitle}>{item.title}</Text>
+                        <Text style={[styles.tileSubtitle, { marginBottom: 0 }]} numberOfLines={1}>
+                          {item.subtitle}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          item.accentBadge ? styles.tileBadgeLime : styles.tileBadge,
+                          { borderRadius: 999, alignSelf: 'center', marginTop: 0 },
+                        ]}
+                      >
+                        <Text style={item.accentBadge ? styles.tileBadgeLimeText : styles.tileBadgeText}>
+                          {item.badge}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                }
+                return (
+                  <TouchableOpacity
+                    key={item.key}
+                    style={[styles.bentoTile, getCardSurfaceStyle(palette, skin)]}
                     onPress={item.onPress}
                     activeOpacity={0.8}
                   >
                     <View
                       style={[
                         styles.tileIconCircle,
-                        { width: 44, height: 44, borderRadius: 14, marginBottom: 0 },
+                        { borderRadius: isNekoBento ? 13 : skin.pillRadius === 999 ? 18 : 10 },
                       ]}
                     >
-                      <IconComp size={20} color={palette.accent} />
+                      <IconComp size={18} color={palette.accent} />
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.tileTitle}>{item.title}</Text>
-                      <Text style={[styles.tileSubtitle, { marginBottom: 0 }]} numberOfLines={1}>
-                        {item.subtitle}
-                      </Text>
-                    </View>
+                    <Text style={styles.tileTitle}>{item.title}</Text>
+                    <Text style={styles.tileSubtitle}>{item.subtitle}</Text>
                     <View
                       style={[
                         item.accentBadge ? styles.tileBadgeLime : styles.tileBadge,
-                        { borderRadius: 999, alignSelf: 'center', marginTop: 0 },
+                        { borderRadius: skin.pillRadius },
                       ]}
                     >
                       <Text style={item.accentBadge ? styles.tileBadgeLimeText : styles.tileBadgeText}>
@@ -1362,233 +1393,203 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     </View>
                   </TouchableOpacity>
                 );
-              }
+              })}
+            </View>
+          );
+        })()}
+
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* 3. MODALS / POP-UPS (Triggered on Tile Click)                      */}
+        {/* ══════════════════════════════════════════════════════════════════ */}
+
+        {/* MODAL 1: API Key & Custom Endpoint with Instant Auto-Test */}
+        <BottomSheetModal visible={activeModal === 'api'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <View style={styles.modalTitleRow}>
+              <Key size={16} color={palette.accent} style={{ marginRight: 6 }} />
+              <Text style={styles.modalTitle}>{t('settings.aiModalTitle')}</Text>
+            </View>
+            <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+              <X size={16} color="#9ca3af" />
+            </TouchableOpacity>
+          </View>
+
+          {/* AI Engine Sub-Tabs: [ 🧠 Text LLM ] | [ 🎨 Scene Art ] | [ 🎙️ Voice TTS ] */}
+          <View style={{ flexDirection: 'row', gap: 6, marginHorizontal: 20, marginBottom: 12, marginTop: 4 }}>
+            {[
+              { id: 'llm', label: `🧠 ${t('settings.textLlm')}` },
+              { id: 'image', label: `🎨 ${t('settings.sceneArt')}` },
+              { id: 'voice', label: `🎙️ ${t('settings.voiceTts')}` },
+            ].map(tb => {
+              const isActive = aiModalTab === tb.id;
               return (
                 <TouchableOpacity
-                  key={item.key}
-                  style={[styles.bentoTile, getCardSurfaceStyle(palette, skin)]}
-                  onPress={item.onPress}
+                  key={tb.id}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 8,
+                    borderRadius: 10,
+                    alignItems: 'center',
+                    backgroundColor: isActive ? palette.accent : 'rgba(255, 255, 255, 0.05)',
+                    borderWidth: 1,
+                    borderColor: isActive ? palette.accent : 'rgba(255, 255, 255, 0.1)',
+                  }}
+                  onPress={() => setAiModalTab(tb.id as any)}
                   activeOpacity={0.8}
                 >
-                  <View
-                    style={[
-                      styles.tileIconCircle,
-                      { borderRadius: isNekoBento ? 13 : skin.pillRadius === 999 ? 18 : 10 },
-                    ]}
-                  >
-                    <IconComp size={18} color={palette.accent} />
-                  </View>
-                  <Text style={styles.tileTitle}>{item.title}</Text>
-                  <Text style={styles.tileSubtitle}>{item.subtitle}</Text>
-                  <View
-                    style={[
-                      item.accentBadge ? styles.tileBadgeLime : styles.tileBadge,
-                      { borderRadius: skin.pillRadius },
-                    ]}
-                  >
-                    <Text style={item.accentBadge ? styles.tileBadgeLimeText : styles.tileBadgeText}>
-                      {item.badge}
-                    </Text>
-                  </View>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: isActive ? palette.bgDark : '#9ca3af' }}>
+                    {tb.label}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
           </View>
-        );
-      })()}
 
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* 3. MODALS / POP-UPS (Triggered on Tile Click)                      */}
-      {/* ══════════════════════════════════════════════════════════════════ */}
+          <BottomSheetScrollView style={styles.modalBody}>
+            {aiModalTab === 'llm' && (
+              <>
+                <Text style={styles.inputLabel}>{t('settings.selectProvider')}</Text>
+                <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14 }}>
+                  {[
+                    { id: 'prov_gemini', name: 'Gemini' },
+                    { id: 'prov_openrouter', name: 'OpenRouter' },
+                    { id: 'prov_openai', name: 'OpenAI' },
+                    { id: 'prov_custom', name: 'Custom Proxy' },
+                  ].map(p => {
+                    const isActive = selectedProviderId === p.id;
+                    return (
+                      <TouchableOpacity
+                        key={p.id}
+                        style={{
+                          flex: 1,
+                          paddingVertical: 8,
+                          borderRadius: 10,
+                          alignItems: 'center',
+                          backgroundColor: isActive ? `rgba(${palette.accentRgb}, 0.15)` : 'rgba(255, 255, 255, 0.05)',
+                          borderWidth: 1,
+                          borderColor: isActive ? palette.accent : 'rgba(255, 255, 255, 0.1)',
+                        }}
+                        onPress={() => handleSelectProvider(p.id)}
+                      >
+                        <Text style={{ fontSize: 11, fontWeight: '700', color: isActive ? palette.accent : '#9ca3af' }}>
+                          {p.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
 
-      {/* MODAL 1: API Key & Custom Endpoint with Instant Auto-Test */}
-      <BottomSheetModal visible={activeModal === 'api'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleRow}>
-                <Key size={16} color={palette.accent} style={{ marginRight: 6 }} />
-                <Text style={styles.modalTitle}>{t('settings.aiModalTitle')}</Text>
-              </View>
-              <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
-                <X size={16} color="#9ca3af" />
-              </TouchableOpacity>
-            </View>
-
-            {/* AI Engine Sub-Tabs: [ 🧠 Text LLM ] | [ 🎨 Scene Art ] | [ 🎙️ Voice TTS ] */}
-            <View style={{ flexDirection: 'row', gap: 6, marginHorizontal: 20, marginBottom: 12, marginTop: 4 }}>
-              {[
-                { id: 'llm', label: `🧠 ${t('settings.textLlm')}` },
-                { id: 'image', label: `🎨 ${t('settings.sceneArt')}` },
-                { id: 'voice', label: `🎙️ ${t('settings.voiceTts')}` },
-              ].map(tb => {
-                const isActive = aiModalTab === tb.id;
-                return (
-                  <TouchableOpacity
-                    key={tb.id}
-                    style={{
-                      flex: 1,
-                      paddingVertical: 8,
-                      borderRadius: 10,
-                      alignItems: 'center',
-                      backgroundColor: isActive ? palette.accent : 'rgba(255, 255, 255, 0.05)',
-                      borderWidth: 1,
-                      borderColor: isActive ? palette.accent : 'rgba(255, 255, 255, 0.1)',
-                    }}
-                    onPress={() => setAiModalTab(tb.id as any)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={{ fontSize: 12, fontWeight: '800', color: isActive ? palette.bgDark : '#9ca3af' }}>
-                      {tb.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <BottomSheetScrollView style={styles.modalBody}>
-              {aiModalTab === 'llm' && (
-                <>
-                  <Text style={styles.inputLabel}>{t('settings.selectProvider')}</Text>
-                  <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14 }}>
-                    {[
-                      { id: 'prov_gemini', name: 'Gemini' },
-                      { id: 'prov_openrouter', name: 'OpenRouter' },
-                      { id: 'prov_openai', name: 'OpenAI' },
-                      { id: 'prov_custom', name: 'Custom Proxy' },
-                    ].map(p => {
-                      const isActive = selectedProviderId === p.id;
-                      return (
-                        <TouchableOpacity
-                          key={p.id}
-                          style={{
-                            flex: 1,
-                            paddingVertical: 8,
-                            borderRadius: 10,
-                            alignItems: 'center',
-                            backgroundColor: isActive ? `rgba(${palette.accentRgb}, 0.15)` : 'rgba(255, 255, 255, 0.05)',
-                            borderWidth: 1,
-                            borderColor: isActive ? palette.accent : 'rgba(255, 255, 255, 0.1)',
-                          }}
-                          onPress={() => handleSelectProvider(p.id)}
-                        >
-                          <Text style={{ fontSize: 11, fontWeight: '700', color: isActive ? palette.accent : '#9ca3af' }}>
-                            {p.name}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-
-                  {selectedProviderId !== 'prov_gemini' && (
-                    <>
-                      <Text style={styles.inputLabel}>{t('settings.baseUrl')}</Text>
-                      <TextInput
-                        style={styles.inputBox}
-                        value={customEndpoint}
-                        onChangeText={setCustomEndpoint}
-                        placeholder="https://api.openai.com/v1"
-                        placeholderTextColor="#6b7280"
-                        autoCapitalize="none"
-                      />
-                    </>
-                  )}
-
-                  <Text style={styles.inputLabel}>{t('settings.apiKey')}</Text>
-                  <View style={styles.inputPasswordRow}>
+                {selectedProviderId !== 'prov_gemini' && (
+                  <>
+                    <Text style={styles.inputLabel}>{t('settings.baseUrl')}</Text>
                     <TextInput
-                      style={styles.inputPasswordText}
-                      value={apiKey}
-                      onChangeText={setApiKey}
-                      placeholder="sk-..."
+                      style={styles.inputBox}
+                      value={customEndpoint}
+                      onChangeText={setCustomEndpoint}
+                      placeholder="https://api.openai.com/v1"
                       placeholderTextColor="#6b7280"
-                      secureTextEntry={!showKey}
                       autoCapitalize="none"
                     />
-                    <TouchableOpacity onPress={() => setShowKey(!showKey)} style={{ padding: 6 }}>
-                      {showKey ? <EyeOff size={16} color="#9ca3af" /> : <Eye size={16} color="#9ca3af" />}
-                    </TouchableOpacity>
-                  </View>
+                  </>
+                )}
 
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
-                    <Text style={styles.inputLabel}>{t('settings.modelId')}</Text>
-                    <TouchableOpacity
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                      onPress={handleFetchModels}
-                      disabled={fetchingModels}
-                    >
-                      {fetchingModels ? (
-                        <ActivityIndicator size="small" color={palette.accent} />
-                      ) : (
-                        <>
-                          <RefreshCw size={12} color={palette.accent} />
-                          <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>{t('settings.fetchModels')}</Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  </View>
+                <Text style={styles.inputLabel}>{t('settings.apiKey')}</Text>
+                <View style={styles.inputPasswordRow}>
                   <TextInput
-                    style={styles.inputBox}
-                    value={model}
-                    onChangeText={setModel}
-                    placeholder="gpt-4o, claude-3-5-sonnet, deepseek-v3"
+                    style={styles.inputPasswordText}
+                    value={apiKey}
+                    onChangeText={setApiKey}
+                    placeholder="sk-..."
                     placeholderTextColor="#6b7280"
+                    secureTextEntry={!showKey}
                     autoCapitalize="none"
                   />
+                  <TouchableOpacity onPress={() => setShowKey(!showKey)} style={{ padding: 6 }}>
+                    {showKey ? <EyeOff size={16} color="#9ca3af" /> : <Eye size={16} color="#9ca3af" />}
+                  </TouchableOpacity>
+                </View>
 
-                  {availableModels.length > 0 && (
-                    <View style={{ marginTop: 8, marginBottom: 12 }}>
-                      <TouchableOpacity
-                        onPress={() => setModelDropdownOpen(prev => !prev)}
-                        activeOpacity={0.8}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+                  <Text style={styles.inputLabel}>{t('settings.modelId')}</Text>
+                  <TouchableOpacity
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                    onPress={handleFetchModels}
+                    disabled={fetchingModels}
+                  >
+                    {fetchingModels ? (
+                      <ActivityIndicator size="small" color={palette.accent} />
+                    ) : (
+                      <>
+                        <RefreshCw size={12} color={palette.accent} />
+                        <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>{t('settings.fetchModels')}</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+                <TextInput
+                  style={styles.inputBox}
+                  value={model}
+                  onChangeText={setModel}
+                  placeholder="gpt-4o, claude-3-5-sonnet, deepseek-v3"
+                  placeholderTextColor="#6b7280"
+                  autoCapitalize="none"
+                />
+
+                {availableModels.length > 0 && (
+                  <View style={{ marginTop: 8, marginBottom: 12 }}>
+                    <TouchableOpacity
+                      onPress={() => setModelDropdownOpen(prev => !prev)}
+                      activeOpacity={0.8}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                        borderWidth: 1,
+                        borderColor: 'rgba(255, 255, 255, 0.12)',
+                        borderRadius: 10,
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                      }}
+                    >
+                      <Text style={{ color: '#e2e8f0', fontSize: 12, fontWeight: '600', flex: 1 }} numberOfLines={1}>
+                        Select from fetched models ({availableModels.length})
+                      </Text>
+                      <ChevronRight
+                        size={15}
+                        color="#9ca3af"
+                        style={{ transform: [{ rotate: modelDropdownOpen ? '90deg' : '0deg' }] }}
+                      />
+                    </TouchableOpacity>
+
+                    {modelDropdownOpen && (
+                      <View
                         style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                          marginTop: 6,
+                          borderRadius: 10,
                           borderWidth: 1,
                           borderColor: 'rgba(255, 255, 255, 0.12)',
-                          borderRadius: 10,
-                          paddingHorizontal: 12,
-                          paddingVertical: 10,
+                          backgroundColor: 'rgba(12, 16, 26, 0.96)',
+                          overflow: 'hidden',
                         }}
                       >
-                        <Text style={{ color: '#e2e8f0', fontSize: 12, fontWeight: '600', flex: 1 }} numberOfLines={1}>
-                          Select from fetched models ({availableModels.length})
-                        </Text>
-                        <ChevronRight
-                          size={15}
-                          color="#9ca3af"
-                          style={{ transform: [{ rotate: modelDropdownOpen ? '90deg' : '0deg' }] }}
-                        />
-                      </TouchableOpacity>
-
-                      {modelDropdownOpen && (
-                        <View
+                        <TextInput
+                          value={modelSearchQuery}
+                          onChangeText={setModelSearchQuery}
+                          placeholder={`Search ${availableModels.length} models...`}
+                          placeholderTextColor="#6b7280"
+                          autoCapitalize="none"
                           style={{
-                            marginTop: 6,
-                            borderRadius: 10,
-                            borderWidth: 1,
-                            borderColor: 'rgba(255, 255, 255, 0.12)',
-                            backgroundColor: 'rgba(12, 16, 26, 0.96)',
-                            overflow: 'hidden',
+                            paddingHorizontal: 12,
+                            paddingVertical: 8,
+                            color: '#fff',
+                            fontSize: 12,
+                            borderBottomWidth: 1,
+                            borderBottomColor: 'rgba(255, 255, 255, 0.08)',
                           }}
-                        >
-                          <TextInput
-                            value={modelSearchQuery}
-                            onChangeText={setModelSearchQuery}
-                            placeholder={`Search ${availableModels.length} models...`}
-                            placeholderTextColor="#6b7280"
-                            autoCapitalize="none"
-                            style={{
-                              paddingHorizontal: 12,
-                              paddingVertical: 8,
-                              color: '#fff',
-                              fontSize: 12,
-                              borderBottomWidth: 1,
-                              borderBottomColor: 'rgba(255, 255, 255, 0.08)',
-                            }}
-                          />
-                          <BottomSheetGestureLock>
-                            <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled showsVerticalScrollIndicator>
+                        />
+                        <BottomSheetGestureLock>
+                          <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled showsVerticalScrollIndicator>
                             {availableModels
                               .filter(m => {
                                 const q = modelSearchQuery.trim().toLowerCase();
@@ -1655,208 +1656,175 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                                   </TouchableOpacity>
                                 );
                               })}
-                            </ScrollView>
-                          </BottomSheetGestureLock>
-                        </View>
-                      )}
-                    </View>
-                  )}
-
-                  {/* Instant Auto-Test Ping Button */}
-                  <TouchableOpacity
-                    style={styles.autoTestBtn}
-                    onPress={handleAutoTestPing}
-                    disabled={testingPing}
-                    activeOpacity={0.8}
-                  >
-                    <Zap size={14} color="#000000" style={{ marginRight: 6 }} />
-                    <Text style={styles.autoTestBtnText}>
-                      {testingPing ? 'Pinging...' : `⚡ ${t('settings.testConn')}`}
-                    </Text>
-                  </TouchableOpacity>
-
-                  {pingResult && (
-                    <View
-                      style={[
-                        styles.pingResultBox,
-                        pingResult.ok ? styles.pingSuccess : styles.pingFailure,
-                      ]}
-                    >
-                      <Text style={pingResult.ok ? styles.pingTextSuccess : styles.pingTextFailure}>
-                        {pingResult.ok
-                          ? `✓ Connection Successful (${pingResult.latencyMs}ms)`
-                          : `✕ Ping Failed: ${pingResult.error || 'Check URL and Key'}`}
-                      </Text>
-                    </View>
-                  )}
-
-                  {/* Single Compatibility Matrix Button (All Categories) */}
-                  <TouchableOpacity
-                    style={[
-                      styles.autoTestBtn,
-                      {
-                        marginTop: 8,
-                        backgroundColor: 'rgba(255,255,255,0.08)',
-                        borderWidth: 1,
-                        borderColor: colors.borderSubtle,
-                      },
-                    ]}
-                    onPress={() => setActiveModal('matrix')}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={[styles.autoTestBtnText, { color: colors.textPrimary }]}>
-                      🛡️ Compatibility Matrix (All Categories)
-                    </Text>
-                  </TouchableOpacity>
-                </>
-              )}
-
-              {aiModalTab === 'image' && (
-                <>
-                  {/* Enable Toggle */}
-                  <TouchableOpacity
-                    style={styles.toggleRow}
-                    onPress={() => handleSaveImageConfig({ enabled: !imageConfig.enabled })}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.toggleTitle}>Enable Scene Art Generation</Text>
-                      <Text style={styles.toggleDesc}>Depict visual scenes from roleplay context</Text>
-                    </View>
-                    <View style={[styles.toggleSwitch, imageConfig.enabled && styles.toggleSwitchActive]}>
-                      <View style={[styles.toggleThumb, imageConfig.enabled && styles.toggleThumbActive]} />
-                    </View>
-                  </TouchableOpacity>
-
-                  {/* Provider Selection */}
-                  <Text style={[styles.sectionSub, { marginTop: 14 }]}>Image Provider Engine</Text>
-                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-                    {[
-                      { id: 'pollinations', label: 'Pollinations (Zero-Key)' },
-                      { id: 'openai', label: 'OpenAI DALL-E' },
-                      { id: 'custom', label: 'Flux / Custom' },
-                    ].map(p => {
-                      const isSel = imageConfig.provider === p.id;
-                      return (
-                        <TouchableOpacity
-                          key={p.id}
-                          style={[styles.radioChip, isSel && styles.radioChipActive]}
-                          onPress={() => handleSaveImageConfig({ provider: p.id as any })}
-                        >
-                          <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
-                            {p.label}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+                          </ScrollView>
+                        </BottomSheetGestureLock>
+                      </View>
+                    )}
                   </View>
+                )}
 
-                  {imageConfig.provider !== 'pollinations' && (
+                {/* Instant Auto-Test Ping Button */}
+                <TouchableOpacity
+                  style={styles.autoTestBtn}
+                  onPress={handleAutoTestPing}
+                  disabled={testingPing}
+                  activeOpacity={0.8}
+                >
+                  <Zap size={14} color="#000000" style={{ marginRight: 6 }} />
+                  <Text style={styles.autoTestBtnText}>
+                    {testingPing ? 'Pinging...' : `⚡ ${t('settings.testConn')}`}
+                  </Text>
+                </TouchableOpacity>
+
+                {pingResult && (
+                  <View
+                    style={[
+                      styles.pingResultBox,
+                      pingResult.ok ? styles.pingSuccess : styles.pingFailure,
+                    ]}
+                  >
+                    <Text style={pingResult.ok ? styles.pingTextSuccess : styles.pingTextFailure}>
+                      {pingResult.ok
+                        ? `✓ Connection Successful (${pingResult.latencyMs}ms)`
+                        : `✕ Ping Failed: ${pingResult.error || 'Check URL and Key'}`}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Single Compatibility Matrix Button (All Categories) */}
+                <TouchableOpacity
+                  style={[
+                    styles.autoTestBtn,
+                    {
+                      marginTop: 8,
+                      backgroundColor: 'rgba(255,255,255,0.08)',
+                      borderWidth: 1,
+                      borderColor: colors.borderSubtle,
+                    },
+                  ]}
+                  onPress={() => setActiveModal('matrix')}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.autoTestBtnText, { color: colors.textPrimary }]}>
+                    🛡️ Compatibility Matrix (All Categories)
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {aiModalTab === 'image' && (
+              <>
+                {/* Enable Toggle */}
+                <TouchableOpacity
+                  style={styles.toggleRow}
+                  onPress={() => handleSaveImageConfig({ enabled: !imageConfig.enabled })}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.toggleTitle}>Enable Scene Art Generation</Text>
+                    <Text style={styles.toggleDesc}>Depict visual scenes from roleplay context</Text>
+                  </View>
+                  <View style={[styles.toggleSwitch, imageConfig.enabled && styles.toggleSwitchActive]}>
+                    <View style={[styles.toggleThumb, imageConfig.enabled && styles.toggleThumbActive]} />
+                  </View>
+                </TouchableOpacity>
+
+                {/* Provider Selection */}
+                <Text style={[styles.sectionSub, { marginTop: 14 }]}>Image Provider Engine</Text>
+                <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                  {[
+                    { id: 'pollinations', label: 'Pollinations (Zero-Key)' },
+                    { id: 'openai', label: 'OpenAI DALL-E' },
+                    { id: 'custom', label: 'Flux / Custom' },
+                  ].map(p => {
+                    const isSel = imageConfig.provider === p.id;
+                    return (
+                      <TouchableOpacity
+                        key={p.id}
+                        style={[styles.radioChip, isSel && styles.radioChipActive]}
+                        onPress={() => handleSaveImageConfig({ provider: p.id as any })}
+                      >
+                        <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
+                          {p.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {imageConfig.provider !== 'pollinations' && (
+                  <>
+                    <Text style={styles.inputLabel}>Base URL / Endpoint</Text>
+                    <TextInput
+                      style={styles.inputBox}
+                      placeholder="https://api.openai.com/v1"
+                      placeholderTextColor="#666"
+                      value={imageConfig.baseUrl}
+                      onChangeText={v => handleSaveImageConfig({ baseUrl: v })}
+                    />
+
+                    <Text style={styles.inputLabel}>API Key</Text>
+                    <TextInput
+                      style={styles.inputBox}
+                      placeholder="sk-..."
+                      placeholderTextColor="#666"
+                      secureTextEntry
+                      value={imageConfig.apiKey}
+                      onChangeText={v => handleSaveImageConfig({ apiKey: v })}
+                    />
+
+                    <Text style={styles.inputLabel}>Model Name</Text>
+                    <TextInput
+                      style={styles.inputBox}
+                      placeholder={imageConfig.provider === 'openai' ? 'dall-e-3' : 'flux-schnell'}
+                      placeholderTextColor="#666"
+                      value={imageConfig.model}
+                      onChangeText={v => handleSaveImageConfig({ model: v })}
+                    />
+                  </>
+                )}
+
+                {/* Test Generate Image Button */}
+                <TouchableOpacity
+                  style={[styles.autoTestBtn, { marginTop: 16 }]}
+                  onPress={handleTestImageGen}
+                  disabled={isTestingImage}
+                  activeOpacity={0.8}
+                >
+                  {isTestingImage ? (
+                    <ActivityIndicator size="small" color="#000" />
+                  ) : (
                     <>
-                      <Text style={styles.inputLabel}>Base URL / Endpoint</Text>
-                      <TextInput
-                        style={styles.inputBox}
-                        placeholder="https://api.openai.com/v1"
-                        placeholderTextColor="#666"
-                        value={imageConfig.baseUrl}
-                        onChangeText={v => handleSaveImageConfig({ baseUrl: v })}
-                      />
-
-                      <Text style={styles.inputLabel}>API Key</Text>
-                      <TextInput
-                        style={styles.inputBox}
-                        placeholder="sk-..."
-                        placeholderTextColor="#666"
-                        secureTextEntry
-                        value={imageConfig.apiKey}
-                        onChangeText={v => handleSaveImageConfig({ apiKey: v })}
-                      />
-
-                      <Text style={styles.inputLabel}>Model Name</Text>
-                      <TextInput
-                        style={styles.inputBox}
-                        placeholder={imageConfig.provider === 'openai' ? 'dall-e-3' : 'flux-schnell'}
-                        placeholderTextColor="#666"
-                        value={imageConfig.model}
-                        onChangeText={v => handleSaveImageConfig({ model: v })}
-                      />
+                      <ImageIcon size={14} color="#000000" style={{ marginRight: 6 }} />
+                      <Text style={styles.autoTestBtnText}>🎨 Test Generate Sample Scene</Text>
                     </>
                   )}
+                </TouchableOpacity>
 
-                  {/* Test Generate Image Button */}
-                  <TouchableOpacity
-                    style={[styles.autoTestBtn, { marginTop: 16 }]}
-                    onPress={handleTestImageGen}
-                    disabled={isTestingImage}
-                    activeOpacity={0.8}
-                  >
-                    {isTestingImage ? (
-                      <ActivityIndicator size="small" color="#000" />
-                    ) : (
-                      <>
-                        <ImageIcon size={14} color="#000000" style={{ marginRight: 6 }} />
-                        <Text style={styles.autoTestBtnText}>🎨 Test Generate Sample Scene</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-
-                  {imageTestResult && (
-                    <View style={{ marginTop: 10, padding: 10, borderRadius: 10, backgroundColor: imageTestResult.ok ? `rgba(${palette.accentRgb}, 0.1)` : 'rgba(239, 68, 68, 0.1)', borderWidth: 1, borderColor: imageTestResult.ok ? palette.accent : '#ef4444' }}>
-                      <Text style={{ color: imageTestResult.ok ? palette.accent : '#ef4444', fontSize: 12, fontWeight: '700' }}>
-                        {imageTestResult.ok ? '✓ Image Generation Operational!' : `✕ Error: ${imageTestResult.error}`}
-                      </Text>
-                    </View>
-                  )}
-                </>
-              )}
-
-              {aiModalTab === 'voice' && (
-                <>
-                  {/* Enable Toggle */}
-                  <TouchableOpacity
-                    style={styles.toggleRow}
-                    onPress={() => handleSaveTtsConfig({ enabled: !ttsConfig.enabled })}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.toggleTitle}>Enable Speech Synthesis</Text>
-                      <Text style={styles.toggleDesc}>Character voice playback on companion messages</Text>
-                    </View>
-                    <View style={[styles.toggleSwitch, ttsConfig.enabled && styles.toggleSwitchActive]}>
-                      <View style={[styles.toggleThumb, ttsConfig.enabled && styles.toggleThumbActive]} />
-                    </View>
-                  </TouchableOpacity>
-
-                  {/* Dialogue Only Toggle */}
-                  <TouchableOpacity
-                    style={styles.toggleRow}
-                    onPress={() => handleSaveTtsConfig({ dialogueOnly: !ttsConfig.dialogueOnly })}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.toggleTitle}>Dialogue Only</Text>
-                      <Text style={styles.toggleDesc}>Reads spoken quotes {'"..."'} and skips asterisk actions *...*</Text>
-                    </View>
-                    <View style={[styles.toggleSwitch, ttsConfig.dialogueOnly && styles.toggleSwitchActive]}>
-                      <View style={[styles.toggleThumb, ttsConfig.dialogueOnly && styles.toggleThumbActive]} />
-                    </View>
-                  </TouchableOpacity>
-
-                  {/* Speed Preset Selector */}
-                  <Text style={[styles.sectionSub, { marginTop: 14 }]}>Playback Speed</Text>
-                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-                    {[0.8, 1.0, 1.2, 1.4].map(spd => {
-                      const isSel = Math.abs(ttsConfig.speed - spd) < 0.05;
-                      return (
-                        <TouchableOpacity
-                          key={`spd_${spd}`}
-                          style={[styles.radioChip, isSel && styles.radioChipActive]}
-                          onPress={() => handleSaveTtsConfig({ speed: spd })}
-                        >
-                          <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
-                            {spd}x
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+                {imageTestResult && (
+                  <View style={{ marginTop: 10, padding: 10, borderRadius: 10, backgroundColor: imageTestResult.ok ? `rgba(${palette.accentRgb}, 0.1)` : 'rgba(239, 68, 68, 0.1)', borderWidth: 1, borderColor: imageTestResult.ok ? palette.accent : '#ef4444' }}>
+                    <Text style={{ color: imageTestResult.ok ? palette.accent : '#ef4444', fontSize: 12, fontWeight: '700' }}>
+                      {imageTestResult.ok ? '✓ Image Generation Operational!' : `✕ Error: ${imageTestResult.error}`}
+                    </Text>
                   </View>
+                )}
+              </>
+            )}
+
+            {aiModalTab === 'voice' && (
+              <>
+                {/* Enable Toggle */}
+                <TouchableOpacity
+                  style={styles.toggleRow}
+                  onPress={() => handleSaveTtsConfig({ enabled: !ttsConfig.enabled })}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.toggleTitle}>Enable Speech Synthesis</Text>
+                    <Text style={styles.toggleDesc}>Character voice playback on companion messages</Text>
+                  </View>
+                  <View style={[styles.toggleSwitch, ttsConfig.enabled && styles.toggleSwitchActive]}>
+                    <View style={[styles.toggleThumb, ttsConfig.enabled && styles.toggleThumbActive]} />
+                  </View>
+                </TouchableOpacity>
 
                   {/* Test Voice Button */}
                   <TouchableOpacity
@@ -1893,1930 +1861,2240 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
       {/* MODAL 2: Theming & Visuals */}
       <BottomSheetModal visible={activeModal === 'theming'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleRow}>
-                <Palette size={16} color={palette.accent} style={{ marginRight: 6 }} />
-                <Text style={styles.modalTitle}>Theming & Appearance</Text>
+        {(() => {
+          const installedPacks = getInstalledThemePacksSync();
+          const installedPalettes = getAllInstalledPalettesSync();
+          const builtInSkins = Object.values(UI_SKINS);
+          const builtInPalettes = Object.values(THEME_PALETTES);
+          const totalSkinsCount = builtInSkins.length + installedPacks.length;
+          const totalColorsCount = builtInPalettes.length + installedPalettes.length;
+
+          const renderThemingSectionDivider = (label: string, count: number) => (
+            <View style={styles.themingSectionDividerRow}>
+              <Text style={styles.themingSectionDividerLabel}>{label}</Text>
+              <View style={styles.themingSectionDividerLine} />
+              <View style={styles.themingSectionCountBadge}>
+                <Text style={styles.themingSectionCountText}>{count}</Text>
               </View>
-              <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
-                <X size={16} color="#9ca3af" />
-              </TouchableOpacity>
             </View>
+          );
 
-            <BottomSheetScrollView style={styles.modalBody}>
-              {/* Snappy Theme Store Launcher */}
-              <TouchableOpacity
-                onPress={() => setActiveModal('themeStore')}
-                activeOpacity={0.85}
-                style={[
-                  styles.themeOptionCard,
-                  {
-                    borderRadius: skin.cardRadius,
-                    borderColor: activePack ? palette.accent : `rgba(${palette.accentRgb}, 0.45)`,
-                    backgroundColor: `rgba(${palette.accentRgb}, 0.1)`,
-                    marginBottom: 14,
-                  },
-                ]}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-                  <View
-                    style={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 14,
-                      backgroundColor: palette.bgDark,
-                      borderWidth: 1.5,
-                      borderColor: palette.accent,
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <Sparkles size={20} color={palette.accent} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.themeOptionName, { color: palette.accent }]}>
-                      {activePack ? `Active Pack: ${activePack.name}` : 'Theme Store (Optional Packs)'}
-                    </Text>
-                    <Text style={styles.themeOptionDesc}>
-                      {activePack
-                        ? `${getInstalledThemePacksSync().length} installed • Tap to browse, preview or switch`
-                        : 'Browse screenshots, colors & custom animations from GitHub'}
-                    </Text>
-                  </View>
-                </View>
-                <ChevronRight size={18} color={palette.accent} />
-              </TouchableOpacity>
-
-              <Text style={styles.sectionSub}>UI Design & Surface Skin (Applies Instantly)</Text>
-              {Object.values(UI_SKINS).map(sk => {
-                const isSelected = !activePack && selectedSkin === sk.id;
-                return (
-                  <TouchableOpacity
-                    key={sk.id}
-                    style={[
-                      styles.themeOptionCard,
-                      { borderRadius: sk.cardRadius },
-                      isSelected && [styles.themeOptionActive, { borderColor: palette.accent }],
-                    ]}
-                    onPress={() => handleSelectSkinInstant(sk.id)}
-                    activeOpacity={0.8}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-                      <View
-                        style={{
-                          width: 44,
-                          height: 44,
-                          borderRadius: sk.cardRadius > 20 ? 16 : sk.cardRadius * 0.65,
-                          backgroundColor: palette.bgDark,
-                          borderWidth: Math.max(1, sk.cardBorderWidth),
-                          borderColor: isSelected ? palette.accent : `rgba(${palette.accentRgb}, 0.4)`,
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                        }}
-                      >
-                        <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '800' }}>
-                          {sk.badge}
-                        </Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.themeOptionName, isSelected && { color: palette.accent }]}>
-                          {sk.name}
-                        </Text>
-                        <Text style={styles.themeOptionDesc}>{sk.desc}</Text>
-                      </View>
-                    </View>
-                    {isSelected && <Check size={16} color={palette.accent} />}
-                  </TouchableOpacity>
-                );
-              })}
-
-              {getInstalledThemePacksSync().map(pk => {
-                const isSelected = activePack?.id === pk.id;
-                const cardR = pk.geometry?.cardRadius ?? 20;
-                return (
-                  <TouchableOpacity
-                    key={`pack-skin-${pk.id}`}
-                    style={[
-                      styles.themeOptionCard,
-                      { borderRadius: cardR },
-                      isSelected && [styles.themeOptionActive, { borderColor: palette.accent }],
-                    ]}
-                    onPress={() => handleApplyThemePack(pk, { keepCurrentColors: true })}
-                    activeOpacity={0.8}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-                      <View
-                        style={{
-                          width: 44,
-                          height: 44,
-                          borderRadius: cardR > 20 ? 16 : Math.max(6, cardR * 0.65),
-                          backgroundColor: pk.palette?.bgDark || palette.bgDark,
-                          borderWidth: 1.25,
-                          borderColor: isSelected ? palette.accent : `rgba(${palette.accentRgb}, 0.45)`,
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                        }}
-                      >
-                        <Text style={{ color: pk.palette?.accent || palette.accent, fontSize: 10.5, fontWeight: '800' }}>
-                          {pk.badge}
-                        </Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.themeOptionName, isSelected && { color: palette.accent }]}>
-                          {pk.name} (Pack)
-                        </Text>
-                        <Text style={styles.themeOptionDesc} numberOfLines={2}>
-                          {pk.description}
-                        </Text>
-                      </View>
-                    </View>
-                    {isSelected && <Check size={16} color={palette.accent} />}
-                  </TouchableOpacity>
-                );
-              })}
-
-              {getInstalledThemePacksSync().some(p => p.palettes.length > 0) && (
-                <>
-                  <Text style={[styles.sectionSub, { marginTop: 14 }]}>Installed Pack Color Schemes</Text>
-                  {getAllInstalledPalettesSync().map(th => {
-                    const isSelected = palette.id === th.id;
-                    return (
-                      <TouchableOpacity
-                        key={`pack-pal-${th.id}`}
-                        style={[
-                          styles.themeOptionCard,
-                          isSelected && [styles.themeOptionActive, { borderColor: th.accent }],
-                        ]}
-                        onPress={() => handleSelectThemeInstant(th.id)}
-                        activeOpacity={0.8}
-                      >
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-                          <View
-                            style={{
-                              width: 44,
-                              height: 44,
-                              borderRadius: 12,
-                              backgroundColor: th.bgDark,
-                              borderWidth: 1.5,
-                              borderColor: th.accent,
-                              justifyContent: 'center',
-                              alignItems: 'center',
-                            }}
-                          >
-                            <NekoLogoSvg size={30} color={th.accent} />
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={[styles.themeOptionName, isSelected && { color: th.accent }]}>
-                              {th.name}
-                            </Text>
-                            <Text style={styles.themeOptionDesc} numberOfLines={2}>
-                              {th.packName ? `From ${th.packName} • ` : ''}{th.desc}
-                            </Text>
-                          </View>
-                        </View>
-                        {isSelected && <Check size={16} color={th.accent} />}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </>
-              )}
-
-              <Text style={[styles.sectionSub, { marginTop: 14 }]}>{t('settings.selectThemeSub')}</Text>
-              {Object.values(THEME_PALETTES).map(th => {
+          const renderColorSchemeGrid = (list: ThemePalette[], showLogo = false) => (
+            <View style={styles.colorSchemeGrid}>
+              {list.map(th => {
                 const isSelected = palette.id === th.id;
                 return (
                   <TouchableOpacity
                     key={th.id}
                     style={[
-                      styles.themeOptionCard,
-                      isSelected && [styles.themeOptionActive, { borderColor: th.accent }],
+                      styles.colorSchemeCard,
+                      isSelected && { borderColor: th.accent, backgroundColor: `rgba(${th.accentRgb}, 0.10)` },
                     ]}
                     onPress={() => handleSelectThemeInstant(th.id)}
                     activeOpacity={0.8}
                   >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-                      <View
-                        style={{
-                          width: 44,
-                          height: 44,
-                          borderRadius: 12,
-                          backgroundColor: th.bgDark,
-                          borderWidth: 1.5,
-                          borderColor: th.accent,
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                        }}
-                      >
-                        <NekoLogoSvg size={30} color={th.accent} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.themeOptionName, isSelected && { color: th.accent }]}>
-                          {th.name}
-                        </Text>
-                        <Text style={styles.themeOptionDesc}>{th.desc}</Text>
-                      </View>
+                    <View style={styles.colorSchemeSwatchStrip}>
+                      <View style={{ flex: 1, backgroundColor: th.bgDark }} />
+                      <View style={{ flex: 1, backgroundColor: th.bgSurface }} />
+                      <View style={{ flex: 1, backgroundColor: th.accent }} />
                     </View>
-                    {isSelected && <Check size={16} color={th.accent} />}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, gap: 6 }}>
+                      {showLogo && (
+                        <View
+                          style={{
+                            width: 22,
+                            height: 22,
+                            borderRadius: 6,
+                            backgroundColor: th.bgDark,
+                            borderWidth: 1,
+                            borderColor: th.accent,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <NekoLogoSvg size={15} color={th.accent} />
+                        </View>
+                      )}
+                      <Text
+                        style={[styles.colorSchemeName, isSelected && { color: th.accent }]}
+                        numberOfLines={1}
+                      >
+                        {th.name}
+                      </Text>
+                      {isSelected && <Check size={14} color={th.accent} />}
+                    </View>
+                    <Text style={styles.colorSchemeMeta} numberOfLines={1}>
+                      {th.packName ? th.packName : th.accent}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
-            </BottomSheetScrollView>
-
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={styles.saveBtn}
-                onPress={handleApplyTheme}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.saveBtnText}>{t('settings.applyTheme')}</Text>
-              </TouchableOpacity>
             </View>
-      </BottomSheetModal>
+          );
 
-      {/* MODAL: Language & AI Auto-Prompt */}
-      <BottomSheetModal visible={activeModal === 'language'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
-        <View style={styles.modalHeader}>
-          <View style={styles.modalTitleRow}>
-            <Globe size={16} color={palette.accent} style={{ marginRight: 6 }} />
-            <Text style={styles.modalTitle}>{t('settings.languageTitle')}</Text>
-          </View>
-          <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
-            <X size={20} color="#FFFFFF" />
-          </TouchableOpacity>
-        </View>
+          return (
+            <>
+              <View style={styles.modalHeader}>
+                <View style={styles.modalTitleRow}>
+                  <Palette size={16} color={palette.accent} style={{ marginRight: 6 }} />
+                  <Text style={styles.modalTitle}>Theming & Appearance</Text>
+                </View>
+                <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+                  <X size={16} color="#9ca3af" />
+                </TouchableOpacity>
+              </View>
 
-        <BottomSheetScrollView style={styles.modalBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          <Text style={styles.sectionSub}>{t('settings.languageSub')}</Text>
+              {/* Compact Active Combo Strip */}
+              <View style={styles.themingComboStrip}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: palette.accent }} />
+                  <Text style={styles.themingComboText} numberOfLines={1}>
+                    <Text style={{ color: '#94a3b8' }}>Skin:</Text>{' '}
+                    {activePack ? activePack.name : skin.name}
+                  </Text>
+                </View>
+                <View style={styles.themingComboSep} />
+                <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                  <Text style={styles.themingComboText} numberOfLines={1}>
+                    <Text style={{ color: '#94a3b8' }}>Color:</Text>{' '}
+                    <Text style={{ color: palette.accent }}>{palette.name}</Text>
+                  </Text>
+                </View>
+              </View>
 
-          {/* 4 Language Options: English, Japanese, French, Indonesian */}
-          <View style={{ gap: 8, marginBottom: 16 }}>
-            {LANGUAGE_OPTIONS.map(opt => {
-              const isSelected = selectedUiLang === opt.id;
-              return (
+              {/* 2-Segment Tab Switcher */}
+              <View style={styles.themingTabBar}>
                 <TouchableOpacity
-                  key={opt.id}
+                  onPress={() => setThemingTab('skins')}
+                  activeOpacity={0.8}
                   style={[
-                    styles.themeOptionCard,
-                    isSelected && [styles.themeOptionActive, { borderColor: palette.accent, backgroundColor: `rgba(${palette.accentRgb}, 0.1)` }],
+                    styles.themingTabBtn,
+                    themingTab === 'skins' && { backgroundColor: palette.accent },
                   ]}
-                  onPress={() => handleSelectUiLanguage(opt.id)}
+                >
+                  <Text
+                    style={[
+                      styles.themingTabBtnText,
+                      themingTab === 'skins' && { color: '#0B0D12', fontWeight: '800' },
+                    ]}
+                  >
+                    UI Skins ({totalSkinsCount})
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setThemingTab('colors')}
+                  activeOpacity={0.8}
+                  style={[
+                    styles.themingTabBtn,
+                    themingTab === 'colors' && { backgroundColor: palette.accent },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.themingTabBtnText,
+                      themingTab === 'colors' && { color: '#0B0D12', fontWeight: '800' },
+                    ]}
+                  >
+                    Color Schemes ({totalColorsCount})
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <BottomSheetScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+                <AnimatedTabTransition transitionKey={themingTab} slideOffset={6}>
+                  {themingTab === 'skins' ? (
+                    <>
+                      {/* Compact Theme Store Launcher */}
+                      <TouchableOpacity
+                        onPress={() => setActiveModal('themeStore')}
+                        activeOpacity={0.85}
+                        style={[
+                          styles.themeOptionCard,
+                          {
+                            borderRadius: skin.cardRadius,
+                            borderColor: activePack ? palette.accent : `rgba(${palette.accentRgb}, 0.45)`,
+                            backgroundColor: `rgba(${palette.accentRgb}, 0.1)`,
+                            marginBottom: 12,
+                          },
+                        ]}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                          <View
+                            style={{
+                              width: 40,
+                              height: 40,
+                              borderRadius: 12,
+                              backgroundColor: palette.bgDark,
+                              borderWidth: 1.5,
+                              borderColor: palette.accent,
+                              justifyContent: 'center',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <Sparkles size={18} color={palette.accent} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.themeOptionName, { color: palette.accent }]}>
+                              Theme Store
+                            </Text>
+                            <Text style={styles.themeOptionDesc} numberOfLines={1}>
+                              {installedPacks.length > 0
+                                ? `${installedPacks.length} installed • Download & preview packs`
+                                : 'Download optional skins, docks & animations'}
+                            </Text>
+                          </View>
+                        </View>
+                        <View style={styles.storeBrowseBadge}>
+                          <Text style={styles.storeBrowseBadgeText}>Browse</Text>
+                          <ChevronRight size={14} color={palette.accent} />
+                        </View>
+                      </TouchableOpacity>
+
+                      {installedPacks.length > 0 && (
+                        <>
+                          {renderThemingSectionDivider('INSTALLED PACKS', installedPacks.length)}
+                          {installedPacks.map(pk => {
+                            const isSelected = activePack?.id === pk.id;
+                            const cardR = pk.geometry?.cardRadius ?? 20;
+                            return (
+                              <TouchableOpacity
+                                key={`pack-skin-${pk.id}`}
+                                style={[
+                                  styles.themeOptionCard,
+                                  { borderRadius: cardR },
+                                  isSelected && [styles.themeOptionActive, { borderColor: palette.accent }],
+                                ]}
+                                onPress={() => handleApplyThemePack(pk, { keepCurrentColors: true })}
+                                activeOpacity={0.8}
+                              >
+                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                                  <View
+                                    style={{
+                                      width: 44,
+                                      height: 44,
+                                      borderRadius: cardR > 20 ? 16 : Math.max(6, cardR * 0.65),
+                                      backgroundColor: pk.palette?.bgDark || palette.bgDark,
+                                      borderWidth: 1.25,
+                                      borderColor: isSelected ? palette.accent : `rgba(${palette.accentRgb}, 0.45)`,
+                                      justifyContent: 'center',
+                                      alignItems: 'center',
+                                    }}
+                                  >
+                                    <Text style={{ color: pk.palette?.accent || palette.accent, fontSize: 10.5, fontWeight: '800' }}>
+                                      {pk.badge}
+                                    </Text>
+                                  </View>
+                                  <View style={{ flex: 1 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                      <Text style={[styles.themeOptionName, isSelected && { color: palette.accent }]} numberOfLines={1}>
+                                        {pk.name}
+                                      </Text>
+                                      <View style={styles.packTagPill}>
+                                        <Text style={styles.packTagText}>PACK</Text>
+                                      </View>
+                                    </View>
+                                    <Text style={styles.themeOptionDesc} numberOfLines={2}>
+                                      {pk.description}
+                                    </Text>
+                                  </View>
+                                </View>
+                                {isSelected && <Check size={16} color={palette.accent} />}
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </>
+                      )}
+
+                      {renderThemingSectionDivider('BUILT-IN SKINS', builtInSkins.length)}
+                      {builtInSkins.map(sk => {
+                        const isSelected = !activePack && selectedSkin === sk.id;
+                        return (
+                          <TouchableOpacity
+                            key={sk.id}
+                            style={[
+                              styles.themeOptionCard,
+                              { borderRadius: sk.cardRadius },
+                              isSelected && [styles.themeOptionActive, { borderColor: palette.accent }],
+                            ]}
+                            onPress={() => handleSelectSkinInstant(sk.id)}
+                            activeOpacity={0.8}
+                          >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                              <View
+                                style={{
+                                  width: 44,
+                                  height: 44,
+                                  borderRadius: sk.cardRadius > 20 ? 16 : sk.cardRadius * 0.65,
+                                  backgroundColor: palette.bgDark,
+                                  borderWidth: Math.max(1, sk.cardBorderWidth),
+                                  borderColor: isSelected ? palette.accent : `rgba(${palette.accentRgb}, 0.4)`,
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                }}
+                              >
+                                <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '800' }}>
+                                  {sk.badge}
+                                </Text>
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={[styles.themeOptionName, isSelected && { color: palette.accent }]}>
+                                  {sk.name}
+                                </Text>
+                                <Text style={styles.themeOptionDesc}>{sk.desc}</Text>
+                              </View>
+                            </View>
+                            {isSelected && <Check size={16} color={palette.accent} />}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </>
+                  ) : (
+                    <>
+                      {installedPalettes.length > 0 && (
+                        <>
+                          {renderThemingSectionDivider('PACK COLOR SCHEMES', installedPalettes.length)}
+                          {renderColorSchemeGrid(installedPalettes, false)}
+                        </>
+                      )}
+
+                      {renderThemingSectionDivider('BUILT-IN COLOR SCHEMES', builtInPalettes.length)}
+                      {renderColorSchemeGrid(builtInPalettes, true)}
+                    </>
+                  )}
+                </AnimatedTabTransition>
+              </BottomSheetScrollView>
+
+              <View style={styles.modalFooter}>
+                <TouchableOpacity
+                  style={styles.saveBtn}
+                  onPress={handleApplyTheme}
                   activeOpacity={0.8}
                 >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <Text style={{ fontSize: 18 }}>{opt.flag}</Text>
-                    <View>
-                      <Text style={[styles.themeOptionName, isSelected && { color: palette.accent }]}>{opt.nativeName}</Text>
-                      <Text style={styles.themeOptionDesc}>{opt.name}</Text>
+                  <Text style={styles.saveBtnText}>{t('settings.applyTheme')}</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          );
+        })()}
+            <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+              <X size={16} color="#9ca3af" />
+            </TouchableOpacity>
+          </View>
+
+          <BottomSheetScrollView style={styles.modalBody}>
+            {/* Snappy Theme Store Launcher */}
+            <TouchableOpacity
+              onPress={() => setActiveModal('themeStore')}
+              activeOpacity={0.85}
+              style={[
+                styles.themeOptionCard,
+                {
+                  borderRadius: skin.cardRadius,
+                  borderColor: activePack ? palette.accent : `rgba(${palette.accentRgb}, 0.45)`,
+                  backgroundColor: `rgba(${palette.accentRgb}, 0.1)`,
+                  marginBottom: 14,
+                },
+              ]}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                <View
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 14,
+                    backgroundColor: palette.bgDark,
+                    borderWidth: 1.5,
+                    borderColor: palette.accent,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Sparkles size={20} color={palette.accent} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.themeOptionName, { color: palette.accent }]}>
+                    {activePack ? `Active Pack: ${activePack.name}` : 'Theme Store (Optional Packs)'}
+                  </Text>
+                  <Text style={styles.themeOptionDesc}>
+                    {activePack
+                      ? `${getInstalledThemePacksSync().length} installed • Tap to browse, preview or switch`
+                      : 'Browse screenshots, colors & custom animations from GitHub'}
+                  </Text>
+                </View>
+              </View>
+              <ChevronRight size={18} color={palette.accent} />
+            </TouchableOpacity>
+
+            <Text style={styles.sectionSub}>UI Design & Surface Skin (Applies Instantly)</Text>
+            {Object.values(UI_SKINS).map(sk => {
+              const isSelected = !activePack && selectedSkin === sk.id;
+              return (
+                <TouchableOpacity
+                  key={sk.id}
+                  style={[
+                    styles.themeOptionCard,
+                    { borderRadius: sk.cardRadius },
+                    isSelected && [styles.themeOptionActive, { borderColor: palette.accent }],
+                  ]}
+                  onPress={() => handleSelectSkinInstant(sk.id)}
+                  activeOpacity={0.8}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                    <View
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: sk.cardRadius > 20 ? 16 : sk.cardRadius * 0.65,
+                        backgroundColor: palette.bgDark,
+                        borderWidth: Math.max(1, sk.cardBorderWidth),
+                        borderColor: isSelected ? palette.accent : `rgba(${palette.accentRgb}, 0.4)`,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '800' }}>
+                        {sk.badge}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.themeOptionName, isSelected && { color: palette.accent }]}>
+                        {sk.name}
+                      </Text>
+                      <Text style={styles.themeOptionDesc}>{sk.desc}</Text>
                     </View>
                   </View>
                   {isSelected && <Check size={16} color={palette.accent} />}
                 </TouchableOpacity>
               );
             })}
-          </View>
 
-          {/* Auto-add language prompt toggle */}
-          <View
-            style={{
-              backgroundColor: 'rgba(255,255,255,0.04)',
-              borderRadius: 14,
-              padding: 14,
-              borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.08)',
-              marginBottom: 14,
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: '#f8fafc', fontSize: 13.5, fontWeight: '700' }}>
-                  {t('settings.autoPromptLabel')}
-                </Text>
-                <Text style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 3, lineHeight: 16 }}>
-                  {t('settings.autoPromptHint')}
-                </Text>
-              </View>
-              <NekoSwitch
-                value={autoLangPrompt}
-                onValueChange={async val => {
-                  setAutoLangPrompt(val);
-                  const updated: AppSettings = {
-                    ...settings,
-                    uiLanguage: selectedUiLang,
-                    autoLanguagePrompt: val,
-                    languageCustomPrompt: langCustomPrompt.trim() || getDefaultLanguagePrompt(selectedUiLang),
-                  };
-                  await storageService.saveSettings(updated);
-                  onUpdateSettings(updated);
-                }}
-              />
-            </View>
-
-            {/* Editable Custom Prompt for Language */}
-            <View style={{ marginTop: 12 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <Text style={[styles.inputLabel, { marginBottom: 0 }]}>
-                  {t('settings.customPromptLabel')}
-                </Text>
+            {getInstalledThemePacksSync().map(pk => {
+              const isSelected = activePack?.id === pk.id;
+              const cardR = pk.geometry?.cardRadius ?? 20;
+              return (
                 <TouchableOpacity
-                  onPress={() => setLangCustomPrompt(getDefaultLanguagePrompt(selectedUiLang))}
-                  activeOpacity={0.75}
+                  key={`pack-skin-${pk.id}`}
+                  style={[
+                    styles.themeOptionCard,
+                    { borderRadius: cardR },
+                    isSelected && [styles.themeOptionActive, { borderColor: palette.accent }],
+                  ]}
+                  onPress={() => handleApplyThemePack(pk, { keepCurrentColors: true })}
+                  activeOpacity={0.8}
                 >
-                  <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>
-                    {t('settings.resetPrompt')}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              <BottomSheetGestureLock>
-                <TextInput
-                  style={[styles.inputBox, { minHeight: 76, textAlignVertical: 'top' }]}
-                  multiline
-                  placeholder={getDefaultLanguagePrompt(selectedUiLang)}
-                  placeholderTextColor="rgba(255,255,255,0.3)"
-                  value={langCustomPrompt}
-                  onChangeText={setLangCustomPrompt}
-                />
-              </BottomSheetGestureLock>
-            </View>
-          </View>
-        </BottomSheetScrollView>
-
-        <View style={styles.modalFooter}>
-          <TouchableOpacity
-            style={styles.saveBtn}
-            onPress={handleSaveLanguageSettings}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.saveBtnText}>{t('settings.saveLanguage')}</Text>
-          </TouchableOpacity>
-        </View>
-      </BottomSheetModal>
-
-      {/* MODAL: Passcode Lock & Replay Onboarding */}
-      <BottomSheetModal visible={activeModal === 'passcode'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
-        <View style={styles.modalHeader}>
-          <View style={styles.modalTitleRow}>
-            <Lock size={16} color={palette.accent} style={{ marginRight: 6 }} />
-            <Text style={styles.modalTitle}>Passcode Lock & Tour</Text>
-          </View>
-          <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
-            <X size={20} color="#FFFFFF" />
-          </TouchableOpacity>
-        </View>
-
-        <BottomSheetScrollView style={styles.modalBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          <View
-            style={{
-              backgroundColor: 'rgba(255,255,255,0.04)',
-              borderRadius: 14,
-              padding: 14,
-              borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.08)',
-              marginBottom: 14,
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: '#f8fafc', fontSize: 13.5, fontWeight: '700' }}>
-                  Require 4-Digit Passcode
-                </Text>
-                <Text style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 3 }}>
-                  Lock NekoChat on launch with a local PIN.
-                </Text>
-              </View>
-              <NekoSwitch
-                value={passcodeEnabledDraft}
-                onValueChange={val => {
-                  setPasscodeEnabledDraft(val);
-                  setPasscodeError('');
-                }}
-              />
-            </View>
-
-            {passcodeEnabledDraft && (
-              <View style={{ marginTop: 14, gap: 10 }}>
-                <View>
-                  <Text style={styles.inputLabel}>
-                    {hasPasscodeConfigured(settings) ? 'New 4-Digit Passcode (optional)' : '4-Digit Passcode'}
-                  </Text>
-                  <TextInput
-                    style={styles.inputBox}
-                    value={passcodePinDraft}
-                    onChangeText={v => {
-                      setPasscodeError('');
-                      setPasscodePinDraft(v.replace(/\D/g, '').slice(0, 4));
-                    }}
-                    keyboardType="number-pad"
-                    maxLength={4}
-                    secureTextEntry
-                    placeholder={hasPasscodeConfigured(settings) ? 'Leave blank to keep current PIN' : '••••'}
-                    placeholderTextColor="#6b7280"
-                  />
-                </View>
-                <View>
-                  <Text style={styles.inputLabel}>Confirm Passcode</Text>
-                  <TextInput
-                    style={styles.inputBox}
-                    value={passcodeConfirmDraft}
-                    onChangeText={v => {
-                      setPasscodeError('');
-                      setPasscodeConfirmDraft(v.replace(/\D/g, '').slice(0, 4));
-                    }}
-                    keyboardType="number-pad"
-                    maxLength={4}
-                    secureTextEntry
-                    placeholder={hasPasscodeConfigured(settings) ? 'Confirm new PIN' : '••••'}
-                    placeholderTextColor="#6b7280"
-                  />
-                </View>
-                <View style={{ marginTop: 4 }}>
-                  <Text style={styles.inputLabel}>Auto-Lock After Leaving App</Text>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
-                    {[
-                      { label: 'Immediate', sec: 0 },
-                      { label: '1 min', sec: 60 },
-                      { label: '5 min', sec: 300 },
-                      { label: 'Launch only', sec: -1 },
-                    ].map(opt => {
-                      const active = passcodeAutoLockDraft === opt.sec;
-                      return (
-                        <TouchableOpacity
-                          key={opt.sec}
-                          style={[styles.radioChip, active && styles.radioChipActive]}
-                          onPress={() => setPasscodeAutoLockDraft(opt.sec)}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={[styles.radioChipText, active && styles.radioChipTextActive]}>
-                            {opt.label}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                    <View
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: cardR > 20 ? 16 : Math.max(6, cardR * 0.65),
+                        backgroundColor: pk.palette?.bgDark || palette.bgDark,
+                        borderWidth: 1.25,
+                        borderColor: isSelected ? palette.accent : `rgba(${palette.accentRgb}, 0.45)`,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <Text style={{ color: pk.palette?.accent || palette.accent, fontSize: 10.5, fontWeight: '800' }}>
+                        {pk.badge}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.themeOptionName, isSelected && { color: palette.accent }]}>
+                        {pk.name} (Pack)
+                      </Text>
+                      <Text style={styles.themeOptionDesc} numberOfLines={2}>
+                        {pk.description}
+                      </Text>
+                    </View>
                   </View>
-                </View>
-                {passcodeError ? (
-                  <Text style={{ color: '#f87171', fontSize: 12, fontWeight: '600' }}>{passcodeError}</Text>
-                ) : null}
-              </View>
-            )}
-          </View>
+                  {isSelected && <Check size={16} color={palette.accent} />}
+                </TouchableOpacity>
+              );
+            })}
 
-          {onReplayOnboarding && (
+            {getInstalledThemePacksSync().some(p => p.palettes.length > 0) && (
+              <>
+                <Text style={[styles.sectionSub, { marginTop: 14 }]}>Installed Pack Color Schemes</Text>
+                {getAllInstalledPalettesSync().map(th => {
+                  const isSelected = palette.id === th.id;
+                  return (
+                    <TouchableOpacity
+                      key={`pack-pal-${th.id}`}
+                      style={[
+                        styles.themeOptionCard,
+                        isSelected && [styles.themeOptionActive, { borderColor: th.accent }],
+                      ]}
+                      onPress={() => handleSelectThemeInstant(th.id)}
+                      activeOpacity={0.8}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                        <View
+                          style={{
+                            width: 44,
+                            height: 44,
+                            borderRadius: 12,
+                            backgroundColor: th.bgDark,
+                            borderWidth: 1.5,
+                            borderColor: th.accent,
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <NekoLogoSvg size={30} color={th.accent} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.themeOptionName, isSelected && { color: th.accent }]}>
+                            {th.name}
+                          </Text>
+                          <Text style={styles.themeOptionDesc} numberOfLines={2}>
+                            {th.packName ? `From ${th.packName} • ` : ''}{th.desc}
+                          </Text>
+                        </View>
+                      </View>
+                      {isSelected && <Check size={16} color={th.accent} />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </>
+            )}
+
+            <Text style={[styles.sectionSub, { marginTop: 14 }]}>{t('settings.selectThemeSub')}</Text>
+            {Object.values(THEME_PALETTES).map(th => {
+              const isSelected = palette.id === th.id;
+              return (
+                <TouchableOpacity
+                  key={th.id}
+                  style={[
+                    styles.themeOptionCard,
+                    isSelected && [styles.themeOptionActive, { borderColor: th.accent }],
+                  ]}
+                  onPress={() => handleSelectThemeInstant(th.id)}
+                  activeOpacity={0.8}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                    <View
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 12,
+                        backgroundColor: th.bgDark,
+                        borderWidth: 1.5,
+                        borderColor: th.accent,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                      }}
+                    >
+                      <NekoLogoSvg size={30} color={th.accent} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.themeOptionName, isSelected && { color: th.accent }]}>
+                        {th.name}
+                      </Text>
+                      <Text style={styles.themeOptionDesc}>{th.desc}</Text>
+                    </View>
+                  </View>
+                  {isSelected && <Check size={16} color={th.accent} />}
+                </TouchableOpacity>
+              );
+            })}
+          </BottomSheetScrollView>
+
+          <View style={styles.modalFooter}>
             <TouchableOpacity
-              style={[
-                styles.autoTestBtn,
-                { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
-              ]}
-              onPress={() => {
-                setActiveModal(null);
-                onReplayOnboarding();
-              }}
+              style={styles.saveBtn}
+              onPress={handleApplyTheme}
               activeOpacity={0.8}
             >
-              <Sparkles size={14} color={palette.accent} style={{ marginRight: 6 }} />
-              <Text style={[styles.autoTestBtnText, { color: palette.accent }]}>
-                Replay First-Time Setup & Tour
-              </Text>
+              <Text style={styles.saveBtnText}>{t('settings.applyTheme')}</Text>
             </TouchableOpacity>
-          )}
-        </BottomSheetScrollView>
+          </View>
+        </BottomSheetModal>
 
-        <View style={styles.modalFooter}>
-          <TouchableOpacity
-            style={styles.saveBtn}
-            onPress={async () => {
-              const hasExisting = hasPasscodeConfigured(settings);
-              if (passcodeEnabledDraft && (passcodePinDraft.length > 0 || !hasExisting)) {
-                if (!/^\d{4}$/.test(passcodePinDraft)) {
-                  setPasscodeError('Please enter a 4-digit numeric passcode.');
-                  return;
+        {/* MODAL: Language & AI Auto-Prompt */}
+        <BottomSheetModal visible={activeModal === 'language'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <View style={styles.modalTitleRow}>
+              <Globe size={16} color={palette.accent} style={{ marginRight: 6 }} />
+              <Text style={styles.modalTitle}>{t('settings.languageTitle')}</Text>
+            </View>
+            <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+              <X size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+
+          <BottomSheetScrollView style={styles.modalBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <Text style={styles.sectionSub}>{t('settings.languageSub')}</Text>
+
+            {/* 4 Language Options: English, Japanese, French, Indonesian */}
+            <View style={{ gap: 8, marginBottom: 16 }}>
+              {LANGUAGE_OPTIONS.map(opt => {
+                const isSelected = selectedUiLang === opt.id;
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    style={[
+                      styles.themeOptionCard,
+                      isSelected && [styles.themeOptionActive, { borderColor: palette.accent, backgroundColor: `rgba(${palette.accentRgb}, 0.1)` }],
+                    ]}
+                    onPress={() => handleSelectUiLanguage(opt.id)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <Text style={{ fontSize: 18 }}>{opt.flag}</Text>
+                      <View>
+                        <Text style={[styles.themeOptionName, isSelected && { color: palette.accent }]}>{opt.nativeName}</Text>
+                        <Text style={styles.themeOptionDesc}>{opt.name}</Text>
+                      </View>
+                    </View>
+                    {isSelected && <Check size={16} color={palette.accent} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Auto-add language prompt toggle */}
+            <View
+              style={{
+                backgroundColor: 'rgba(255,255,255,0.04)',
+                borderRadius: 14,
+                padding: 14,
+                borderWidth: 1,
+                borderColor: 'rgba(255,255,255,0.08)',
+                marginBottom: 14,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: '#f8fafc', fontSize: 13.5, fontWeight: '700' }}>
+                    {t('settings.autoPromptLabel')}
+                  </Text>
+                  <Text style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 3, lineHeight: 16 }}>
+                    {t('settings.autoPromptHint')}
+                  </Text>
+                </View>
+                <NekoSwitch
+                  value={autoLangPrompt}
+                  onValueChange={async val => {
+                    setAutoLangPrompt(val);
+                    const updated: AppSettings = {
+                      ...settings,
+                      uiLanguage: selectedUiLang,
+                      autoLanguagePrompt: val,
+                      languageCustomPrompt: langCustomPrompt.trim() || getDefaultLanguagePrompt(selectedUiLang),
+                    };
+                    await storageService.saveSettings(updated);
+                    onUpdateSettings(updated);
+                  }}
+                />
+              </View>
+
+              {/* Editable Custom Prompt for Language */}
+              <View style={{ marginTop: 12 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <Text style={[styles.inputLabel, { marginBottom: 0 }]}>
+                    {t('settings.customPromptLabel')}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => setLangCustomPrompt(getDefaultLanguagePrompt(selectedUiLang))}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>
+                      {t('settings.resetPrompt')}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <BottomSheetGestureLock>
+                  <TextInput
+                    style={[styles.inputBox, { minHeight: 76, textAlignVertical: 'top' }]}
+                    multiline
+                    placeholder={getDefaultLanguagePrompt(selectedUiLang)}
+                    placeholderTextColor="rgba(255,255,255,0.3)"
+                    value={langCustomPrompt}
+                    onChangeText={setLangCustomPrompt}
+                  />
+                </BottomSheetGestureLock>
+              </View>
+            </View>
+          </BottomSheetScrollView>
+
+          <View style={styles.modalFooter}>
+            <TouchableOpacity
+              style={styles.saveBtn}
+              onPress={handleSaveLanguageSettings}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.saveBtnText}>{t('settings.saveLanguage')}</Text>
+            </TouchableOpacity>
+          </View>
+        </BottomSheetModal>
+
+        {/* MODAL: Passcode Lock & Replay Onboarding */}
+        <BottomSheetModal visible={activeModal === 'passcode'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <View style={styles.modalTitleRow}>
+              <Lock size={16} color={palette.accent} style={{ marginRight: 6 }} />
+              <Text style={styles.modalTitle}>Passcode Lock & Tour</Text>
+            </View>
+            <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+              <X size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+
+          <BottomSheetScrollView style={styles.modalBody} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <View
+              style={{
+                backgroundColor: 'rgba(255,255,255,0.04)',
+                borderRadius: 14,
+                padding: 14,
+                borderWidth: 1,
+                borderColor: 'rgba(255,255,255,0.08)',
+                marginBottom: 14,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: '#f8fafc', fontSize: 13.5, fontWeight: '700' }}>
+                    Require 4-Digit Passcode
+                  </Text>
+                  <Text style={{ color: '#94a3b8', fontSize: 11.5, marginTop: 3 }}>
+                    Lock NekoChat on launch with a local PIN.
+                  </Text>
+                </View>
+                <NekoSwitch
+                  value={passcodeEnabledDraft}
+                  onValueChange={val => {
+                    setPasscodeEnabledDraft(val);
+                    setPasscodeError('');
+                  }}
+                />
+              </View>
+
+              {passcodeEnabledDraft && (
+                <View style={{ marginTop: 14, gap: 10 }}>
+                  <View>
+                    <Text style={styles.inputLabel}>
+                      {hasPasscodeConfigured(settings) ? 'New 4-Digit Passcode (optional)' : '4-Digit Passcode'}
+                    </Text>
+                    <TextInput
+                      style={styles.inputBox}
+                      value={passcodePinDraft}
+                      onChangeText={v => {
+                        setPasscodeError('');
+                        setPasscodePinDraft(v.replace(/\D/g, '').slice(0, 4));
+                      }}
+                      keyboardType="number-pad"
+                      maxLength={4}
+                      secureTextEntry
+                      placeholder={hasPasscodeConfigured(settings) ? 'Leave blank to keep current PIN' : '••••'}
+                      placeholderTextColor="#6b7280"
+                    />
+                  </View>
+                  <View>
+                    <Text style={styles.inputLabel}>Confirm Passcode</Text>
+                    <TextInput
+                      style={styles.inputBox}
+                      value={passcodeConfirmDraft}
+                      onChangeText={v => {
+                        setPasscodeError('');
+                        setPasscodeConfirmDraft(v.replace(/\D/g, '').slice(0, 4));
+                      }}
+                      keyboardType="number-pad"
+                      maxLength={4}
+                      secureTextEntry
+                      placeholder={hasPasscodeConfigured(settings) ? 'Confirm new PIN' : '••••'}
+                      placeholderTextColor="#6b7280"
+                    />
+                  </View>
+                  <View style={{ marginTop: 4 }}>
+                    <Text style={styles.inputLabel}>Auto-Lock After Leaving App</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                      {[
+                        { label: 'Immediate', sec: 0 },
+                        { label: '1 min', sec: 60 },
+                        { label: '5 min', sec: 300 },
+                        { label: 'Launch only', sec: -1 },
+                      ].map(opt => {
+                        const active = passcodeAutoLockDraft === opt.sec;
+                        return (
+                          <TouchableOpacity
+                            key={opt.sec}
+                            style={[styles.radioChip, active && styles.radioChipActive]}
+                            onPress={() => setPasscodeAutoLockDraft(opt.sec)}
+                            activeOpacity={0.8}
+                          >
+                            <Text style={[styles.radioChipText, active && styles.radioChipTextActive]}>
+                              {opt.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                  {passcodeError ? (
+                    <Text style={{ color: '#f87171', fontSize: 12, fontWeight: '600' }}>{passcodeError}</Text>
+                  ) : null}
+                </View>
+              )}
+            </View>
+
+            {onReplayOnboarding && (
+              <TouchableOpacity
+                style={[
+                  styles.autoTestBtn,
+                  { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
+                ]}
+                onPress={() => {
+                  setActiveModal(null);
+                  onReplayOnboarding();
+                }}
+                activeOpacity={0.8}
+              >
+                <Sparkles size={14} color={palette.accent} style={{ marginRight: 6 }} />
+                <Text style={[styles.autoTestBtnText, { color: palette.accent }]}>
+                  Replay First-Time Setup & Tour
+                </Text>
+              </TouchableOpacity>
+            )}
+          </BottomSheetScrollView>
+
+          <View style={styles.modalFooter}>
+            <TouchableOpacity
+              style={styles.saveBtn}
+              onPress={async () => {
+                const hasExisting = hasPasscodeConfigured(settings);
+                if (passcodeEnabledDraft && (passcodePinDraft.length > 0 || !hasExisting)) {
+                  if (!/^\d{4}$/.test(passcodePinDraft)) {
+                    setPasscodeError('Please enter a 4-digit numeric passcode.');
+                    return;
+                  }
+                  if (passcodePinDraft !== passcodeConfirmDraft) {
+                    setPasscodeError('Passcodes do not match.');
+                    return;
+                  }
                 }
-                if (passcodePinDraft !== passcodeConfirmDraft) {
-                  setPasscodeError('Passcodes do not match.');
-                  return;
-                }
-              }
-              const saved = await storageService.saveSettings(
-                passcodeEnabledDraft
-                  ? {
+                const saved = await storageService.saveSettings(
+                  passcodeEnabledDraft
+                    ? {
                       passcodeEnabled: true,
                       ...(passcodePinDraft ? { passcodePin: passcodePinDraft } : {}),
                       passcodeAutoLockSec: passcodeAutoLockDraft,
                     }
-                  : {
+                    : {
                       passcodeEnabled: false,
                       passcodePin: '',
                       passcodeHash: '',
                       passcodeAutoLockSec: passcodeAutoLockDraft,
                     }
-              );
-              onUpdateSettings(saved);
-              setActiveModal(null);
-            }}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.saveBtnText}>Save Passcode Settings</Text>
-          </TouchableOpacity>
-        </View>
-      </BottomSheetModal>
+                );
+                onUpdateSettings(saved);
+                setActiveModal(null);
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.saveBtnText}>Save Passcode Settings</Text>
+            </TouchableOpacity>
+          </View>
+        </BottomSheetModal>
 
-      {/* MODAL 3: Data Vault & Sanitizer */}
-      <BottomSheetModal visible={activeModal === 'vault'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleRow}>
-                <ShieldCheck size={16} color={palette.accent} style={{ marginRight: 6 }} />
-                <Text style={styles.modalTitle}>Neko Data Vault & Sanitizer</Text>
-              </View>
-              <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
-                <X size={16} color="#9ca3af" />
-              </TouchableOpacity>
+        {/* MODAL 3: Data Vault & Sanitizer */}
+        <BottomSheetModal visible={activeModal === 'vault'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <View style={styles.modalTitleRow}>
+              <ShieldCheck size={16} color={palette.accent} style={{ marginRight: 6 }} />
+              <Text style={styles.modalTitle}>Neko Data Vault & Sanitizer</Text>
             </View>
+            <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+              <X size={16} color="#9ca3af" />
+            </TouchableOpacity>
+          </View>
 
-            <BottomSheetScrollView style={styles.modalBody}>
-              <Text style={styles.vaultInfoText}>
-                Zero-Key Sanitization: Exported .neko files are 100% stripped of your API keys and credentials, safe to share with friends or communities.
-              </Text>
+          <BottomSheetScrollView style={styles.modalBody}>
+            <Text style={styles.vaultInfoText}>
+              Zero-Key Sanitization: Exported .neko files are 100% stripped of your API keys and credentials, safe to share with friends or communities.
+            </Text>
 
+            <TouchableOpacity
+              style={styles.exportBtn}
+              onPress={handleDownloadVaultFile}
+              activeOpacity={0.8}
+            >
+              <Download size={14} color="#000000" style={{ marginRight: 6 }} />
+              <Text style={styles.exportBtnText}>Export Sanitized Backup (.neko)</Text>
+            </TouchableOpacity>
+
+            {vaultJson ? (
+              <View style={styles.vaultSnippetBox}>
+                <TouchableOpacity style={styles.copySnippetBtn} onPress={handleCopyVault}>
+                  <Copy size={13} color={palette.accent} style={{ marginRight: 4 }} />
+                  <Text style={styles.copySnippetText}>{copiedVault ? 'Copied!' : 'Copy JSON'}</Text>
+                </TouchableOpacity>
+                <Text style={styles.vaultSnippetText} numberOfLines={3}>
+                  {vaultJson.slice(0, 180)}...
+                </Text>
+              </View>
+            ) : null}
+
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginBottom: 6 }}>
+              <Text style={styles.inputLabel}>Restore from .neko or .warden JSON</Text>
               <TouchableOpacity
-                style={styles.exportBtn}
-                onPress={handleDownloadVaultFile}
+                style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: `rgba(${palette.accentRgb}, 0.1)`, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: `rgba(${palette.accentRgb}, 0.3)` }}
+                onPress={handlePickVaultFile}
                 activeOpacity={0.8}
               >
-                <Download size={14} color="#000000" style={{ marginRight: 6 }} />
-                <Text style={styles.exportBtnText}>Export Sanitized Backup (.neko)</Text>
+                <Upload size={12} color={palette.accent} style={{ marginRight: 4 }} />
+                <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>Pick File</Text>
               </TouchableOpacity>
+            </View>
+            <BottomSheetGestureLock>
+              <TextInput
+                style={[styles.inputBox, { height: 75, textAlignVertical: 'top' }]}
+                multiline
+                value={importJsonText}
+                onChangeText={setImportJsonText}
+                placeholder="Paste exported vault JSON text here..."
+                placeholderTextColor="#6b7280"
+              />
+            </BottomSheetGestureLock>
 
-              {vaultJson ? (
-                <View style={styles.vaultSnippetBox}>
-                  <TouchableOpacity style={styles.copySnippetBtn} onPress={handleCopyVault}>
-                    <Copy size={13} color={palette.accent} style={{ marginRight: 4 }} />
-                    <Text style={styles.copySnippetText}>{copiedVault ? 'Copied!' : 'Copy JSON'}</Text>
-                  </TouchableOpacity>
-                  <Text style={styles.vaultSnippetText} numberOfLines={3}>
-                    {vaultJson.slice(0, 180)}...
-                  </Text>
-                </View>
-              ) : null}
+            <TouchableOpacity
+              style={styles.importActionBtn}
+              onPress={handleImportVault}
+              activeOpacity={0.8}
+            >
+              <Upload size={14} color={palette.accent} style={{ marginRight: 6 }} />
+              <Text style={styles.importActionBtnText}>Restore / Import Backup</Text>
+            </TouchableOpacity>
 
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, marginBottom: 6 }}>
-                <Text style={styles.inputLabel}>Restore from .neko or .warden JSON</Text>
+            {vaultNotice && <Text style={styles.vaultNoticeText}>{vaultNotice}</Text>}
+          </BottomSheetScrollView>
+        </BottomSheetModal>
+
+        {/* MODAL 5: Token Limits & Cost */}
+        <BottomSheetModal visible={activeModal === 'tokens'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <View style={styles.modalTitleRow}>
+              <Cpu size={16} color={palette.accent} style={{ marginRight: 6 }} />
+              <Text style={styles.modalTitle}>Token Limits & Context Window</Text>
+            </View>
+            <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+              <X size={16} color="#9ca3af" />
+            </TouchableOpacity>
+          </View>
+
+          <BottomSheetScrollView style={styles.modalBody}>
+            <Text style={styles.inputLabel}>Maximum Context Window</Text>
+            <View style={styles.tokenPillRow}>
+              {['4096', '8192', '16384', '32768'].map(limit => (
                 <TouchableOpacity
-                  style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: `rgba(${palette.accentRgb}, 0.1)`, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: `rgba(${palette.accentRgb}, 0.3)` }}
-                  onPress={handlePickVaultFile}
+                  key={limit}
+                  style={[styles.tokenPill, contextLimit === limit && styles.tokenPillActive]}
+                  onPress={() => setContextLimit(limit)}
                   activeOpacity={0.8}
                 >
-                  <Upload size={12} color={palette.accent} style={{ marginRight: 4 }} />
-                  <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>Pick File</Text>
-                </TouchableOpacity>
-              </View>
-              <BottomSheetGestureLock>
-                <TextInput
-                  style={[styles.inputBox, { height: 75, textAlignVertical: 'top' }]}
-                  multiline
-                  value={importJsonText}
-                  onChangeText={setImportJsonText}
-                  placeholder="Paste exported vault JSON text here..."
-                  placeholderTextColor="#6b7280"
-                />
-              </BottomSheetGestureLock>
-
-              <TouchableOpacity
-                style={styles.importActionBtn}
-                onPress={handleImportVault}
-                activeOpacity={0.8}
-              >
-                <Upload size={14} color={palette.accent} style={{ marginRight: 6 }} />
-                <Text style={styles.importActionBtnText}>Restore / Import Backup</Text>
-              </TouchableOpacity>
-
-              {vaultNotice && <Text style={styles.vaultNoticeText}>{vaultNotice}</Text>}
-            </BottomSheetScrollView>
-      </BottomSheetModal>
-
-      {/* MODAL 5: Token Limits & Cost */}
-      <BottomSheetModal visible={activeModal === 'tokens'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleRow}>
-                <Cpu size={16} color={palette.accent} style={{ marginRight: 6 }} />
-                <Text style={styles.modalTitle}>Token Limits & Context Window</Text>
-              </View>
-              <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
-                <X size={16} color="#9ca3af" />
-              </TouchableOpacity>
-            </View>
-
-            <BottomSheetScrollView style={styles.modalBody}>
-              <Text style={styles.inputLabel}>Maximum Context Window</Text>
-              <View style={styles.tokenPillRow}>
-                {['4096', '8192', '16384', '32768'].map(limit => (
-                  <TouchableOpacity
-                    key={limit}
-                    style={[styles.tokenPill, contextLimit === limit && styles.tokenPillActive]}
-                    onPress={() => setContextLimit(limit)}
-                    activeOpacity={0.8}
+                  <Text
+                    style={[
+                      styles.tokenPillText,
+                      contextLimit === limit && styles.tokenPillTextActive,
+                    ]}
                   >
-                    <Text
-                      style={[
-                        styles.tokenPillText,
-                        contextLimit === limit && styles.tokenPillTextActive,
-                      ]}
-                    >
-                      {limit} BPE
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={[styles.inputLabel, { marginTop: 14 }]}>Cost Estimation Currency</Text>
-              <View style={styles.tokenPillRow}>
-                {(['IDR', 'USD'] as const).map(c => (
-                  <TouchableOpacity
-                    key={c}
-                    style={[styles.tokenPill, currency === c && styles.tokenPillActive]}
-                    onPress={() => setCurrency(c)}
-                    activeOpacity={0.8}
-                  >
-                    <Text
-                      style={[
-                        styles.tokenPillText,
-                        currency === c && styles.tokenPillTextActive,
-                      ]}
-                    >
-                      {c === 'IDR' ? 'Rupiah (IDR)' : 'US Dollar (USD)'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              {/* Advanced Sampling Controls Dropdown */}
-              <TouchableOpacity
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
-                  padding: 12,
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: `rgba(${palette.accentRgb}, 0.25)`,
-                  marginTop: 18,
-                  marginBottom: 10,
-                }}
-                onPress={() => setShowAdvancedSampling(!showAdvancedSampling)}
-                activeOpacity={0.8}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Cpu size={15} color={palette.accent} />
-                  <Text style={{ color: palette.accent, fontSize: 13, fontWeight: '700' }}>
-                    Advanced Sampling & Context Truncation
+                    {limit} BPE
                   </Text>
-                </View>
-                <AnimatedChevron expanded={showAdvancedSampling} size={16} color={palette.accent} />
-              </TouchableOpacity>
-
-              <AnimatedCollapsible expanded={showAdvancedSampling}>
-                <View style={{ backgroundColor: getSubtleSurfaceBg(palette, skin), padding: 12, borderRadius: skin.cardRadius, marginBottom: 14, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)' }}>
-                  {/* Context Truncation Strategy */}
-                  <Text style={styles.inputLabel}>Context Truncation Strategy</Text>
-                  <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12 }}>
-                    {[
-                      { id: 'rolling', label: 'Rolling Window', sub: 'Trim oldest' },
-                      { id: 'smart', label: 'Smart Summary', sub: 'Balanced' },
-                      { id: 'lorebook', label: 'Lorebook First', sub: 'Protect keys' },
-                    ].map(st => (
-                      <TouchableOpacity
-                        key={st.id}
-                        style={[
-                          styles.tokenPill,
-                          truncationStrategy === st.id && styles.tokenPillActive,
-                          { flex: 1, paddingVertical: 6, alignItems: 'center' },
-                        ]}
-                        onPress={() => setTruncationStrategy(st.id as any)}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={[styles.tokenPillText, truncationStrategy === st.id && styles.tokenPillTextActive, { fontSize: 11 }]}>
-                          {st.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-
-                  {/* Max Output Tokens */}
-                  <Text style={styles.inputLabel}>{t('settings.maxOutputTokens')}</Text>
-                  <View style={[styles.tokenPillRow, { marginBottom: 8 }]}>
-                    {[
-                      { val: '0', label: t('settings.unlimited') },
-                      { val: '1024', label: '1K' },
-                      { val: '4096', label: '4K' },
-                      { val: '8192', label: '8K' },
-                      { val: '15000', label: '15K' },
-                    ].map(tok => (
-                      <TouchableOpacity
-                        key={tok.val}
-                        style={[styles.tokenPill, maxTokens === tok.val && styles.tokenPillActive, { flex: 1, alignItems: 'center' }]}
-                        onPress={() => setMaxTokens(tok.val)}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={[styles.tokenPillText, maxTokens === tok.val && styles.tokenPillTextActive, { fontSize: 11.5 }]}>
-                          {tok.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                  <TextInput
-                    style={[styles.inputBox, { marginBottom: 6 }]}
-                    value={maxTokens}
-                    onChangeText={v => setMaxTokens(v.replace(/\D/g, ''))}
-                    keyboardType="number-pad"
-                    placeholder="Custom max output tokens (0 = Unlimited)"
-                    placeholderTextColor="#64748b"
-                  />
-                  {(() => {
-                    const parsedOut = maxTokens === '0' ? 0 : parseInt(maxTokens, 10) || 0;
-                    const parsedCtx = parseInt(contextLimit, 10) || 16384;
-                    if (parsedOut > 0 && parsedOut >= parsedCtx) {
-                      return (
-                        <Text style={{ color: '#fbbf24', fontSize: 11, marginBottom: 10 }}>
-                          Warning: Output limit ({parsedOut}) meets or exceeds configured context limit ({parsedCtx}). Provider limits remain authoritative.
-                        </Text>
-                      );
-                    }
-                    return (
-                      <Text style={{ color: '#64748b', fontSize: 11, marginBottom: 10 }}>
-                        Enter any custom token limit (e.g. 16384, 32768) or 0 for Unlimited (no client-side cap sent).
-                      </Text>
-                    );
-                  })()}
-
-                  {/* Temperature */}
-                  <Text style={styles.inputLabel}>Temperature (Creativity: {temperature})</Text>
-                  <View style={[styles.tokenPillRow, { marginBottom: 12 }]}>
-                    {[
-                      { val: '0.3', label: '0.3 (Strict)' },
-                      { val: '0.7', label: '0.7 (RP Default)' },
-                      { val: '1.0', label: '1.0 (Creative)' },
-                      { val: '1.3', label: '1.3 (Chaotic)' },
-                    ].map(t => (
-                      <TouchableOpacity
-                        key={t.val}
-                        style={[styles.tokenPill, temperature === t.val && styles.tokenPillActive, { flex: 1, alignItems: 'center' }]}
-                        onPress={() => setTemperature(t.val)}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={[styles.tokenPillText, temperature === t.val && styles.tokenPillTextActive, { fontSize: 10 }]}>
-                          {t.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-
-                  {/* Top-P */}
-                  <Text style={styles.inputLabel}>Top-P Sampling ({topP})</Text>
-                  <View style={[styles.tokenPillRow, { marginBottom: 12 }]}>
-                    {['0.70', '0.85', '0.95', '1.00'].map(p => (
-                      <TouchableOpacity
-                        key={p}
-                        style={[styles.tokenPill, topP === p && styles.tokenPillActive, { flex: 1, alignItems: 'center' }]}
-                        onPress={() => setTopP(p)}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={[styles.tokenPillText, topP === p && styles.tokenPillTextActive]}>
-                          {p}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-
-                  {/* Repetition Penalty */}
-                  <Text style={styles.inputLabel}>Repetition Penalty ({repPenalty})</Text>
-                  <View style={styles.tokenPillRow}>
-                    {[
-                      { val: '1.00', label: 'Off' },
-                      { val: '1.05', label: 'Light' },
-                      { val: '1.15', label: 'Default' },
-                      { val: '1.25', label: 'Strict' },
-                    ].map(r => (
-                      <TouchableOpacity
-                        key={r.val}
-                        style={[styles.tokenPill, repPenalty === r.val && styles.tokenPillActive, { flex: 1, alignItems: 'center' }]}
-                        onPress={() => setRepPenalty(r.val)}
-                        activeOpacity={0.8}
-                      >
-                        <Text style={[styles.tokenPillText, repPenalty === r.val && styles.tokenPillTextActive, { fontSize: 10 }]}>
-                          {r.val} ({r.label})
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              </AnimatedCollapsible>
-            </BottomSheetScrollView>
-
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={styles.saveBtn}
-                onPress={async () => {
-                  const nextContextLimit = parseInt(contextLimit, 10) || 8192;
-                  const nextMaxTokens = maxTokens === '0' ? 0 : (parseInt(maxTokens, 10) || 4096);
-                  const activeModelKey = String(config.model || config.defaultModel || '').trim();
-                  const nextModelLimits = { ...(config.modelContextLimits || {}) };
-                  if (activeModelKey) {
-                    nextModelLimits[activeModelKey] = {
-                      ...(nextModelLimits[activeModelKey] || {}),
-                      contextLimit: nextContextLimit,
-                      maxOutputTokens: nextMaxTokens,
-                      updatedAt: Date.now(),
-                    };
-                  }
-                  const updated: ProviderConfig = {
-                    ...config,
-                    contextLimit: nextContextLimit,
-                    maxTokens: nextMaxTokens,
-                    userConfiguredContextLimit: true,
-                    userConfiguredMaxTokens: true,
-                    modelContextLimits: nextModelLimits,
-                    temperature: parseFloat(temperature) || 0.7,
-                    topP: parseFloat(topP) || 0.95,
-                    repetitionPenalty: parseFloat(repPenalty) || 1.15,
-                  };
-                  await storageService.saveProviderConfig(updated);
-                  if (updated.id) {
-                    await storageService.upsertProvider(updated);
-                  }
-                  onUpdateConfig(updated);
-                  setActiveModal(null);
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.saveBtnText}>Save Sampling & Limits</Text>
-              </TouchableOpacity>
-            </View>
-      </BottomSheetModal>
-
-      {/* MODAL: Voice & Speech Synthesis */}
-      <BottomSheetModal visible={activeModal === 'voice'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleRow}>
-                <Volume2 size={16} color={palette.accent} style={{ marginRight: 6 }} />
-                <Text style={styles.modalTitle}>Voice & Speech Synthesis</Text>
-              </View>
-              <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
-                <X size={16} color="#9ca3af" />
-              </TouchableOpacity>
+                </TouchableOpacity>
+              ))}
             </View>
 
-            <BottomSheetScrollView style={styles.modalBody}>
-              {/* Enable Toggle */}
-              <TouchableOpacity
-                style={styles.toggleRow}
-                onPress={() => handleSaveTtsConfig({ enabled: !ttsConfig.enabled })}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.toggleTitle}>Enable Speech Synthesis</Text>
-                  <Text style={styles.toggleDesc}>Character voice playback on companion messages</Text>
-                </View>
-                <View style={[styles.toggleSwitch, ttsConfig.enabled && styles.toggleSwitchActive]}>
-                  <View style={[styles.toggleThumb, ttsConfig.enabled && styles.toggleThumbActive]} />
-                </View>
-              </TouchableOpacity>
-
-              {/* Dialogue Only Toggle */}
-              <TouchableOpacity
-                style={styles.toggleRow}
-                onPress={() => handleSaveTtsConfig({ dialogueOnly: !ttsConfig.dialogueOnly })}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.toggleTitle}>Dialogue Only</Text>
-                  <Text style={styles.toggleDesc}>Reads spoken quotes {'"..."'} and skips asterisk actions *...*</Text>
-                </View>
-                <View style={[styles.toggleSwitch, ttsConfig.dialogueOnly && styles.toggleSwitchActive]}>
-                  <View style={[styles.toggleThumb, ttsConfig.dialogueOnly && styles.toggleThumbActive]} />
-                </View>
-              </TouchableOpacity>
-
-              {/* Speed Preset Selector */}
-              <Text style={[styles.sectionSub, { marginTop: 14 }]}>Playback Speed</Text>
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-                {[0.8, 1.0, 1.2, 1.4].map(spd => {
-                  const isSel = Math.abs(ttsConfig.speed - spd) < 0.05;
-                  return (
-                    <TouchableOpacity
-                      key={`spd_${spd}`}
-                      style={[styles.radioChip, isSel && styles.radioChipActive]}
-                      onPress={() => handleSaveTtsConfig({ speed: spd })}
-                    >
-                      <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
-                        {spd}x
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              {/* Pitch Selector */}
-              <Text style={styles.sectionSub}>Pitch</Text>
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-                {[0.8, 1.0, 1.2].map(pt => {
-                  const isSel = Math.abs(ttsConfig.pitch - pt) < 0.05;
-                  return (
-                    <TouchableOpacity
-                      key={`pt_${pt}`}
-                      style={[styles.radioChip, isSel && styles.radioChipActive]}
-                      onPress={() => handleSaveTtsConfig({ pitch: pt })}
-                    >
-                      <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
-                        {pt === 1.0 ? 'Normal (1.0)' : pt < 1.0 ? 'Lower (0.8)' : 'Higher (1.2)'}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              {/* Voice Profiles Roster */}
-              <Text style={styles.sectionSub}>Character Voice Profile</Text>
-              <View style={{ gap: 8, marginBottom: 16 }}>
-                {VOICE_PROFILES.map(vp => {
-                  const isSel = ttsConfig.voiceId === vp.id;
-                  return (
-                    <TouchableOpacity
-                      key={vp.id}
-                      style={[styles.voiceItemCard, isSel && styles.voiceItemCardActive]}
-                      onPress={() => handleSaveTtsConfig({ voiceId: vp.id })}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          <Text style={[styles.voiceItemName, isSel && { color: palette.accent }]}>{vp.name}</Text>
-                          <View style={styles.voiceGenderBadge}>
-                            <Text style={styles.voiceGenderBadgeText}>{vp.gender}</Text>
-                          </View>
-                        </View>
-                        <Text style={styles.voiceArchetype}>{vp.archetype}</Text>
-                        <Text style={styles.voiceDesc} numberOfLines={1}>{vp.description}</Text>
-                      </View>
-                      {isSel && <Check size={16} color={palette.accent} />}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </BottomSheetScrollView>
-
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={[styles.saveBtn, isTestingVoice && { opacity: 0.7 }]}
-                onPress={handleTestVoice}
-                disabled={isTestingVoice}
-                activeOpacity={0.8}
-              >
-                {isTestingVoice ? (
-                  <ActivityIndicator size="small" color="#000" />
-                ) : (
-                  <>
-                    <Volume2 size={16} color="#000" style={{ marginRight: 6 }} />
-                    <Text style={styles.saveBtnText}>Test Voice Playback</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-      </BottomSheetModal>
-
-      {/* MODAL: Scene Art & Image Generation */}
-      <BottomSheetModal visible={activeModal === 'image'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleRow}>
-                <ImageIcon size={16} color={palette.accent} style={{ marginRight: 6 }} />
-                <Text style={styles.modalTitle}>Scene Art & Image Generation</Text>
-              </View>
-              <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
-                <X size={16} color="#9ca3af" />
-              </TouchableOpacity>
+            <Text style={[styles.inputLabel, { marginTop: 14 }]}>Cost Estimation Currency</Text>
+            <View style={styles.tokenPillRow}>
+              {(['IDR', 'USD'] as const).map(c => (
+                <TouchableOpacity
+                  key={c}
+                  style={[styles.tokenPill, currency === c && styles.tokenPillActive]}
+                  onPress={() => setCurrency(c)}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[
+                      styles.tokenPillText,
+                      currency === c && styles.tokenPillTextActive,
+                    ]}
+                  >
+                    {c === 'IDR' ? 'Rupiah (IDR)' : 'US Dollar (USD)'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
 
-            <BottomSheetScrollView style={styles.modalBody}>
-              {/* Enable Toggle */}
-              <TouchableOpacity
-                style={styles.toggleRow}
-                onPress={() => handleSaveImageConfig({ enabled: !imageConfig.enabled })}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.toggleTitle}>Enable Scene Art Generation</Text>
-                  <Text style={styles.toggleDesc}>Depict visual scenes from roleplay context</Text>
-                </View>
-                <View style={[styles.toggleSwitch, imageConfig.enabled && styles.toggleSwitchActive]}>
-                  <View style={[styles.toggleThumb, imageConfig.enabled && styles.toggleThumbActive]} />
-                </View>
-              </TouchableOpacity>
-
-              {/* Provider Selection */}
-              <Text style={[styles.sectionSub, { marginTop: 14 }]}>Image Provider Engine</Text>
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-                {[
-                  { id: 'pollinations', label: 'Pollinations (Zero-Key)' },
-                  { id: 'openai', label: 'OpenAI DALL-E' },
-                  { id: 'custom', label: 'Flux / Custom' },
-                ].map(p => {
-                  const isSel = imageConfig.provider === p.id;
-                  return (
-                    <TouchableOpacity
-                      key={p.id}
-                      style={[styles.radioChip, isSel && styles.radioChipActive]}
-                      onPress={() => handleSaveImageConfig({ provider: p.id as any })}
-                    >
-                      <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
-                        {p.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+            {/* Advanced Sampling Controls Dropdown */}
+            <TouchableOpacity
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
+                padding: 12,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: `rgba(${palette.accentRgb}, 0.25)`,
+                marginTop: 18,
+                marginBottom: 10,
+              }}
+              onPress={() => setShowAdvancedSampling(!showAdvancedSampling)}
+              activeOpacity={0.8}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Cpu size={15} color={palette.accent} />
+                <Text style={{ color: palette.accent, fontSize: 13, fontWeight: '700' }}>
+                  Advanced Sampling & Context Truncation
+                </Text>
               </View>
+              <AnimatedChevron expanded={showAdvancedSampling} size={16} color={palette.accent} />
+            </TouchableOpacity>
 
-              {imageConfig.provider !== 'pollinations' && (
-                <>
-                  <Text style={styles.inputLabel}>Base URL / Endpoint</Text>
-                  <TextInput
-                    style={styles.inputBox}
-                    placeholder="https://api.openai.com/v1"
-                    placeholderTextColor="#666"
-                    value={imageConfig.baseUrl}
-                    onChangeText={v => handleSaveImageConfig({ baseUrl: v })}
-                  />
-
-                  <Text style={styles.inputLabel}>API Key</Text>
-                  <TextInput
-                    style={styles.inputBox}
-                    placeholder="sk-..."
-                    placeholderTextColor="#666"
-                    secureTextEntry
-                    value={imageConfig.apiKey}
-                    onChangeText={v => handleSaveImageConfig({ apiKey: v })}
-                  />
-
-                  <Text style={styles.inputLabel}>Model Name</Text>
-                  <TextInput
-                    style={styles.inputBox}
-                    placeholder={imageConfig.provider === 'openai' ? 'dall-e-3' : 'flux-schnell'}
-                    placeholderTextColor="#666"
-                    value={imageConfig.model}
-                    onChangeText={v => handleSaveImageConfig({ model: v })}
-                  />
-                </>
-              )}
-
-              {/* Default Style Preset */}
-              <Text style={styles.sectionSub}>Default Aesthetic Style</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
-                {IMAGE_STYLE_OPTIONS.map(st => {
-                  const isSel = imageConfig.style === st.id;
-                  return (
+            <AnimatedCollapsible expanded={showAdvancedSampling}>
+              <View style={{ backgroundColor: getSubtleSurfaceBg(palette, skin), padding: 12, borderRadius: skin.cardRadius, marginBottom: 14, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)' }}>
+                {/* Context Truncation Strategy */}
+                <Text style={styles.inputLabel}>Context Truncation Strategy</Text>
+                <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12 }}>
+                  {[
+                    { id: 'rolling', label: 'Rolling Window', sub: 'Trim oldest' },
+                    { id: 'smart', label: 'Smart Summary', sub: 'Balanced' },
+                    { id: 'lorebook', label: 'Lorebook First', sub: 'Protect keys' },
+                  ].map(st => (
                     <TouchableOpacity
                       key={st.id}
-                      style={[styles.radioChip, isSel && styles.radioChipActive]}
-                      onPress={() => handleSaveImageConfig({ style: st.id })}
+                      style={[
+                        styles.tokenPill,
+                        truncationStrategy === st.id && styles.tokenPillActive,
+                        { flex: 1, paddingVertical: 6, alignItems: 'center' },
+                      ]}
+                      onPress={() => setTruncationStrategy(st.id as any)}
+                      activeOpacity={0.8}
                     >
-                      <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
+                      <Text style={[styles.tokenPillText, truncationStrategy === st.id && styles.tokenPillTextActive, { fontSize: 11 }]}>
                         {st.label}
                       </Text>
                     </TouchableOpacity>
-                  );
-                })}
-              </View>
+                  ))}
+                </View>
 
-              {/* Aspect Ratio */}
-              <Text style={styles.sectionSub}>Aspect Ratio</Text>
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-                {(['portrait', 'square', 'landscape'] as const).map(ar => {
-                  const isSel = imageConfig.aspectRatio === ar;
-                  return (
+                {/* Max Output Tokens */}
+                <Text style={styles.inputLabel}>{t('settings.maxOutputTokens')}</Text>
+                <View style={[styles.tokenPillRow, { marginBottom: 8 }]}>
+                  {[
+                    { val: '0', label: t('settings.unlimited') },
+                    { val: '1024', label: '1K' },
+                    { val: '4096', label: '4K' },
+                    { val: '8192', label: '8K' },
+                    { val: '15000', label: '15K' },
+                  ].map(tok => (
                     <TouchableOpacity
-                      key={ar}
-                      style={[styles.radioChip, isSel && styles.radioChipActive]}
-                      onPress={() => handleSaveImageConfig({ aspectRatio: ar })}
+                      key={tok.val}
+                      style={[styles.tokenPill, maxTokens === tok.val && styles.tokenPillActive, { flex: 1, alignItems: 'center' }]}
+                      onPress={() => setMaxTokens(tok.val)}
+                      activeOpacity={0.8}
                     >
-                      <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
-                        {ar.toUpperCase()}
+                      <Text style={[styles.tokenPillText, maxTokens === tok.val && styles.tokenPillTextActive, { fontSize: 11.5 }]}>
+                        {tok.label}
                       </Text>
                     </TouchableOpacity>
+                  ))}
+                </View>
+                <TextInput
+                  style={[styles.inputBox, { marginBottom: 6 }]}
+                  value={maxTokens}
+                  onChangeText={v => setMaxTokens(v.replace(/\D/g, ''))}
+                  keyboardType="number-pad"
+                  placeholder="Custom max output tokens (0 = Unlimited)"
+                  placeholderTextColor="#64748b"
+                />
+                {(() => {
+                  const parsedOut = maxTokens === '0' ? 0 : parseInt(maxTokens, 10) || 0;
+                  const parsedCtx = parseInt(contextLimit, 10) || 16384;
+                  if (parsedOut > 0 && parsedOut >= parsedCtx) {
+                    return (
+                      <Text style={{ color: '#fbbf24', fontSize: 11, marginBottom: 10 }}>
+                        Warning: Output limit ({parsedOut}) meets or exceeds configured context limit ({parsedCtx}). Provider limits remain authoritative.
+                      </Text>
+                    );
+                  }
+                  return (
+                    <Text style={{ color: '#64748b', fontSize: 11, marginBottom: 10 }}>
+                      Enter any custom token limit (e.g. 16384, 32768) or 0 for Unlimited (no client-side cap sent).
+                    </Text>
                   );
-                })}
-              </View>
+                })()}
 
-              {imageTestResult?.url && (
-                <View style={{ borderRadius: 14, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: palette.accent }}>
-                  <Image source={{ uri: imageTestResult.url }} style={{ width: '100%', height: 200 }} resizeMode="cover" />
-                </View>
-              )}
-
-              {imageTestResult?.error && (
-                <View style={{ backgroundColor: 'rgba(255, 107, 107, 0.15)', padding: 10, borderRadius: 10, marginBottom: 12 }}>
-                  <Text style={{ color: '#FF6B6B', fontSize: 12 }}>{imageTestResult.error}</Text>
-                </View>
-              )}
-            </BottomSheetScrollView>
-
-            <View style={styles.modalFooter}>
-              <TouchableOpacity
-                style={[styles.saveBtn, isTestingImage && { opacity: 0.7 }]}
-                onPress={handleTestImageGen}
-                disabled={isTestingImage}
-                activeOpacity={0.8}
-              >
-                {isTestingImage ? (
-                  <ActivityIndicator size="small" color="#000" />
-                ) : (
-                  <>
-                    <Sparkles size={16} color="#000" style={{ marginRight: 6 }} />
-                    <Text style={styles.saveBtnText}>Test Image Generation</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-      </BottomSheetModal>
-
-      {/* MODAL 6: About NekoChat */}
-      <BottomSheetModal visible={activeModal === 'about'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleRow}>
-                <Sparkles size={16} color={palette.accent} style={{ marginRight: 6 }} />
-                <Text style={styles.modalTitle}>About NekoChat</Text>
-              </View>
-              <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
-                <X size={16} color="#9ca3af" />
-              </TouchableOpacity>
-            </View>
-
-            <BottomSheetScrollView style={styles.modalBody}>
-              <View style={styles.aboutCard}>
-                <View style={{ alignItems: 'center', marginBottom: 10 }}>
-                  <NekoLogoSvg size={48} color={palette.accent} />
-                </View>
-                <Text style={styles.aboutTitle}>NekoChat</Text>
-                <Text style={styles.aboutVersion}>{APP_VERSION_LABEL} • Open-Source</Text>
-                <Text style={styles.aboutDesc}>
-                  Yet another AI roleplay app. Built with Expo and React Native for people who want a local, bring-your-own-key chat client.
-                </Text>
-
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    flexWrap: 'wrap',
-                    justifyContent: 'center',
-                    gap: 8,
-                  }}
-                >
-                  <TouchableOpacity
-                    style={styles.repoLinkBtn}
-                    onPress={handleCheckForUpdate}
-                    disabled={checkingUpdate}
-                    activeOpacity={0.8}
-                  >
-                    {checkingUpdate ? (
-                      <ActivityIndicator size="small" color="#000000" style={{ marginRight: 5 }} />
-                    ) : (
-                      <RefreshCw size={13} color="#000000" style={{ marginRight: 5 }} />
-                    )}
-                    <Text style={styles.repoLinkBtnText}>
-                      {checkingUpdate ? 'Checking...' : 'Check for Updates'}
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.tokenPill,
-                      {
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        borderRadius: 10,
-                        paddingHorizontal: 14,
-                        paddingVertical: 8,
-                      },
-                    ]}
-                    onPress={() => openSafeExternalUrl(GITHUB_REPO_URL)}
-                    activeOpacity={0.8}
-                  >
-                    <ExternalLink size={13} color={palette.accent} style={{ marginRight: 5 }} />
-                    <Text style={{ color: '#e2e8f0', fontSize: 11, fontWeight: '700' }}>
-                      Source Code
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {updateResult && (
-                  <View
-                    style={{
-                      width: '100%',
-                      marginTop: 12,
-                      padding: 12,
-                      borderRadius: skin.cardRadius,
-                      backgroundColor:
-                        updateResult.status === 'update_available'
-                          ? `rgba(${palette.accentRgb}, 0.10)`
-                          : getSubtleSurfaceBg(palette, skin),
-                      borderWidth: 1,
-                      borderColor:
-                        updateResult.status === 'update_available'
-                          ? `rgba(${palette.accentRgb}, 0.45)`
-                          : 'rgba(255, 255, 255, 0.08)',
-                    }}
-                  >
-                    {updateResult.status === 'update_available' && (
-                      <>
-                        <Text style={{ color: palette.accent, fontSize: 12, fontWeight: '800' }}>
-                          Update Available: v{updateResult.latestVersion}
-                        </Text>
-                        {Boolean(updateResult.releaseNotes) && (
-                          <Text
-                            style={{ color: '#cbd5e1', fontSize: 11, lineHeight: 15, marginTop: 4 }}
-                            numberOfLines={4}
-                          >
-                            {updateResult.releaseNotes}
-                          </Text>
-                        )}
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-                          {Boolean(updateResult.apkAsset) && (
-                            <TouchableOpacity
-                              style={styles.repoLinkBtn}
-                              onPress={() => openSafeExternalUrl(updateResult.apkAsset?.downloadUrl)}
-                              activeOpacity={0.8}
-                            >
-                              <Download size={12} color="#000000" style={{ marginRight: 5 }} />
-                              <Text style={styles.repoLinkBtnText}>Download APK</Text>
-                            </TouchableOpacity>
-                          )}
-                          <TouchableOpacity
-                            style={[
-                              styles.tokenPill,
-                              { flexDirection: 'row', alignItems: 'center', borderRadius: 10 },
-                            ]}
-                            onPress={() => openSafeExternalUrl(updateResult.releaseUrl)}
-                            activeOpacity={0.8}
-                          >
-                            <ExternalLink size={12} color={palette.accent} style={{ marginRight: 5 }} />
-                            <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>
-                              View Release
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                      </>
-                    )}
-
-                    {(updateResult.status === 'up_to_date' || updateResult.status === 'ahead') && (
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 8,
-                        }}
-                      >
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-                          <Check size={14} color={palette.accent} />
-                          <Text style={{ color: '#e2e8f0', fontSize: 11.5, fontWeight: '600', flex: 1 }}>
-                            {updateResult.status === 'up_to_date'
-                              ? `You're up to date (v${updateResult.latestVersion})`
-                              : `Local build (${APP_VERSION_LABEL}) is ahead of latest release (v${updateResult.latestVersion})`}
-                          </Text>
-                        </View>
-                        <TouchableOpacity
-                          onPress={() => openSafeExternalUrl(updateResult.releaseUrl)}
-                          activeOpacity={0.75}
-                        >
-                          <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>
-                            Releases
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-
-                    {(updateResult.status === 'no_releases' || updateResult.status === 'error') && (
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 8,
-                        }}
-                      >
-                        <Text style={{ color: '#cbd5e1', fontSize: 11, flex: 1 }}>
-                          {updateResult.errorMessage || 'Could not check releases.'}
-                        </Text>
-                        <TouchableOpacity
-                          onPress={() => openSafeExternalUrl(updateResult.releaseUrl)}
-                          activeOpacity={0.75}
-                        >
-                          <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>
-                            Open GitHub
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
-                )}
-
-                {/* Open-Source & Ecosystem Credits */}
-                <View style={{ marginTop: 18, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.08)', paddingTop: 14 }}>
-                  <Text style={{ color: palette.accent, fontSize: 12, fontWeight: '800', letterSpacing: 0.5, marginBottom: 10 }}>
-                    OPEN-SOURCE & COMMUNITY CREDITS
-                  </Text>
-
+                {/* Temperature */}
+                <Text style={styles.inputLabel}>Temperature (Creativity: {temperature})</Text>
+                <View style={[styles.tokenPillRow, { marginBottom: 12 }]}>
                   {[
-                    {
-                      title: 'Warden AI',
-                      desc: 'Architectural blueprint, Datacat proxy protocol, and community catalog scraper foundation.',
-                      badge: 'Architecture',
-                    },
-                    {
-                      title: 'SillyTavern',
-                      desc: 'World Info / Lorebook specification, character card V2 format, and roleplay token ergonomics.',
-                      badge: 'Standards',
-                    },
-                    {
-                      title: 'JanitorAI & Chub.ai',
-                      desc: 'Open companion character ecosystem, prompt metadata conventions, and community catalog feed.',
-                      badge: 'Ecosystem',
-                    },
-                    {
-                      title: 'Expo & React Native',
-                      desc: 'Cross-platform mobile native runtime, gesture responders, and high-performance native drivers.',
-                      badge: 'Framework',
-                    },
-                    {
-                      title: 'Open-Source Libraries & Fonts',
-                      desc: 'Lucide Icons, React Native SVG, AsyncStorage, Google GenAI SDK, CryptoJS, Pollinations.ai, and Inter / Merriweather / JetBrains Mono fonts.',
-                      badge: 'Libraries',
-                    },
-                  ].map((credit, i) => (
-                    <View
-                      key={i}
-                      style={{
-                        backgroundColor: getSubtleSurfaceBg(palette, skin),
-                        padding: 10,
-                        borderRadius: skin.cardRadius,
-                        marginBottom: 8,
-                        borderWidth: 1,
-                        borderColor: 'rgba(255, 255, 255, 0.06)',
-                      }}
+                    { val: '0.3', label: '0.3 (Strict)' },
+                    { val: '0.7', label: '0.7 (RP Default)' },
+                    { val: '1.0', label: '1.0 (Creative)' },
+                    { val: '1.3', label: '1.3 (Chaotic)' },
+                  ].map(t => (
+                    <TouchableOpacity
+                      key={t.val}
+                      style={[styles.tokenPill, temperature === t.val && styles.tokenPillActive, { flex: 1, alignItems: 'center' }]}
+                      onPress={() => setTemperature(t.val)}
+                      activeOpacity={0.8}
                     >
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
-                        <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '700' }}>{credit.title}</Text>
-                        <View style={{ backgroundColor: `rgba(${palette.accentRgb}, 0.12)`, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                          <Text style={{ color: palette.accent, fontSize: 9.5, fontWeight: '800' }}>{credit.badge}</Text>
-                        </View>
-                      </View>
-                      <Text style={{ color: '#9ca3af', fontSize: 11, lineHeight: 15 }}>{credit.desc}</Text>
-                    </View>
+                      <Text style={[styles.tokenPillText, temperature === t.val && styles.tokenPillTextActive, { fontSize: 10 }]}>
+                        {t.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Top-P */}
+                <Text style={styles.inputLabel}>Top-P Sampling ({topP})</Text>
+                <View style={[styles.tokenPillRow, { marginBottom: 12 }]}>
+                  {['0.70', '0.85', '0.95', '1.00'].map(p => (
+                    <TouchableOpacity
+                      key={p}
+                      style={[styles.tokenPill, topP === p && styles.tokenPillActive, { flex: 1, alignItems: 'center' }]}
+                      onPress={() => setTopP(p)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.tokenPillText, topP === p && styles.tokenPillTextActive]}>
+                        {p}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Repetition Penalty */}
+                <Text style={styles.inputLabel}>Repetition Penalty ({repPenalty})</Text>
+                <View style={styles.tokenPillRow}>
+                  {[
+                    { val: '1.00', label: 'Off' },
+                    { val: '1.05', label: 'Light' },
+                    { val: '1.15', label: 'Default' },
+                    { val: '1.25', label: 'Strict' },
+                  ].map(r => (
+                    <TouchableOpacity
+                      key={r.val}
+                      style={[styles.tokenPill, repPenalty === r.val && styles.tokenPillActive, { flex: 1, alignItems: 'center' }]}
+                      onPress={() => setRepPenalty(r.val)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.tokenPillText, repPenalty === r.val && styles.tokenPillTextActive, { fontSize: 10 }]}>
+                        {r.val} ({r.label})
+                      </Text>
+                    </TouchableOpacity>
                   ))}
                 </View>
               </View>
-            </BottomSheetScrollView>
-      </BottomSheetModal>
+            </AnimatedCollapsible>
+          </BottomSheetScrollView>
 
-      <HelpCenterModal
-        visible={activeModal === 'help'}
-        onClose={() => setActiveModal(null)}
-      />
-
-      <CapabilityMatrixModal
-        visible={activeModal === 'matrix'}
-        onClose={() => setActiveModal('api')}
-        config={{
-          ...config,
-          baseUrl: customEndpoint,
-          customEndpoint,
-          apiKey,
-          model,
-        }}
-      />
-
-      <ThemeStoreModal
-        visible={activeModal === 'themeStore'}
-        activePackId={settings?.activeThemePackId}
-        onClose={() => setActiveModal('theming')}
-        onApplyPack={handleApplyThemePack}
-        onPackUninstalled={handlePackUninstalled}
-      />
-
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* MODAL 9: SMART NOTIFICATIONS                                       */}
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      <BottomSheetModal
-        visible={activeModal === 'notifications'}
-        onClose={() => setActiveModal(null)}
-        sheetStyle={styles.modalSheet}
-      >
-        <View style={styles.modalHeader}>
-          <View style={styles.modalTitleRow}>
-            <Bell size={16} color={palette.accent} style={{ marginRight: 6 }} />
-            <Text style={styles.modalTitle}>Smart Notifications</Text>
+          <View style={styles.modalFooter}>
+            <TouchableOpacity
+              style={styles.saveBtn}
+              onPress={async () => {
+                const nextContextLimit = parseInt(contextLimit, 10) || 8192;
+                const nextMaxTokens = maxTokens === '0' ? 0 : (parseInt(maxTokens, 10) || 4096);
+                const activeModelKey = String(config.model || config.defaultModel || '').trim();
+                const nextModelLimits = { ...(config.modelContextLimits || {}) };
+                if (activeModelKey) {
+                  nextModelLimits[activeModelKey] = {
+                    ...(nextModelLimits[activeModelKey] || {}),
+                    contextLimit: nextContextLimit,
+                    maxOutputTokens: nextMaxTokens,
+                    updatedAt: Date.now(),
+                  };
+                }
+                const updated: ProviderConfig = {
+                  ...config,
+                  contextLimit: nextContextLimit,
+                  maxTokens: nextMaxTokens,
+                  userConfiguredContextLimit: true,
+                  userConfiguredMaxTokens: true,
+                  modelContextLimits: nextModelLimits,
+                  temperature: parseFloat(temperature) || 0.7,
+                  topP: parseFloat(topP) || 0.95,
+                  repetitionPenalty: parseFloat(repPenalty) || 1.15,
+                };
+                await storageService.saveProviderConfig(updated);
+                if (updated.id) {
+                  await storageService.upsertProvider(updated);
+                }
+                onUpdateConfig(updated);
+                setActiveModal(null);
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.saveBtnText}>Save Sampling & Limits</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
-            <X size={18} color="#9ca3af" />
-          </TouchableOpacity>
-        </View>
+        </BottomSheetModal>
 
-        <BottomSheetScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 20 }}>
-          <Text style={[styles.sectionSub, { fontWeight: '500', lineHeight: 16, marginBottom: 12 }]}>
-            Local scheduled reminders register directly with your OS (no battery optimization bypass needed). Followed Creator Drops sync periodically in the background and also appear in the Chats Bell inbox.
-          </Text>
+        {/* MODAL: Voice & Speech Synthesis */}
+        <BottomSheetModal visible={activeModal === 'voice'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <View style={styles.modalTitleRow}>
+              <Volume2 size={16} color={palette.accent} style={{ marginRight: 6 }} />
+              <Text style={styles.modalTitle}>Voice & Speech Synthesis</Text>
+            </View>
+            <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+              <X size={16} color="#9ca3af" />
+            </TouchableOpacity>
+          </View>
 
-          {[
-            {
-              title: 'Companion Check-ins',
-              desc: 'Send a "miss you" check-in after 48h away from an active chat',
-              value: notifyMissYouDraft,
-              onChange: setNotifyMissYouDraft,
-            },
-            {
-              title: 'Algorithm Picks',
-              desc: 'Suggest a character matching your vibes after 24h away',
-              value: notifyAlgoDraft,
-              onChange: setNotifyAlgoDraft,
-            },
-            {
-              title: 'Followed Creator Drops',
-              desc: 'Alert when creators you follow publish a new character card',
-              value: notifyCreatorsDraft,
-              onChange: setNotifyCreatorsDraft,
-            },
-            {
-              title: 'Discreet Lock-Screen Mode',
-              desc: 'Hide character/creator names on notifications & skip NSFW cards',
-              value: notifyDiscreetDraft,
-              onChange: setNotifyDiscreetDraft,
-            },
-            {
-              title: 'Quiet Hours (11 PM – 8 AM)',
-              desc: 'Shift overnight reminders to 9:00 AM local time',
-              value: notifyQuietDraft,
-              onChange: setNotifyQuietDraft,
-            },
-          ].map(row => (
-            <View key={row.title} style={styles.toggleRow}>
-              <View style={{ flex: 1, paddingRight: 10 }}>
-                <Text style={styles.toggleTitle}>{row.title}</Text>
-                <Text style={styles.toggleDesc}>{row.desc}</Text>
+          <BottomSheetScrollView style={styles.modalBody}>
+            {/* Enable Toggle */}
+            <TouchableOpacity
+              style={styles.toggleRow}
+              onPress={() => handleSaveTtsConfig({ enabled: !ttsConfig.enabled })}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.toggleTitle}>Enable Speech Synthesis</Text>
+                <Text style={styles.toggleDesc}>Character voice playback on companion messages</Text>
               </View>
-              <NekoSwitch value={row.value} onValueChange={row.onChange} />
-            </View>
-          ))}
-
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
-            <TouchableOpacity
-              style={[
-                styles.tokenPill,
-                { flex: 1, alignItems: 'center', paddingVertical: 10 },
-              ]}
-              disabled={checkingCreatorsNow}
-              onPress={async () => {
-                setCheckingCreatorsNow(true);
-                setNotifyNotice(null);
-                try {
-                  const res = await checkFollowedCreatorDropsNow(
-                    {
-                      ...settings,
-                      notifyFollowedCreators: true,
-                      notifyDiscreetMode: notifyDiscreetDraft,
-                    },
-                    false,
-                    false
-                  );
-                  onRefreshDropsInbox?.();
-                  setNotifyNotice(
-                    res.newDrops.length > 0
-                      ? `Found ${res.newDrops.length} new drop(s) — check the Bell inbox!`
-                      : 'Checked followed creators — no new drops right now.'
-                  );
-                } catch {
-                  setNotifyNotice('Could not reach catalog right now.');
-                } finally {
-                  setCheckingCreatorsNow(false);
-                }
-              }}
-              activeOpacity={0.8}
-            >
-              <Text style={{ color: '#e2e8f0', fontSize: 11.5, fontWeight: '700' }}>
-                {checkingCreatorsNow ? 'Checking...' : 'Check Creators Now'}
-              </Text>
+              <View style={[styles.toggleSwitch, ttsConfig.enabled && styles.toggleSwitchActive]}>
+                <View style={[styles.toggleThumb, ttsConfig.enabled && styles.toggleThumbActive]} />
+              </View>
             </TouchableOpacity>
 
+            {/* Dialogue Only Toggle */}
             <TouchableOpacity
-              style={[
-                styles.tokenPill,
-                { flex: 1, alignItems: 'center', paddingVertical: 10 },
-              ]}
-              onPress={async () => {
-                const ok = await sendTestNotificationNow({
-                  ...settings,
-                  notifyDiscreetMode: notifyDiscreetDraft,
-                });
-                setNotifyNotice(
-                  ok
-                    ? 'Test notification scheduled (fires in ~2 seconds).'
-                    : Platform.OS === 'web'
-                      ? 'OS push preview is mobile-only; use the Chats Bell inbox on Web.'
-                      : 'Notification permission not granted.'
+              style={styles.toggleRow}
+              onPress={() => handleSaveTtsConfig({ dialogueOnly: !ttsConfig.dialogueOnly })}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.toggleTitle}>Dialogue Only</Text>
+                <Text style={styles.toggleDesc}>Reads spoken quotes {'"..."'} and skips asterisk actions *...*</Text>
+              </View>
+              <View style={[styles.toggleSwitch, ttsConfig.dialogueOnly && styles.toggleSwitchActive]}>
+                <View style={[styles.toggleThumb, ttsConfig.dialogueOnly && styles.toggleThumbActive]} />
+              </View>
+            </TouchableOpacity>
+
+            {/* Speed Preset Selector */}
+            <Text style={[styles.sectionSub, { marginTop: 14 }]}>Playback Speed</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+              {[0.8, 1.0, 1.2, 1.4].map(spd => {
+                const isSel = Math.abs(ttsConfig.speed - spd) < 0.05;
+                return (
+                  <TouchableOpacity
+                    key={`spd_${spd}`}
+                    style={[styles.radioChip, isSel && styles.radioChipActive]}
+                    onPress={() => handleSaveTtsConfig({ speed: spd })}
+                  >
+                    <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
+                      {spd}x
+                    </Text>
+                  </TouchableOpacity>
                 );
-              }}
+              })}
+            </View>
+
+            {/* Pitch Selector */}
+            <Text style={styles.sectionSub}>Pitch</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+              {[0.8, 1.0, 1.2].map(pt => {
+                const isSel = Math.abs(ttsConfig.pitch - pt) < 0.05;
+                return (
+                  <TouchableOpacity
+                    key={`pt_${pt}`}
+                    style={[styles.radioChip, isSel && styles.radioChipActive]}
+                    onPress={() => handleSaveTtsConfig({ pitch: pt })}
+                  >
+                    <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
+                      {pt === 1.0 ? 'Normal (1.0)' : pt < 1.0 ? 'Lower (0.8)' : 'Higher (1.2)'}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Voice Profiles Roster */}
+            <Text style={styles.sectionSub}>Character Voice Profile</Text>
+            <View style={{ gap: 8, marginBottom: 16 }}>
+              {VOICE_PROFILES.map(vp => {
+                const isSel = ttsConfig.voiceId === vp.id;
+                return (
+                  <TouchableOpacity
+                    key={vp.id}
+                    style={[styles.voiceItemCard, isSel && styles.voiceItemCardActive]}
+                    onPress={() => handleSaveTtsConfig({ voiceId: vp.id })}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={[styles.voiceItemName, isSel && { color: palette.accent }]}>{vp.name}</Text>
+                        <View style={styles.voiceGenderBadge}>
+                          <Text style={styles.voiceGenderBadgeText}>{vp.gender}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.voiceArchetype}>{vp.archetype}</Text>
+                      <Text style={styles.voiceDesc} numberOfLines={1}>{vp.description}</Text>
+                    </View>
+                    {isSel && <Check size={16} color={palette.accent} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </BottomSheetScrollView>
+
+          <View style={styles.modalFooter}>
+            <TouchableOpacity
+              style={[styles.saveBtn, isTestingVoice && { opacity: 0.7 }]}
+              onPress={handleTestVoice}
+              disabled={isTestingVoice}
               activeOpacity={0.8}
             >
-              <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '700' }}>
-                Test Notification
-              </Text>
+              {isTestingVoice ? (
+                <ActivityIndicator size="small" color="#000" />
+              ) : (
+                <>
+                  <Volume2 size={16} color="#000" style={{ marginRight: 6 }} />
+                  <Text style={styles.saveBtnText}>Test Voice Playback</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </BottomSheetModal>
+
+        {/* MODAL: Scene Art & Image Generation */}
+        <BottomSheetModal visible={activeModal === 'image'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <View style={styles.modalTitleRow}>
+              <ImageIcon size={16} color={palette.accent} style={{ marginRight: 6 }} />
+              <Text style={styles.modalTitle}>Scene Art & Image Generation</Text>
+            </View>
+            <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+              <X size={16} color="#9ca3af" />
             </TouchableOpacity>
           </View>
 
-          {notifyNotice ? (
-            <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '600', marginTop: 10 }}>
-              {notifyNotice}
-            </Text>
-          ) : null}
-        </BottomSheetScrollView>
+          <BottomSheetScrollView style={styles.modalBody}>
+            {/* Enable Toggle */}
+            <TouchableOpacity
+              style={styles.toggleRow}
+              onPress={() => handleSaveImageConfig({ enabled: !imageConfig.enabled })}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.toggleTitle}>Enable Scene Art Generation</Text>
+                <Text style={styles.toggleDesc}>Depict visual scenes from roleplay context</Text>
+              </View>
+              <View style={[styles.toggleSwitch, imageConfig.enabled && styles.toggleSwitchActive]}>
+                <View style={[styles.toggleThumb, imageConfig.enabled && styles.toggleThumbActive]} />
+              </View>
+            </TouchableOpacity>
 
-        <View style={styles.modalFooter}>
-          <TouchableOpacity
-            style={styles.saveBtn}
-            onPress={async () => {
-              const anyEnabled = notifyMissYouDraft || notifyAlgoDraft || notifyCreatorsDraft;
-              if (anyEnabled) {
-                const perm = await requestNotificationPermissionsAsync();
-                if (perm === 'denied') {
-                  setNotifyNotice('Permission denied in OS settings. Preferences saved for Bell inbox.');
-                }
-              }
-              const updated = await storageService.saveSettings({
-                notifyMissYou: notifyMissYouDraft,
-                notifyAlgorithmPicks: notifyAlgoDraft,
-                notifyFollowedCreators: notifyCreatorsDraft,
-                notifyDiscreetMode: notifyDiscreetDraft,
-                notifyQuietHours: notifyQuietDraft,
-              });
-              onUpdateSettings(updated);
-              setActiveModal(null);
-            }}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.saveBtnText}>Save Notification Settings</Text>
-          </TouchableOpacity>
-        </View>
-      </BottomSheetModal>
-
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* MODAL 10: FOR YOU & TASTE (100% ON-DEVICE ALGORITHM CONTROLS)     */}
-      {/* ══════════════════════════════════════════════════════════════════ */}
-      <BottomSheetModal
-        visible={activeModal === 'taste'}
-        onClose={() => setActiveModal(null)}
-        sheetStyle={styles.modalSheet}
-      >
-        <View style={styles.modalHeader}>
-          <View style={styles.modalTitleRow}>
-            <Brain size={16} color={palette.accent} style={{ marginRight: 6 }} />
-            <Text style={styles.modalTitle}>For You & Taste</Text>
-          </View>
-          <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
-            <X size={18} color="#9ca3af" />
-          </TouchableOpacity>
-        </View>
-
-        <BottomSheetScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 24 }}>
-          {/* 100% On-Device Privacy Banner */}
-          <View
-            style={[
-              styles.toggleRow,
-              {
-                borderColor: `rgba(${palette.accentRgb}, 0.35)`,
-                backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
-                justifyContent: 'flex-start',
-                gap: 10,
-              },
-            ]}
-          >
-            <ShieldCheck size={18} color={palette.accent} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.toggleTitle}>100% On-Device Learning</Text>
-              <Text style={[styles.toggleDesc, { lineHeight: 15 }]}>
-                Learned locally on your phone from likes, chats, searches & tags. Never uploaded or shared.
-              </Text>
+            {/* Provider Selection */}
+            <Text style={[styles.sectionSub, { marginTop: 14 }]}>Image Provider Engine</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+              {[
+                { id: 'pollinations', label: 'Pollinations (Zero-Key)' },
+                { id: 'openai', label: 'OpenAI DALL-E' },
+                { id: 'custom', label: 'Flux / Custom' },
+              ].map(p => {
+                const isSel = imageConfig.provider === p.id;
+                return (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={[styles.radioChip, isSel && styles.radioChipActive]}
+                    onPress={() => handleSaveImageConfig({ provider: p.id as any })}
+                  >
+                    <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
+                      {p.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
+
+            {imageConfig.provider !== 'pollinations' && (
+              <>
+                <Text style={styles.inputLabel}>Base URL / Endpoint</Text>
+                <TextInput
+                  style={styles.inputBox}
+                  placeholder="https://api.openai.com/v1"
+                  placeholderTextColor="#666"
+                  value={imageConfig.baseUrl}
+                  onChangeText={v => handleSaveImageConfig({ baseUrl: v })}
+                />
+
+                <Text style={styles.inputLabel}>API Key</Text>
+                <TextInput
+                  style={styles.inputBox}
+                  placeholder="sk-..."
+                  placeholderTextColor="#666"
+                  secureTextEntry
+                  value={imageConfig.apiKey}
+                  onChangeText={v => handleSaveImageConfig({ apiKey: v })}
+                />
+
+                <Text style={styles.inputLabel}>Model Name</Text>
+                <TextInput
+                  style={styles.inputBox}
+                  placeholder={imageConfig.provider === 'openai' ? 'dall-e-3' : 'flux-schnell'}
+                  placeholderTextColor="#666"
+                  value={imageConfig.model}
+                  onChangeText={v => handleSaveImageConfig({ model: v })}
+                />
+              </>
+            )}
+
+            {/* Default Style Preset */}
+            <Text style={styles.sectionSub}>Default Aesthetic Style</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 14 }}>
+              {IMAGE_STYLE_OPTIONS.map(st => {
+                const isSel = imageConfig.style === st.id;
+                return (
+                  <TouchableOpacity
+                    key={st.id}
+                    style={[styles.radioChip, isSel && styles.radioChipActive]}
+                    onPress={() => handleSaveImageConfig({ style: st.id })}
+                  >
+                    <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
+                      {st.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Aspect Ratio */}
+            <Text style={styles.sectionSub}>Aspect Ratio</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+              {(['portrait', 'square', 'landscape'] as const).map(ar => {
+                const isSel = imageConfig.aspectRatio === ar;
+                return (
+                  <TouchableOpacity
+                    key={ar}
+                    style={[styles.radioChip, isSel && styles.radioChipActive]}
+                    onPress={() => handleSaveImageConfig({ aspectRatio: ar })}
+                  >
+                    <Text style={[styles.radioChipText, isSel && styles.radioChipTextActive]}>
+                      {ar.toUpperCase()}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {imageTestResult?.url && (
+              <View style={{ borderRadius: 14, overflow: 'hidden', marginBottom: 12, borderWidth: 1, borderColor: palette.accent }}>
+                <Image source={{ uri: imageTestResult.url }} style={{ width: '100%', height: 200 }} resizeMode="cover" />
+              </View>
+            )}
+
+            {imageTestResult?.error && (
+              <View style={{ backgroundColor: 'rgba(255, 107, 107, 0.15)', padding: 10, borderRadius: 10, marginBottom: 12 }}>
+                <Text style={{ color: '#FF6B6B', fontSize: 12 }}>{imageTestResult.error}</Text>
+              </View>
+            )}
+          </BottomSheetScrollView>
+
+          <View style={styles.modalFooter}>
+            <TouchableOpacity
+              style={[styles.saveBtn, isTestingImage && { opacity: 0.7 }]}
+              onPress={handleTestImageGen}
+              disabled={isTestingImage}
+              activeOpacity={0.8}
+            >
+              {isTestingImage ? (
+                <ActivityIndicator size="small" color="#000" />
+              ) : (
+                <>
+                  <Sparkles size={16} color="#000" style={{ marginRight: 6 }} />
+                  <Text style={styles.saveBtnText}>Test Image Generation</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </BottomSheetModal>
+
+        {/* MODAL 6: About NekoChat */}
+        <BottomSheetModal visible={activeModal === 'about'} onClose={() => setActiveModal(null)} sheetStyle={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <View style={styles.modalTitleRow}>
+              <Sparkles size={16} color={palette.accent} style={{ marginRight: 6 }} />
+              <Text style={styles.modalTitle}>About NekoChat</Text>
+            </View>
+            <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+              <X size={16} color="#9ca3af" />
+            </TouchableOpacity>
           </View>
 
-          {/* Insights Strip */}
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+          <BottomSheetScrollView style={styles.modalBody}>
+            <View style={styles.aboutCard}>
+              <View style={{ alignItems: 'center', marginBottom: 10 }}>
+                <NekoLogoSvg size={48} color={palette.accent} />
+              </View>
+              <Text style={styles.aboutTitle}>NekoChat</Text>
+              <Text style={styles.aboutVersion}>{APP_VERSION_LABEL} • Open-Source</Text>
+              <Text style={styles.aboutDesc}>
+                Yet another AI roleplay app. Built with Expo and React Native for people who want a local, bring-your-own-key chat client.
+              </Text>
+
+              <View
+                style={{
+                  flexDirection: 'row',
+                  flexWrap: 'wrap',
+                  justifyContent: 'center',
+                  gap: 8,
+                }}
+              >
+                <TouchableOpacity
+                  style={styles.repoLinkBtn}
+                  onPress={handleCheckForUpdate}
+                  disabled={checkingUpdate}
+                  activeOpacity={0.8}
+                >
+                  {checkingUpdate ? (
+                    <ActivityIndicator size="small" color="#000000" style={{ marginRight: 5 }} />
+                  ) : (
+                    <RefreshCw size={13} color="#000000" style={{ marginRight: 5 }} />
+                  )}
+                  <Text style={styles.repoLinkBtnText}>
+                    {checkingUpdate ? 'Checking...' : 'Check for Updates'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.tokenPill,
+                    {
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      borderRadius: 10,
+                      paddingHorizontal: 14,
+                      paddingVertical: 8,
+                    },
+                  ]}
+                  onPress={() => openSafeExternalUrl(GITHUB_REPO_URL)}
+                  activeOpacity={0.8}
+                >
+                  <ExternalLink size={13} color={palette.accent} style={{ marginRight: 5 }} />
+                  <Text style={{ color: '#e2e8f0', fontSize: 11, fontWeight: '700' }}>
+                    Source Code
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {updateResult && (
+                <View
+                  style={{
+                    width: '100%',
+                    marginTop: 12,
+                    padding: 12,
+                    borderRadius: skin.cardRadius,
+                    backgroundColor:
+                      updateResult.status === 'update_available'
+                        ? `rgba(${palette.accentRgb}, 0.10)`
+                        : getSubtleSurfaceBg(palette, skin),
+                    borderWidth: 1,
+                    borderColor:
+                      updateResult.status === 'update_available'
+                        ? `rgba(${palette.accentRgb}, 0.45)`
+                        : 'rgba(255, 255, 255, 0.08)',
+                  }}
+                >
+                  {updateResult.status === 'update_available' && (
+                    <>
+                      <Text style={{ color: palette.accent, fontSize: 12, fontWeight: '800' }}>
+                        Update Available: v{updateResult.latestVersion}
+                      </Text>
+                      {Boolean(updateResult.releaseNotes) && (
+                        <Text
+                          style={{ color: '#cbd5e1', fontSize: 11, lineHeight: 15, marginTop: 4 }}
+                          numberOfLines={4}
+                        >
+                          {updateResult.releaseNotes}
+                        </Text>
+                      )}
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                        {Boolean(updateResult.apkAsset) && (
+                          <TouchableOpacity
+                            style={styles.repoLinkBtn}
+                            onPress={() => openSafeExternalUrl(updateResult.apkAsset?.downloadUrl)}
+                            activeOpacity={0.8}
+                          >
+                            <Download size={12} color="#000000" style={{ marginRight: 5 }} />
+                            <Text style={styles.repoLinkBtnText}>Download APK</Text>
+                          </TouchableOpacity>
+                        )}
+                        <TouchableOpacity
+                          style={[
+                            styles.tokenPill,
+                            { flexDirection: 'row', alignItems: 'center', borderRadius: 10 },
+                          ]}
+                          onPress={() => openSafeExternalUrl(updateResult.releaseUrl)}
+                          activeOpacity={0.8}
+                        >
+                          <ExternalLink size={12} color={palette.accent} style={{ marginRight: 5 }} />
+                          <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>
+                            View Release
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  )}
+
+                  {(updateResult.status === 'up_to_date' || updateResult.status === 'ahead') && (
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 8,
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                        <Check size={14} color={palette.accent} />
+                        <Text style={{ color: '#e2e8f0', fontSize: 11.5, fontWeight: '600', flex: 1 }}>
+                          {updateResult.status === 'up_to_date'
+                            ? `You're up to date (v${updateResult.latestVersion})`
+                            : `Local build (${APP_VERSION_LABEL}) is ahead of latest release (v${updateResult.latestVersion})`}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => openSafeExternalUrl(updateResult.releaseUrl)}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>
+                          Releases
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {(updateResult.status === 'no_releases' || updateResult.status === 'error') && (
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 8,
+                      }}
+                    >
+                      <Text style={{ color: '#cbd5e1', fontSize: 11, flex: 1 }}>
+                        {updateResult.errorMessage || 'Could not check releases.'}
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => openSafeExternalUrl(updateResult.releaseUrl)}
+                        activeOpacity={0.75}
+                      >
+                        <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>
+                          Open GitHub
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* Open-Source & Ecosystem Credits */}
+              <View style={{ marginTop: 18, borderTopWidth: 1, borderTopColor: 'rgba(255, 255, 255, 0.08)', paddingTop: 14 }}>
+                <Text style={{ color: palette.accent, fontSize: 12, fontWeight: '800', letterSpacing: 0.5, marginBottom: 10 }}>
+                  OPEN-SOURCE & COMMUNITY CREDITS
+                </Text>
+
+                {[
+                  {
+                    title: 'Warden AI',
+                    desc: 'Architectural blueprint, Datacat proxy protocol, and community catalog scraper foundation.',
+                    badge: 'Architecture',
+                  },
+                  {
+                    title: 'SillyTavern',
+                    desc: 'World Info / Lorebook specification, character card V2 format, and roleplay token ergonomics.',
+                    badge: 'Standards',
+                  },
+                  {
+                    title: 'JanitorAI & Chub.ai',
+                    desc: 'Open companion character ecosystem, prompt metadata conventions, and community catalog feed.',
+                    badge: 'Ecosystem',
+                  },
+                  {
+                    title: 'Expo & React Native',
+                    desc: 'Cross-platform mobile native runtime, gesture responders, and high-performance native drivers.',
+                    badge: 'Framework',
+                  },
+                  {
+                    title: 'Open-Source Libraries & Fonts',
+                    desc: 'Lucide Icons, React Native SVG, AsyncStorage, Google GenAI SDK, CryptoJS, Pollinations.ai, and Inter / Merriweather / JetBrains Mono fonts.',
+                    badge: 'Libraries',
+                  },
+                ].map((credit, i) => (
+                  <View
+                    key={i}
+                    style={{
+                      backgroundColor: getSubtleSurfaceBg(palette, skin),
+                      padding: 10,
+                      borderRadius: skin.cardRadius,
+                      marginBottom: 8,
+                      borderWidth: 1,
+                      borderColor: 'rgba(255, 255, 255, 0.06)',
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3 }}>
+                      <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '700' }}>{credit.title}</Text>
+                      <View style={{ backgroundColor: `rgba(${palette.accentRgb}, 0.12)`, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                        <Text style={{ color: palette.accent, fontSize: 9.5, fontWeight: '800' }}>{credit.badge}</Text>
+                      </View>
+                    </View>
+                    <Text style={{ color: '#9ca3af', fontSize: 11, lineHeight: 15 }}>{credit.desc}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </BottomSheetScrollView>
+        </BottomSheetModal>
+
+        <HelpCenterModal
+          visible={activeModal === 'help'}
+          onClose={() => setActiveModal(null)}
+        />
+
+        <CapabilityMatrixModal
+          visible={activeModal === 'matrix'}
+          onClose={() => setActiveModal('api')}
+          config={{
+            ...config,
+            baseUrl: customEndpoint,
+            customEndpoint,
+            apiKey,
+            model,
+          }}
+        />
+
+        <ThemeStoreModal
+          visible={activeModal === 'themeStore'}
+          activePackId={settings?.activeThemePackId}
+          onClose={() => setActiveModal('theming')}
+          onApplyPack={handleApplyThemePack}
+          onPackUninstalled={handlePackUninstalled}
+        />
+
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* MODAL 9: SMART NOTIFICATIONS                                       */}
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        <BottomSheetModal
+          visible={activeModal === 'notifications'}
+          onClose={() => setActiveModal(null)}
+          sheetStyle={styles.modalSheet}
+        >
+          <View style={styles.modalHeader}>
+            <View style={styles.modalTitleRow}>
+              <Bell size={16} color={palette.accent} style={{ marginRight: 6 }} />
+              <Text style={styles.modalTitle}>Smart Notifications</Text>
+            </View>
+            <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+              <X size={18} color="#9ca3af" />
+            </TouchableOpacity>
+          </View>
+
+          <BottomSheetScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 20 }}>
+            <Text style={[styles.sectionSub, { fontWeight: '500', lineHeight: 16, marginBottom: 12 }]}>
+              Local scheduled reminders register directly with your OS (no battery optimization bypass needed). Followed Creator Drops sync periodically in the background and also appear in the Chats Bell inbox.
+            </Text>
+
             {[
               {
-                label: 'Signals',
-                value: String(tasteProfile?.totalInteractions ?? 0),
+                title: 'Companion Check-ins',
+                desc: 'Send a "miss you" check-in after 48h away from an active chat',
+                value: notifyMissYouDraft,
+                onChange: setNotifyMissYouDraft,
               },
               {
-                label: 'RP Depth',
-                value:
-                  tasteProfile?.preferredDepth === 'short'
-                    ? 'Quick'
-                    : tasteProfile?.preferredDepth === 'medium'
-                      ? 'Balanced'
-                      : tasteProfile?.preferredDepth === 'deep'
-                        ? 'Deep Lore'
-                        : 'Learning',
+                title: 'Algorithm Picks',
+                desc: 'Suggest a character matching your vibes after 24h away',
+                value: notifyAlgoDraft,
+                onChange: setNotifyAlgoDraft,
               },
               {
-                label: 'Creators',
-                value: String(tasteProfile?.topCreators.length ?? 0),
+                title: 'Followed Creator Drops',
+                desc: 'Alert when creators you follow publish a new character card',
+                value: notifyCreatorsDraft,
+                onChange: setNotifyCreatorsDraft,
               },
-            ].map(stat => (
-              <View
-                key={stat.label}
+              {
+                title: 'Discreet Lock-Screen Mode',
+                desc: 'Hide character/creator names on notifications & skip NSFW cards',
+                value: notifyDiscreetDraft,
+                onChange: setNotifyDiscreetDraft,
+              },
+              {
+                title: 'Quiet Hours (11 PM – 8 AM)',
+                desc: 'Shift overnight reminders to 9:00 AM local time',
+                value: notifyQuietDraft,
+                onChange: setNotifyQuietDraft,
+              },
+            ].map(row => (
+              <View key={row.title} style={styles.toggleRow}>
+                <View style={{ flex: 1, paddingRight: 10 }}>
+                  <Text style={styles.toggleTitle}>{row.title}</Text>
+                  <Text style={styles.toggleDesc}>{row.desc}</Text>
+                </View>
+                <NekoSwitch value={row.value} onValueChange={row.onChange} />
+              </View>
+            ))}
+
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
+              <TouchableOpacity
+                style={[
+                  styles.tokenPill,
+                  { flex: 1, alignItems: 'center', paddingVertical: 10 },
+                ]}
+                disabled={checkingCreatorsNow}
+                onPress={async () => {
+                  setCheckingCreatorsNow(true);
+                  setNotifyNotice(null);
+                  try {
+                    const res = await checkFollowedCreatorDropsNow(
+                      {
+                        ...settings,
+                        notifyFollowedCreators: true,
+                        notifyDiscreetMode: notifyDiscreetDraft,
+                      },
+                      false,
+                      false
+                    );
+                    onRefreshDropsInbox?.();
+                    setNotifyNotice(
+                      res.newDrops.length > 0
+                        ? `Found ${res.newDrops.length} new drop(s) — check the Bell inbox!`
+                        : 'Checked followed creators — no new drops right now.'
+                    );
+                  } catch {
+                    setNotifyNotice('Could not reach catalog right now.');
+                  } finally {
+                    setCheckingCreatorsNow(false);
+                  }
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={{ color: '#e2e8f0', fontSize: 11.5, fontWeight: '700' }}>
+                  {checkingCreatorsNow ? 'Checking...' : 'Check Creators Now'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.tokenPill,
+                  { flex: 1, alignItems: 'center', paddingVertical: 10 },
+                ]}
+                onPress={async () => {
+                  const ok = await sendTestNotificationNow({
+                    ...settings,
+                    notifyDiscreetMode: notifyDiscreetDraft,
+                  });
+                  setNotifyNotice(
+                    ok
+                      ? 'Test notification scheduled (fires in ~2 seconds).'
+                      : Platform.OS === 'web'
+                        ? 'OS push preview is mobile-only; use the Chats Bell inbox on Web.'
+                        : 'Notification permission not granted.'
+                  );
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '700' }}>
+                  Test Notification
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {notifyNotice ? (
+              <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '600', marginTop: 10 }}>
+                {notifyNotice}
+              </Text>
+            ) : null}
+          </BottomSheetScrollView>
+
+          <View style={styles.modalFooter}>
+            <TouchableOpacity
+              style={styles.saveBtn}
+              onPress={async () => {
+                const anyEnabled = notifyMissYouDraft || notifyAlgoDraft || notifyCreatorsDraft;
+                if (anyEnabled) {
+                  const perm = await requestNotificationPermissionsAsync();
+                  if (perm === 'denied') {
+                    setNotifyNotice('Permission denied in OS settings. Preferences saved for Bell inbox.');
+                  }
+                }
+                const updated = await storageService.saveSettings({
+                  notifyMissYou: notifyMissYouDraft,
+                  notifyAlgorithmPicks: notifyAlgoDraft,
+                  notifyFollowedCreators: notifyCreatorsDraft,
+                  notifyDiscreetMode: notifyDiscreetDraft,
+                  notifyQuietHours: notifyQuietDraft,
+                });
+                onUpdateSettings(updated);
+                setActiveModal(null);
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.saveBtnText}>Save Notification Settings</Text>
+            </TouchableOpacity>
+          </View>
+        </BottomSheetModal>
+
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* MODAL 10: FOR YOU & TASTE (100% ON-DEVICE ALGORITHM CONTROLS)     */}
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        <BottomSheetModal
+          visible={activeModal === 'taste'}
+          onClose={() => setActiveModal(null)}
+          sheetStyle={styles.modalSheet}
+        >
+          <View style={styles.modalHeader}>
+            <View style={styles.modalTitleRow}>
+              <Brain size={16} color={palette.accent} style={{ marginRight: 6 }} />
+              <Text style={styles.modalTitle}>For You & Taste</Text>
+            </View>
+            <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
+              <X size={18} color="#9ca3af" />
+            </TouchableOpacity>
+          </View>
+
+          <BottomSheetScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 24 }}>
+            {/* 100% On-Device Privacy Banner */}
+            <View
+              style={[
+                styles.toggleRow,
+                {
+                  borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+                  backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
+                  justifyContent: 'flex-start',
+                  gap: 10,
+                },
+              ]}
+            >
+              <ShieldCheck size={18} color={palette.accent} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.toggleTitle}>100% On-Device Learning</Text>
+                <Text style={[styles.toggleDesc, { lineHeight: 15 }]}>
+                  Learned locally on your phone from likes, chats, searches & tags. Never uploaded or shared.
+                </Text>
+              </View>
+            </View>
+
+            {/* Insights Strip */}
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+              {[
+                {
+                  label: 'Signals',
+                  value: String(tasteProfile?.totalInteractions ?? 0),
+                },
+                {
+                  label: 'RP Depth',
+                  value:
+                    tasteProfile?.preferredDepth === 'short'
+                      ? 'Quick'
+                      : tasteProfile?.preferredDepth === 'medium'
+                        ? 'Balanced'
+                        : tasteProfile?.preferredDepth === 'deep'
+                          ? 'Deep Lore'
+                          : 'Learning',
+                },
+                {
+                  label: 'Creators',
+                  value: String(tasteProfile?.topCreators.length ?? 0),
+                },
+              ].map(stat => (
+                <View
+                  key={stat.label}
+                  style={[
+                    styles.tokenPill,
+                    {
+                      flex: 1,
+                      alignItems: 'center',
+                      paddingVertical: 10,
+                      borderRadius: 12,
+                    },
+                  ]}
+                >
+                  <Text style={{ color: palette.accent, fontSize: 13.5, fontWeight: '800' }}>
+                    {stat.value}
+                  </Text>
+                  <Text style={{ color: '#9ca3af', fontSize: 10, fontWeight: '600', marginTop: 2 }}>
+                    {stat.label}
+                  </Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Pause Learning Toggle */}
+            <View style={styles.toggleRow}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
+                <Text style={styles.toggleTitle}>Pause Taste Learning</Text>
+                <Text style={styles.toggleDesc}>
+                  Keep current recommendations without recording new browsing or chat signals
+                </Text>
+              </View>
+              <NekoSwitch
+                value={Boolean(tasteProfile?.learningPaused)}
+                onValueChange={async val => {
+                  await tasteEngineService.setLearningPaused(val);
+                  await loadTasteProfile(true);
+                  setTasteNotice(val ? 'Learning paused.' : 'Learning resumed.');
+                }}
+              />
+            </View>
+
+            {/* Character Focus Selector */}
+            <Text style={styles.inputLabel}>CHARACTER FOCUS</Text>
+            <View style={[styles.tokenPillRow, { marginBottom: 4 }]}>
+              {(
+                [
+                  { id: 'auto', label: 'Auto' },
+                  { id: 'female', label: 'Female' },
+                  { id: 'male', label: 'Male' },
+                  { id: 'all', label: 'All' },
+                ] as { id: GenderFocusMode; label: string }[]
+              ).map(opt => {
+                const active = (tasteProfile?.genderFocus || 'auto') === opt.id;
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    style={[styles.tokenPill, active && styles.tokenPillActive]}
+                    onPress={async () => {
+                      await tasteEngineService.setGenderFocus(opt.id);
+                      await loadTasteProfile(true);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.tokenPillText, active && styles.tokenPillTextActive]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={[styles.sectionSub, { fontWeight: '500', marginBottom: 10 }]}>
+              {(tasteProfile?.genderFocus || 'auto') === 'auto'
+                ? tasteProfile?.dominantGender && tasteProfile.dominantGender !== 'none'
+                  ? `Auto-detected: ${tasteProfile.dominantGender} (${tasteProfile.genderConfidence}% confidence)`
+                  : 'Auto: showing balanced matches until a preference emerges'
+                : `Locked to "${tasteProfile?.genderFocus}" characters in For You & Match`}
+            </Text>
+
+            {/* Learned & Boosted Tags */}
+            <Text style={styles.inputLabel}>LEARNED & BOOSTED TAGS</Text>
+            {tasteProfile && tasteProfile.topLearnedTags.length > 0 ? (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                {tasteProfile.topLearnedTags.map(item => (
+                  <TouchableOpacity
+                    key={item.tag}
+                    style={[
+                      styles.radioChip,
+                      item.pinned && styles.radioChipActive,
+                      { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 5 },
+                    ]}
+                    onPress={async () => {
+                      await tasteEngineService.removeLearnedTag(item.tag);
+                      await loadTasteProfile(true);
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <Text
+                      style={[
+                        styles.radioChipText,
+                        item.pinned ? styles.radioChipTextActive : { color: '#e2e8f0' },
+                      ]}
+                    >
+                      {item.pinned ? `★ #${item.tag}` : `#${item.tag}`}
+                    </Text>
+                    <X size={12} color={item.pinned ? palette.accent : '#94a3b8'} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : (
+              <Text style={[styles.sectionSub, { fontWeight: '500', marginBottom: 10 }]}>
+                No learned tags yet — heart characters, search, or boost tags below.
+              </Text>
+            )}
+
+            {/* Boost / Pin Tag Input */}
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+              <TextInput
+                style={[styles.inputBox, { flex: 1 }]}
+                value={newPinTagDraft}
+                onChangeText={setNewPinTagDraft}
+                placeholder="Boost a tag (e.g. fantasy, tsundere)..."
+                placeholderTextColor="rgba(255,255,255,0.38)"
+                returnKeyType="done"
+                onSubmitEditing={async () => {
+                  if (!newPinTagDraft.trim()) return;
+                  await tasteEngineService.pinTag(newPinTagDraft);
+                  setNewPinTagDraft('');
+                  await loadTasteProfile(true);
+                }}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.tokenPill,
+                  styles.tokenPillActive,
+                  { flexDirection: 'row', alignItems: 'center', gap: 4, justifyContent: 'center' },
+                ]}
+                onPress={async () => {
+                  if (!newPinTagDraft.trim()) return;
+                  await tasteEngineService.pinTag(newPinTagDraft);
+                  setNewPinTagDraft('');
+                  await loadTasteProfile(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <Plus size={13} color="#000000" />
+                <Text style={styles.tokenPillTextActive}>Boost</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Quick-tap Popular Suggestions */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+              {POPULAR_COMMUNITY_CATEGORIES.filter(
+                c =>
+                  c.value !== 'all' &&
+                  c.value !== 'female' &&
+                  c.value !== 'male' &&
+                  !tasteProfile?.pinnedTags.includes(c.value) &&
+                  !tasteProfile?.mutedTags.includes(c.value)
+              )
+                .slice(0, 6)
+                .map(cat => (
+                  <TouchableOpacity
+                    key={cat.value}
+                    style={[styles.radioChip, { paddingHorizontal: 9, paddingVertical: 4 }]}
+                    onPress={async () => {
+                      await tasteEngineService.pinTag(cat.value);
+                      await loadTasteProfile(true);
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[styles.radioChipText, { fontSize: 11 }]}>+ {cat.label}</Text>
+                  </TouchableOpacity>
+                ))}
+            </View>
+
+            {/* Muted Tags */}
+            <Text style={styles.inputLabel}>MUTED TAGS (HIDDEN FROM FEED)</Text>
+            {tasteProfile && tasteProfile.mutedTags.length > 0 && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                {tasteProfile.mutedTags.map(tag => (
+                  <TouchableOpacity
+                    key={tag}
+                    style={[
+                      styles.radioChip,
+                      {
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 5,
+                        paddingVertical: 5,
+                        borderColor: 'rgba(244, 63, 94, 0.45)',
+                        backgroundColor: 'rgba(244, 63, 94, 0.10)',
+                      },
+                    ]}
+                    onPress={async () => {
+                      await tasteEngineService.unmuteTag(tag);
+                      await loadTasteProfile(true);
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={[styles.radioChipText, { color: '#fda4af' }]}>#{tag}</Text>
+                    <X size={12} color="#fda4af" />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+              <TextInput
+                style={[styles.inputBox, { flex: 1 }]}
+                value={newMuteTagDraft}
+                onChangeText={setNewMuteTagDraft}
+                placeholder="Mute a tag you don't want to see..."
+                placeholderTextColor="rgba(255,255,255,0.38)"
+                returnKeyType="done"
+                onSubmitEditing={async () => {
+                  if (!newMuteTagDraft.trim()) return;
+                  await tasteEngineService.muteTag(newMuteTagDraft);
+                  setNewMuteTagDraft('');
+                  await loadTasteProfile(true);
+                }}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.tokenPill,
+                  {
+                    justifyContent: 'center',
+                    borderColor: 'rgba(244, 63, 94, 0.4)',
+                    backgroundColor: 'rgba(244, 63, 94, 0.14)',
+                  },
+                ]}
+                onPress={async () => {
+                  if (!newMuteTagDraft.trim()) return;
+                  await tasteEngineService.muteTag(newMuteTagDraft);
+                  setNewMuteTagDraft('');
+                  await loadTasteProfile(true);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={{ color: '#fda4af', fontSize: 11, fontWeight: '700' }}>Mute</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Reset Actions */}
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity
                 style={[
                   styles.tokenPill,
                   {
                     flex: 1,
+                    flexDirection: 'row',
                     alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
                     paddingVertical: 10,
-                    borderRadius: 12,
                   },
                 ]}
+                onPress={async () => {
+                  await tasteEngineService.resetTasteProfile();
+                  await loadTasteProfile(true);
+                  setTasteNotice('Taste profile cleared (your Favorites list is preserved).');
+                }}
+                activeOpacity={0.8}
               >
-                <Text style={{ color: palette.accent, fontSize: 13.5, fontWeight: '800' }}>
-                  {stat.value}
+                <Trash2 size={13} color="#fda4af" />
+                <Text style={{ color: '#fda4af', fontSize: 11.5, fontWeight: '700' }}>Reset Taste</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.tokenPill,
+                  {
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    paddingVertical: 10,
+                  },
+                ]}
+                onPress={async () => {
+                  await matchAlgorithmService.resetSeen();
+                  setTasteNotice('Seen & swipe deck history reset.');
+                }}
+                activeOpacity={0.8}
+              >
+                <RefreshCw size={13} color={palette.accent} />
+                <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '700' }}>
+                  Reset Seen Deck
                 </Text>
-                <Text style={{ color: '#9ca3af', fontSize: 10, fontWeight: '600', marginTop: 2 }}>
-                  {stat.label}
-                </Text>
-              </View>
-            ))}
-          </View>
+              </TouchableOpacity>
+            </View>
 
-          {/* Pause Learning Toggle */}
-          <View style={styles.toggleRow}>
-            <View style={{ flex: 1, paddingRight: 10 }}>
-              <Text style={styles.toggleTitle}>Pause Taste Learning</Text>
-              <Text style={styles.toggleDesc}>
-                Keep current recommendations without recording new browsing or chat signals
+            {tasteNotice ? (
+              <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '600', marginTop: 10 }}>
+                {tasteNotice}
               </Text>
-            </View>
-            <NekoSwitch
-              value={Boolean(tasteProfile?.learningPaused)}
-              onValueChange={async val => {
-                await tasteEngineService.setLearningPaused(val);
-                await loadTasteProfile(true);
-                setTasteNotice(val ? 'Learning paused.' : 'Learning resumed.');
-              }}
-            />
-          </View>
-
-          {/* Character Focus Selector */}
-          <Text style={styles.inputLabel}>CHARACTER FOCUS</Text>
-          <View style={[styles.tokenPillRow, { marginBottom: 4 }]}>
-            {(
-              [
-                { id: 'auto', label: 'Auto' },
-                { id: 'female', label: 'Female' },
-                { id: 'male', label: 'Male' },
-                { id: 'all', label: 'All' },
-              ] as { id: GenderFocusMode; label: string }[]
-            ).map(opt => {
-              const active = (tasteProfile?.genderFocus || 'auto') === opt.id;
-              return (
-                <TouchableOpacity
-                  key={opt.id}
-                  style={[styles.tokenPill, active && styles.tokenPillActive]}
-                  onPress={async () => {
-                    await tasteEngineService.setGenderFocus(opt.id);
-                    await loadTasteProfile(true);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.tokenPillText, active && styles.tokenPillTextActive]}>
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-          <Text style={[styles.sectionSub, { fontWeight: '500', marginBottom: 10 }]}>
-            {(tasteProfile?.genderFocus || 'auto') === 'auto'
-              ? tasteProfile?.dominantGender && tasteProfile.dominantGender !== 'none'
-                ? `Auto-detected: ${tasteProfile.dominantGender} (${tasteProfile.genderConfidence}% confidence)`
-                : 'Auto: showing balanced matches until a preference emerges'
-              : `Locked to "${tasteProfile?.genderFocus}" characters in For You & Match`}
-          </Text>
-
-          {/* Learned & Boosted Tags */}
-          <Text style={styles.inputLabel}>LEARNED & BOOSTED TAGS</Text>
-          {tasteProfile && tasteProfile.topLearnedTags.length > 0 ? (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-              {tasteProfile.topLearnedTags.map(item => (
-                <TouchableOpacity
-                  key={item.tag}
-                  style={[
-                    styles.radioChip,
-                    item.pinned && styles.radioChipActive,
-                    { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 5 },
-                  ]}
-                  onPress={async () => {
-                    await tasteEngineService.removeLearnedTag(item.tag);
-                    await loadTasteProfile(true);
-                  }}
-                  activeOpacity={0.75}
-                >
-                  <Text
-                    style={[
-                      styles.radioChipText,
-                      item.pinned ? styles.radioChipTextActive : { color: '#e2e8f0' },
-                    ]}
-                  >
-                    {item.pinned ? `★ #${item.tag}` : `#${item.tag}`}
-                  </Text>
-                  <X size={12} color={item.pinned ? palette.accent : '#94a3b8'} />
-                </TouchableOpacity>
-              ))}
-            </View>
-          ) : (
-            <Text style={[styles.sectionSub, { fontWeight: '500', marginBottom: 10 }]}>
-              No learned tags yet — heart characters, search, or boost tags below.
-            </Text>
-          )}
-
-          {/* Boost / Pin Tag Input */}
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-            <TextInput
-              style={[styles.inputBox, { flex: 1 }]}
-              value={newPinTagDraft}
-              onChangeText={setNewPinTagDraft}
-              placeholder="Boost a tag (e.g. fantasy, tsundere)..."
-              placeholderTextColor="rgba(255,255,255,0.38)"
-              returnKeyType="done"
-              onSubmitEditing={async () => {
-                if (!newPinTagDraft.trim()) return;
-                await tasteEngineService.pinTag(newPinTagDraft);
-                setNewPinTagDraft('');
-                await loadTasteProfile(true);
-              }}
-            />
-            <TouchableOpacity
-              style={[
-                styles.tokenPill,
-                styles.tokenPillActive,
-                { flexDirection: 'row', alignItems: 'center', gap: 4, justifyContent: 'center' },
-              ]}
-              onPress={async () => {
-                if (!newPinTagDraft.trim()) return;
-                await tasteEngineService.pinTag(newPinTagDraft);
-                setNewPinTagDraft('');
-                await loadTasteProfile(true);
-              }}
-              activeOpacity={0.8}
-            >
-              <Plus size={13} color="#000000" />
-              <Text style={styles.tokenPillTextActive}>Boost</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Quick-tap Popular Suggestions */}
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-            {POPULAR_COMMUNITY_CATEGORIES.filter(
-              c =>
-                c.value !== 'all' &&
-                c.value !== 'female' &&
-                c.value !== 'male' &&
-                !tasteProfile?.pinnedTags.includes(c.value) &&
-                !tasteProfile?.mutedTags.includes(c.value)
-            )
-              .slice(0, 6)
-              .map(cat => (
-                <TouchableOpacity
-                  key={cat.value}
-                  style={[styles.radioChip, { paddingHorizontal: 9, paddingVertical: 4 }]}
-                  onPress={async () => {
-                    await tasteEngineService.pinTag(cat.value);
-                    await loadTasteProfile(true);
-                  }}
-                  activeOpacity={0.75}
-                >
-                  <Text style={[styles.radioChipText, { fontSize: 11 }]}>+ {cat.label}</Text>
-                </TouchableOpacity>
-              ))}
-          </View>
-
-          {/* Muted Tags */}
-          <Text style={styles.inputLabel}>MUTED TAGS (HIDDEN FROM FEED)</Text>
-          {tasteProfile && tasteProfile.mutedTags.length > 0 && (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-              {tasteProfile.mutedTags.map(tag => (
-                <TouchableOpacity
-                  key={tag}
-                  style={[
-                    styles.radioChip,
-                    {
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 5,
-                      paddingVertical: 5,
-                      borderColor: 'rgba(244, 63, 94, 0.45)',
-                      backgroundColor: 'rgba(244, 63, 94, 0.10)',
-                    },
-                  ]}
-                  onPress={async () => {
-                    await tasteEngineService.unmuteTag(tag);
-                    await loadTasteProfile(true);
-                  }}
-                  activeOpacity={0.75}
-                >
-                  <Text style={[styles.radioChipText, { color: '#fda4af' }]}>#{tag}</Text>
-                  <X size={12} color="#fda4af" />
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-            <TextInput
-              style={[styles.inputBox, { flex: 1 }]}
-              value={newMuteTagDraft}
-              onChangeText={setNewMuteTagDraft}
-              placeholder="Mute a tag you don't want to see..."
-              placeholderTextColor="rgba(255,255,255,0.38)"
-              returnKeyType="done"
-              onSubmitEditing={async () => {
-                if (!newMuteTagDraft.trim()) return;
-                await tasteEngineService.muteTag(newMuteTagDraft);
-                setNewMuteTagDraft('');
-                await loadTasteProfile(true);
-              }}
-            />
-            <TouchableOpacity
-              style={[
-                styles.tokenPill,
-                {
-                  justifyContent: 'center',
-                  borderColor: 'rgba(244, 63, 94, 0.4)',
-                  backgroundColor: 'rgba(244, 63, 94, 0.14)',
-                },
-              ]}
-              onPress={async () => {
-                if (!newMuteTagDraft.trim()) return;
-                await tasteEngineService.muteTag(newMuteTagDraft);
-                setNewMuteTagDraft('');
-                await loadTasteProfile(true);
-              }}
-              activeOpacity={0.8}
-            >
-              <Text style={{ color: '#fda4af', fontSize: 11, fontWeight: '700' }}>Mute</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Reset Actions */}
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <TouchableOpacity
-              style={[
-                styles.tokenPill,
-                {
-                  flex: 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  paddingVertical: 10,
-                },
-              ]}
-              onPress={async () => {
-                await tasteEngineService.resetTasteProfile();
-                await loadTasteProfile(true);
-                setTasteNotice('Taste profile cleared (your Favorites list is preserved).');
-              }}
-              activeOpacity={0.8}
-            >
-              <Trash2 size={13} color="#fda4af" />
-              <Text style={{ color: '#fda4af', fontSize: 11.5, fontWeight: '700' }}>Reset Taste</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.tokenPill,
-                {
-                  flex: 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  paddingVertical: 10,
-                },
-              ]}
-              onPress={async () => {
-                await matchAlgorithmService.resetSeen();
-                setTasteNotice('Seen & swipe deck history reset.');
-              }}
-              activeOpacity={0.8}
-            >
-              <RefreshCw size={13} color={palette.accent} />
-              <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '700' }}>
-                Reset Seen Deck
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {tasteNotice ? (
-            <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '600', marginTop: 10 }}>
-              {tasteNotice}
-            </Text>
-          ) : null}
-        </BottomSheetScrollView>
-      </BottomSheetModal>
+            ) : null}
+          </BottomSheetScrollView>
+        </BottomSheetModal>
       </ScrollView>
     </View>
   );
@@ -3827,195 +4105,195 @@ const createStyles = (palette: ThemePalette, skin: UiSkinTokens) => {
   const surfaceBg = getSurfaceBg(palette, skin);
   const subtleSurfaceBg = getSubtleSurfaceBg(palette, skin);
   return StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: screenBg,
-  },
-  contentContainer: {
-    padding: 14,
-    paddingBottom: 110,
-  },
-  healthCardBig: {
-    backgroundColor: surfaceBg,
-    borderRadius: skin.cardRadius,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    padding: 14,
-    marginBottom: 18,
-  },
-  healthCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  healthTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  healthTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  healthPingBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: palette.accent,
-    paddingHorizontal: 9,
-    paddingVertical: 4.5,
-    borderRadius: 8,
-  },
-  healthPingBtnText: {
-    fontSize: 10.5,
-    fontWeight: '800',
-    color: '#000000',
-  },
-  healthGrid: {
-    gap: 8,
-  },
-  healthItemBox: {
-    backgroundColor: skin.id === 'ios' ? 'rgba(255, 255, 255, 0.06)' : subtleSurfaceBg,
-    borderRadius: skin.id === 'ios' ? 14 : 12,
-    borderWidth: 1,
-    borderColor: skin.id === 'ios' ? 'rgba(255, 255, 255, 0.14)' : 'rgba(255, 255, 255, 0.1)',
-    ...(skin.id === 'ios' ? { borderTopColor: 'rgba(255, 255, 255, 0.24)' } : null),
-    padding: 10,
-  },
-  healthItemTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  statusDotGreen: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: palette.accent,
-    marginRight: 6,
-  },
-  statusDotRed: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#f43f5e',
-    marginRight: 6,
-  },
-  statusDotGray: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#64748b',
-    marginRight: 6,
-  },
-  healthItemName: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#e2e8f0',
-    flex: 1,
-  },
-  latencyText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: palette.accent,
-    marginTop: 2,
-  },
-  latencyTextOffline: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#f43f5e',
-    marginTop: 2,
-  },
-  statusLabelText: {
-    fontSize: 10,
-    color: '#9ca3af',
-    marginTop: 1,
-  },
-  gridSectionHeading: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#9ca3af',
-    letterSpacing: 0.8,
-    marginBottom: 10,
-  },
-  bentoTwoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  bentoTile: {
-    width: '48.2%',
-    backgroundColor: GLASS.bg,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: GLASS.borderBright,
-    padding: 12,
-    marginBottom: 2,
-    justifyContent: 'space-between',
-    ...GLASS.backdrop,
-    ...GLASS.shadow,
-    minHeight: 120,
-  },
-  tileIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: '#171c2b',
-    borderWidth: 1,
-    borderColor: '#242b3d',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  tileTitle: {
-    fontSize: 12.5,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  tileSubtitle: {
-    fontSize: 10,
-    color: '#9ca3af',
-    lineHeight: 14,
-    marginTop: 2,
-  },
-  tileBadgeLime: {
-    alignSelf: 'flex-start',
-    backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
-    borderWidth: 1,
-    borderColor: `rgba(${palette.accentRgb}, 0.4)`,
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginTop: 8,
-  },
-  tileBadgeLimeText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: palette.accent,
-  },
-  tileBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#171c2b',
-    borderWidth: 1,
-    borderColor: '#242b3d',
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginTop: 8,
-  },
-  tileBadgeText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#9ca3af',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(6, 8, 14, 0.68)',
-    justifyContent: 'flex-end',
-    ...GLASS.backdrop,
-    ...(Platform.OS === 'web'
-      ? ({
+    container: {
+      flex: 1,
+      backgroundColor: screenBg,
+    },
+    contentContainer: {
+      padding: 14,
+      paddingBottom: 110,
+    },
+    healthCardBig: {
+      backgroundColor: surfaceBg,
+      borderRadius: skin.cardRadius,
+      borderWidth: 1,
+      borderColor: 'rgba(255, 255, 255, 0.1)',
+      padding: 14,
+      marginBottom: 18,
+    },
+    healthCardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 12,
+    },
+    healthTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
+    healthTitle: {
+      fontSize: 13,
+      fontWeight: '800',
+      color: '#FFFFFF',
+    },
+    healthPingBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: palette.accent,
+      paddingHorizontal: 9,
+      paddingVertical: 4.5,
+      borderRadius: 8,
+    },
+    healthPingBtnText: {
+      fontSize: 10.5,
+      fontWeight: '800',
+      color: '#000000',
+    },
+    healthGrid: {
+      gap: 8,
+    },
+    healthItemBox: {
+      backgroundColor: skin.id === 'ios' ? 'rgba(255, 255, 255, 0.06)' : subtleSurfaceBg,
+      borderRadius: skin.id === 'ios' ? 14 : 12,
+      borderWidth: 1,
+      borderColor: skin.id === 'ios' ? 'rgba(255, 255, 255, 0.14)' : 'rgba(255, 255, 255, 0.1)',
+      ...(skin.id === 'ios' ? { borderTopColor: 'rgba(255, 255, 255, 0.24)' } : null),
+      padding: 10,
+    },
+    healthItemTop: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 2,
+    },
+    statusDotGreen: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: palette.accent,
+      marginRight: 6,
+    },
+    statusDotRed: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: '#f43f5e',
+      marginRight: 6,
+    },
+    statusDotGray: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: '#64748b',
+      marginRight: 6,
+    },
+    healthItemName: {
+      fontSize: 11.5,
+      fontWeight: '700',
+      color: '#e2e8f0',
+      flex: 1,
+    },
+    latencyText: {
+      fontSize: 14,
+      fontWeight: '800',
+      color: palette.accent,
+      marginTop: 2,
+    },
+    latencyTextOffline: {
+      fontSize: 14,
+      fontWeight: '800',
+      color: '#f43f5e',
+      marginTop: 2,
+    },
+    statusLabelText: {
+      fontSize: 10,
+      color: '#9ca3af',
+      marginTop: 1,
+    },
+    gridSectionHeading: {
+      fontSize: 11,
+      fontWeight: '800',
+      color: '#9ca3af',
+      letterSpacing: 0.8,
+      marginBottom: 10,
+    },
+    bentoTwoGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'space-between',
+      gap: 10,
+    },
+    bentoTile: {
+      width: '48.2%',
+      backgroundColor: GLASS.bg,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: GLASS.borderBright,
+      padding: 12,
+      marginBottom: 2,
+      justifyContent: 'space-between',
+      ...GLASS.backdrop,
+      ...GLASS.shadow,
+      minHeight: 120,
+    },
+    tileIconCircle: {
+      width: 32,
+      height: 32,
+      borderRadius: 10,
+      backgroundColor: '#171c2b',
+      borderWidth: 1,
+      borderColor: '#242b3d',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 8,
+    },
+    tileTitle: {
+      fontSize: 12.5,
+      fontWeight: '800',
+      color: '#FFFFFF',
+    },
+    tileSubtitle: {
+      fontSize: 10,
+      color: '#9ca3af',
+      lineHeight: 14,
+      marginTop: 2,
+    },
+    tileBadgeLime: {
+      alignSelf: 'flex-start',
+      backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
+      borderWidth: 1,
+      borderColor: `rgba(${palette.accentRgb}, 0.4)`,
+      borderRadius: 6,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      marginTop: 8,
+    },
+    tileBadgeLimeText: {
+      fontSize: 9,
+      fontWeight: '800',
+      color: palette.accent,
+    },
+    tileBadge: {
+      alignSelf: 'flex-start',
+      backgroundColor: '#171c2b',
+      borderWidth: 1,
+      borderColor: '#242b3d',
+      borderRadius: 6,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      marginTop: 8,
+    },
+    tileBadgeText: {
+      fontSize: 9,
+      fontWeight: '700',
+      color: '#9ca3af',
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(6, 8, 14, 0.68)',
+      justifyContent: 'flex-end',
+      ...GLASS.backdrop,
+      ...(Platform.OS === 'web'
+        ? ({
           backgroundColor: 'transparent',
           backgroundImage:
             'linear-gradient(to bottom, rgba(6, 8, 14, 0.12) 0%, rgba(6, 8, 14, 0.48) 50%, rgba(6, 8, 14, 0.88) 100%)',
@@ -4415,6 +4693,139 @@ const createStyles = (palette: ThemePalette, skin: UiSkinTokens) => {
     color: 'rgba(255, 255, 255, 0.5)',
     fontSize: 11,
     marginTop: 2,
+  },
+  themingComboStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: subtleSurfaceBg,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    marginBottom: 10,
+    gap: 10,
+  },
+  themingComboText: {
+    color: '#F1F5F9',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  themingComboSep: {
+    width: 1,
+    height: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+  },
+  themingTabBar: {
+    flexDirection: 'row',
+    backgroundColor: subtleSurfaceBg,
+    borderRadius: 14,
+    padding: 4,
+    gap: 4,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.07)',
+  },
+  themingTabBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  themingTabBtnText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  themingSectionDividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+    marginBottom: 10,
+  },
+  themingSectionDividerLabel: {
+    color: '#94A3B8',
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.85,
+  },
+  themingSectionDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.09)',
+  },
+  themingSectionCountBadge: {
+    backgroundColor: subtleSurfaceBg,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  themingSectionCountText: {
+    color: '#CBD5E1',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  storeBrowseBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: `rgba(${palette.accentRgb}, 0.16)`,
+  },
+  storeBrowseBadgeText: {
+    color: palette.accent,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  packTagPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 5,
+    backgroundColor: `rgba(${palette.accentRgb}, 0.16)`,
+  },
+  packTagText: {
+    color: palette.accent,
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  colorSchemeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 14,
+  },
+  colorSchemeCard: {
+    width: '48.2%',
+    backgroundColor: subtleSurfaceBg,
+    borderRadius: Math.min(18, skin.cardRadius),
+    borderWidth: 1.25,
+    borderColor: 'rgba(255, 255, 255, 0.09)',
+    padding: 10,
+  },
+  colorSchemeSwatchStrip: {
+    flexDirection: 'row',
+    height: 16,
+    borderRadius: 6,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  colorSchemeName: {
+    flex: 1,
+    color: '#F1F5F9',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  colorSchemeMeta: {
+    color: '#94A3B8',
+    fontSize: 10.5,
+    marginTop: 3,
   },
 });
 };
