@@ -5,6 +5,7 @@
 
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, FlatList, Platform } from 'react-native';
+import { GestureDetector, useNativeGesture } from 'react-native-gesture-handler';
 import { User, ChevronDown, Check } from 'lucide-react-native';
 import { Persona } from '../types';
 import { colors } from '../theme/colors';
@@ -27,49 +28,60 @@ const PersonaListSheetContent: React.FC<{
   onClose: () => void;
 }> = ({ personas, activePersona, accentColor, accentRgb, onSelectPersona, onClose }) => {
   const gestureCtx = useBottomSheetGesture();
+  const nativeListGesture = useNativeGesture(
+    gestureCtx?.sheetPanGesture
+      ? {
+          disableReanimated: true,
+          simultaneousWith: gestureCtx.sheetPanGesture,
+        }
+      : { disableReanimated: true }
+  );
+
   return (
     <>
       <Text style={styles.modalTitle}>Switch Persona</Text>
-      <FlatList
-        data={personas}
-        keyExtractor={item => item.id}
-        bounces={false}
-        overScrollMode="never"
-        scrollEnabled={!gestureCtx?.isSheetDragging}
-        scrollEventThrottle={16}
-        onScroll={e => {
-          gestureCtx?.setScrollAtTop(e.nativeEvent.contentOffset.y <= 2);
-        }}
-        renderItem={({ item }) => {
-          const isSelected = item.id === activePersona.id;
-          return (
-            <TouchableOpacity
-              style={[
-                styles.personaItem,
-                isSelected && {
-                  backgroundColor: `rgba(${accentRgb}, 0.08)`,
-                  borderWidth: 1,
-                  borderColor: accentColor,
-                },
-              ]}
-              onPress={() => {
-                onSelectPersona(item);
-                onClose();
-              }}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.personaName, isSelected && { color: accentColor }]}>
-                  {item.name}
-                </Text>
-                <Text style={styles.personaDesc} numberOfLines={1}>
-                  {item.description}
-                </Text>
-              </View>
-              {isSelected && <Check size={18} color={accentColor} />}
-            </TouchableOpacity>
-          );
-        }}
-      />
+      <GestureDetector gesture={nativeListGesture}>
+        <FlatList
+          data={personas}
+          keyExtractor={item => item.id}
+          bounces={false}
+          overScrollMode="never"
+          scrollEnabled={!gestureCtx?.isSheetDragging}
+          scrollEventThrottle={16}
+          onScroll={e => {
+            gestureCtx?.setScrollAtTop(e.nativeEvent.contentOffset.y <= 2);
+          }}
+          renderItem={({ item }) => {
+            const isSelected = item.id === activePersona.id;
+            return (
+              <TouchableOpacity
+                style={[
+                  styles.personaItem,
+                  isSelected && {
+                    backgroundColor: `rgba(${accentRgb}, 0.08)`,
+                    borderWidth: 1,
+                    borderColor: accentColor,
+                  },
+                ]}
+                onPress={() => {
+                  onSelectPersona(item);
+                  onClose();
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.personaName, isSelected && { color: accentColor }]}>
+                    {item.name}
+                  </Text>
+                  <Text style={styles.personaDesc} numberOfLines={1}>
+                    {item.description}
+                  </Text>
+                </View>
+                {isSelected && <Check size={18} color={accentColor} />}
+              </TouchableOpacity>
+            );
+          }}
+        />
+      </GestureDetector>
     </>
   );
 };

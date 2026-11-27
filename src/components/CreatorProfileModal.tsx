@@ -2,7 +2,7 @@
  * CreatorProfileModal — Displays a community creator's bio, stats, and published cards.
  * Let's be honest, we're all here to follow the creator who writes 4,000-token lorebooks.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
   View,
@@ -15,9 +15,14 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
-  PanResponder,
   useWindowDimensions,
 } from 'react-native';
+import {
+  GestureDetector,
+  GestureHandlerRootView,
+  useNativeGesture,
+} from 'react-native-gesture-handler';
+import { useSheetDismissGestures } from './BottomSheetModal';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   X,
@@ -220,37 +225,12 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
   const [backdropOpacity] = useState(() => new Animated.Value(0));
   const onCloseRef = useRef(onClose);
   const isClosingRef = useRef(false);
-  const scrollAtTopRef = useRef(true);
-  const touchStartedAtTopRef = useRef(true);
-  const [isSheetDragging, setIsSheetDragging] = useState(false);
 
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
 
-  useEffect(() => {
-    setBioExpanded(false);
-    bioExpandAnim.setValue(0);
-    if (visible && cleanHandle) {
-      isClosingRef.current = false;
-      scrollAtTopRef.current = true;
-      touchStartedAtTopRef.current = true;
-      setIsSheetDragging(false);
-      setInternalVisible(true);
-      runSheetOpenAnimation(sheetTranslateY, backdropOpacity, skin.animation);
-    } else if (internalVisible && !isClosingRef.current) {
-      scrollAtTopRef.current = true;
-      touchStartedAtTopRef.current = true;
-      setIsSheetDragging(false);
-      isClosingRef.current = true;
-      runSheetCloseAnimation(sheetTranslateY, backdropOpacity, skin.animation, () => {
-        isClosingRef.current = false;
-        setInternalVisible(false);
-      });
-    }
-  }, [cleanHandle, visible, internalVisible, bioExpandAnim, sheetTranslateY, backdropOpacity, skin.animation]);
-
-  const animateClose = () => {
+  const animateClose = useCallback(() => {
     if (isClosingRef.current) return;
     isClosingRef.current = true;
     runSheetCloseAnimation(sheetTranslateY, backdropOpacity, skin.animation, () => {
@@ -258,125 +238,41 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
       setInternalVisible(false);
       onCloseRef.current();
     });
-  };
+  }, [sheetTranslateY, backdropOpacity, skin.animation]);
 
-  const animateCloseRef = useRef(animateClose);
-  useEffect(() => {
-    animateCloseRef.current = animateClose;
+  const {
+    setScrollAtTop,
+    isSheetDragging,
+    bodyPanGesture,
+    topPanGesture,
+    resetGestureState,
+  } = useSheetDismissGestures({
+    translateY: sheetTranslateY,
+    onDismiss: animateClose,
   });
 
-  const [dragHandlePanResponder] = useState(() =>
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 4,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderMove: (_, gesture) => {
-        if (gesture.dy > 0) {
-          sheetTranslateY.setValue(gesture.dy);
-        }
-      },
-      onPanResponderRelease: (_, gesture) => {
-        if (gesture.dy > 100 || (gesture.dy > 45 && gesture.vy > 0.6)) {
-          animateCloseRef.current();
-        } else {
-          Animated.spring(sheetTranslateY, {
-            toValue: 0,
-            useNativeDriver: true,
-            friction: 8,
-            tension: 120,
-          }).start();
-        }
-      },
-      onPanResponderTerminate: () => {
-        Animated.spring(sheetTranslateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          friction: 8,
-          tension: 120,
-        }).start();
-      },
-    })
-  );
+  const nativeScrollGesture = useNativeGesture({
+    disableReanimated: true,
+    simultaneousWith: bodyPanGesture,
+  });
 
-  const [topBarPanResponder] = useState(() =>
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gesture) =>
-        gesture.dy > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.3,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderMove: (_, gesture) => {
-        if (gesture.dy > 0) {
-          sheetTranslateY.setValue(gesture.dy);
-        }
-      },
-      onPanResponderRelease: (_, gesture) => {
-        if (gesture.dy > 100 || (gesture.dy > 45 && gesture.vy > 0.6)) {
-          animateCloseRef.current();
-        } else {
-          Animated.spring(sheetTranslateY, {
-            toValue: 0,
-            useNativeDriver: true,
-            friction: 8,
-            tension: 120,
-          }).start();
-        }
-      },
-      onPanResponderTerminate: () => {
-        Animated.spring(sheetTranslateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          friction: 8,
-          tension: 120,
-        }).start();
-      },
-    })
-  );
-
-  const [bodySwipePanResponder] = useState(() =>
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onStartShouldSetPanResponderCapture: () => {
-        touchStartedAtTopRef.current = scrollAtTopRef.current;
-        return false;
-      },
-      onMoveShouldSetPanResponderCapture: (_, gesture) =>
-        touchStartedAtTopRef.current &&
-        scrollAtTopRef.current &&
-        gesture.dy > 12 &&
-        Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.45,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: () => {
-        setIsSheetDragging(true);
-      },
-      onPanResponderMove: (_, gesture) => {
-        if (gesture.dy > 0) {
-          sheetTranslateY.setValue(gesture.dy);
-        }
-      },
-      onPanResponderRelease: (_, gesture) => {
-        setIsSheetDragging(false);
-        if (gesture.dy > 110 || (gesture.dy > 45 && gesture.vy > 0.65)) {
-          animateCloseRef.current();
-        } else {
-          Animated.spring(sheetTranslateY, {
-            toValue: 0,
-            useNativeDriver: true,
-            friction: 8,
-            tension: 120,
-          }).start();
-        }
-      },
-      onPanResponderTerminate: () => {
-        setIsSheetDragging(false);
-        Animated.spring(sheetTranslateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          friction: 8,
-          tension: 120,
-        }).start();
-      },
-    })
-  );
+  useEffect(() => {
+    setBioExpanded(false);
+    bioExpandAnim.setValue(0);
+    if (visible && cleanHandle) {
+      isClosingRef.current = false;
+      resetGestureState();
+      setInternalVisible(true);
+      runSheetOpenAnimation(sheetTranslateY, backdropOpacity, skin.animation);
+    } else if (internalVisible && !isClosingRef.current) {
+      resetGestureState();
+      isClosingRef.current = true;
+      runSheetCloseAnimation(sheetTranslateY, backdropOpacity, skin.animation, () => {
+        isClosingRef.current = false;
+        setInternalVisible(false);
+      });
+    }
+  }, [cleanHandle, visible, internalVisible, bioExpandAnim, sheetTranslateY, backdropOpacity, skin.animation, resetGestureState]);
 
   const toggleBioExpanded = () => {
     const next = !bioExpanded;
@@ -408,52 +304,54 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
       transparent
       onRequestClose={animateClose}
     >
-      <Animated.View style={[styles.overlay, { opacity: backdropOpacity }]}>
-        <TouchableOpacity
-          style={StyleSheet.absoluteFill}
-          activeOpacity={1}
-          onPress={animateClose}
-        />
-        <Animated.View
-          style={[
-            styles.container,
-            {
-              width: skin.id === 'ios' ? '96%' : '100%',
-              maxWidth: 620,
-              height: Math.min(windowHeight - insets.top - 12, Math.round(windowHeight * 0.92)),
-              borderTopLeftRadius: skin.sheetRadius,
-              borderTopRightRadius: skin.sheetRadius,
-              borderBottomLeftRadius: skin.id === 'ios' ? 32 : 0,
-              borderBottomRightRadius: skin.id === 'ios' ? 32 : 0,
-              overflow: 'hidden',
-              backgroundColor:
-                skin.id === 'material' ? getM3TonalContainer(palette, 'canvas') : colors.bg,
-              ...(skin.id === 'ios'
-                ? {
-                  marginBottom: Math.max(8, insets.bottom),
-                  borderWidth: 1,
-                  borderColor: 'rgba(255, 255, 255, 0.24)',
-                  borderTopColor: 'rgba(255, 255, 255, 0.50)',
-                }
-                : null),
-              transform: [{ translateY: sheetTranslateY }],
-            },
-          ]}
-        >
-          {/* Swipe-Down Top Grabber + Header Zone */}
-          <View {...topBarPanResponder.panHandlers}>
-            <View {...dragHandlePanResponder.panHandlers} style={styles.dragZone}>
-              <View
-                style={[
-                  styles.dragPill,
-                  {
-                    width: skin.grabberWidth || 38,
-                    height: skin.grabberHeight || 4,
-                    borderRadius: (skin.grabberHeight || 4) / 2,
-                  },
-                ]}
-              />
-            </View>
+      <GestureHandlerRootView style={{ flex: 1 }} unstable_forceActive>
+        <Animated.View style={[styles.overlay, { opacity: backdropOpacity }]}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={animateClose}
+          />
+          <Animated.View
+            style={[
+              styles.container,
+              {
+                width: skin.id === 'ios' ? '96%' : '100%',
+                maxWidth: 620,
+                height: Math.min(windowHeight - insets.top - 12, Math.round(windowHeight * 0.92)),
+                borderTopLeftRadius: skin.sheetRadius,
+                borderTopRightRadius: skin.sheetRadius,
+                borderBottomLeftRadius: skin.id === 'ios' ? 32 : 0,
+                borderBottomRightRadius: skin.id === 'ios' ? 32 : 0,
+                overflow: 'hidden',
+                backgroundColor:
+                  skin.id === 'material' ? getM3TonalContainer(palette, 'canvas') : colors.bg,
+                ...(skin.id === 'ios'
+                  ? {
+                    marginBottom: Math.max(8, insets.bottom),
+                    borderWidth: 1,
+                    borderColor: 'rgba(255, 255, 255, 0.24)',
+                    borderTopColor: 'rgba(255, 255, 255, 0.50)',
+                  }
+                  : null),
+                transform: [{ translateY: sheetTranslateY }],
+              },
+            ]}
+          >
+            {/* Swipe-Down Top Grabber + Header Zone */}
+            <GestureDetector gesture={topPanGesture}>
+              <View>
+                <View style={styles.dragZone}>
+                  <View
+                    style={[
+                      styles.dragPill,
+                      {
+                        width: skin.grabberWidth || 38,
+                        height: skin.grabberHeight || 4,
+                        borderRadius: (skin.grabberHeight || 4) / 2,
+                      },
+                    ]}
+                  />
+                </View>
             <View
               style={[
                 styles.topBar,
@@ -522,20 +420,23 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
               </TouchableOpacity>
             </View>
           </View>
+          </GestureDetector>
 
-          <View {...bodySwipePanResponder.panHandlers} style={{ flex: 1 }}>
-            <ScrollView
-              style={styles.scroll}
-              contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(36, insets.bottom + 24) }]}
-              bounces={false}
-              overScrollMode="never"
-              scrollEnabled={!isSheetDragging}
-              scrollEventThrottle={16}
-              onScroll={e => {
-                scrollAtTopRef.current = e.nativeEvent.contentOffset.y <= 2;
-              }}
-              showsVerticalScrollIndicator={false}
-            >
+          <GestureDetector gesture={bodyPanGesture}>
+            <View style={{ flex: 1 }}>
+              <GestureDetector gesture={nativeScrollGesture}>
+                <ScrollView
+                  style={styles.scroll}
+                  contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(36, insets.bottom + 24) }]}
+                  bounces={false}
+                  overScrollMode="never"
+                  scrollEnabled={!isSheetDragging}
+                  scrollEventThrottle={16}
+                  onScroll={e => {
+                    setScrollAtTop(e.nativeEvent.contentOffset.y <= 2);
+                  }}
+                  showsVerticalScrollIndicator={false}
+                >
             {/* Profile Hero Card (Default NekoChat Theme) */}
             <View
               style={[
@@ -822,10 +723,13 @@ export const CreatorProfileModal: React.FC<CreatorProfileModalProps> = ({
                 )}
               </View>
             )}
-          </ScrollView>
-          </View>
+                </ScrollView>
+              </GestureDetector>
+            </View>
+          </GestureDetector>
         </Animated.View>
       </Animated.View>
+      </GestureHandlerRootView>
     </Modal>
   );
 };

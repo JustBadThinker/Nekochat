@@ -5,7 +5,7 @@
  * Warning: reading too many 20-paragraph backstories may cause spontaneous "one more chat" syndrome.
  */
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,10 +17,15 @@ import {
   Platform,
   Animated,
   LayoutAnimation,
-  PanResponder,
   UIManager,
   useWindowDimensions,
 } from 'react-native';
+import {
+  GestureDetector,
+  GestureHandlerRootView,
+  useNativeGesture,
+} from 'react-native-gesture-handler';
+import { useSheetDismissGestures } from './BottomSheetModal';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   X,
@@ -172,166 +177,60 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
   const [backdropOpacity] = useState(() => new Animated.Value(0));
   const onCloseRef = useRef(onClose);
   const isClosingRef = useRef(false);
-  const scrollAtTopRef = useRef(true);
-  const touchStartedAtTopRef = useRef(true);
-  const [isSheetDragging, setIsSheetDragging] = useState(false);
 
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
 
+  const animateClose = useCallback(
+    (after?: () => void) => {
+      if (isClosingRef.current) return;
+      isClosingRef.current = true;
+      runSheetCloseAnimation(sheetTranslateY, backdropOpacity, skin.animation, () => {
+        isClosingRef.current = false;
+        setInternalVisible(false);
+        onCloseRef.current();
+        after?.();
+      });
+    },
+    [sheetTranslateY, backdropOpacity, skin.animation]
+  );
+
+  const {
+    setScrollAtTop,
+    isSheetDragging,
+    bodyPanGesture,
+    topPanGesture,
+    resetGestureState,
+  } = useSheetDismissGestures({
+    translateY: sheetTranslateY,
+    onDismiss: () => animateClose(),
+  });
+
+  const nativeScrollGesture = useNativeGesture({
+    disableReanimated: true,
+    simultaneousWith: bodyPanGesture,
+  });
+
   useEffect(() => {
     if (visible && character) {
       isClosingRef.current = false;
-      scrollAtTopRef.current = true;
-      touchStartedAtTopRef.current = true;
-      setIsSheetDragging(false);
+      resetGestureState();
       setInternalVisible(true);
       runSheetOpenAnimation(sheetTranslateY, backdropOpacity, skin.animation);
     } else if (internalVisible && !isClosingRef.current) {
-      scrollAtTopRef.current = true;
-      touchStartedAtTopRef.current = true;
-      setIsSheetDragging(false);
+      resetGestureState();
       isClosingRef.current = true;
       runSheetCloseAnimation(sheetTranslateY, backdropOpacity, skin.animation, () => {
         isClosingRef.current = false;
         setInternalVisible(false);
       });
     }
-  }, [visible, character, internalVisible, sheetTranslateY, backdropOpacity, skin.animation]);
+  }, [visible, character, internalVisible, sheetTranslateY, backdropOpacity, skin.animation, resetGestureState]);
 
   useEffect(() => {
-    scrollAtTopRef.current = true;
-  }, [activeTab]);
-
-  const animateClose = (after?: () => void) => {
-    if (isClosingRef.current) return;
-    isClosingRef.current = true;
-    runSheetCloseAnimation(sheetTranslateY, backdropOpacity, skin.animation, () => {
-      isClosingRef.current = false;
-      setInternalVisible(false);
-      onCloseRef.current();
-      after?.();
-    });
-  };
-
-  const animateCloseRef = useRef(animateClose);
-  useEffect(() => {
-    animateCloseRef.current = animateClose;
-  });
-
-  const [dragHandlePanResponder] = useState(() =>
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 4,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderMove: (_, gesture) => {
-        if (gesture.dy > 0) {
-          sheetTranslateY.setValue(gesture.dy);
-        }
-      },
-      onPanResponderRelease: (_, gesture) => {
-        if (gesture.dy > 100 || (gesture.dy > 45 && gesture.vy > 0.6)) {
-          animateCloseRef.current();
-        } else {
-          Animated.spring(sheetTranslateY, {
-            toValue: 0,
-            useNativeDriver: true,
-            friction: 8,
-            tension: 120,
-          }).start();
-        }
-      },
-      onPanResponderTerminate: () => {
-        Animated.spring(sheetTranslateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          friction: 8,
-          tension: 120,
-        }).start();
-      },
-    })
-  );
-
-  const [heroPanResponder] = useState(() =>
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gesture) =>
-        gesture.dy > 10 && Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.3,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderMove: (_, gesture) => {
-        if (gesture.dy > 0) {
-          sheetTranslateY.setValue(gesture.dy);
-        }
-      },
-      onPanResponderRelease: (_, gesture) => {
-        if (gesture.dy > 100 || (gesture.dy > 45 && gesture.vy > 0.6)) {
-          animateCloseRef.current();
-        } else {
-          Animated.spring(sheetTranslateY, {
-            toValue: 0,
-            useNativeDriver: true,
-            friction: 8,
-            tension: 120,
-          }).start();
-        }
-      },
-      onPanResponderTerminate: () => {
-        Animated.spring(sheetTranslateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          friction: 8,
-          tension: 120,
-        }).start();
-      },
-    })
-  );
-
-  const [bodySwipePanResponder] = useState(() =>
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onStartShouldSetPanResponderCapture: () => {
-        touchStartedAtTopRef.current = scrollAtTopRef.current;
-        return false;
-      },
-      onMoveShouldSetPanResponderCapture: (_, gesture) =>
-        touchStartedAtTopRef.current &&
-        scrollAtTopRef.current &&
-        gesture.dy > 12 &&
-        Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.45,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: () => {
-        setIsSheetDragging(true);
-      },
-      onPanResponderMove: (_, gesture) => {
-        if (gesture.dy > 0) {
-          sheetTranslateY.setValue(gesture.dy);
-        }
-      },
-      onPanResponderRelease: (_, gesture) => {
-        setIsSheetDragging(false);
-        if (gesture.dy > 110 || (gesture.dy > 45 && gesture.vy > 0.65)) {
-          animateCloseRef.current();
-        } else {
-          Animated.spring(sheetTranslateY, {
-            toValue: 0,
-            useNativeDriver: true,
-            friction: 8,
-            tension: 120,
-          }).start();
-        }
-      },
-      onPanResponderTerminate: () => {
-        setIsSheetDragging(false);
-        Animated.spring(sheetTranslateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          friction: 8,
-          tension: 120,
-        }).start();
-      },
-    })
-  );
+    setScrollAtTop(true);
+  }, [activeTab, setScrollAtTop]);
 
   useEffect(() => {
     tabFadeAnim.setValue(0);
@@ -420,62 +319,63 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
 
   return (
     <Modal visible={internalVisible} transparent animationType="none" onRequestClose={() => animateClose()}>
-      <Animated.View style={[styles.overlay, { opacity: backdropOpacity }]}>
-        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => animateClose()} />
-        <Animated.View
-          style={[
-            styles.modalCard,
-            {
-              width: skin.id === 'ios' ? '96%' : '100%',
-              height: Math.min(windowHeight - insets.top - 14, Math.round(windowHeight * 0.91)),
-              borderTopLeftRadius: skin.sheetRadius,
-              borderTopRightRadius: skin.sheetRadius,
-              borderBottomLeftRadius: skin.id === 'ios' ? 32 : 0,
-              borderBottomRightRadius: skin.id === 'ios' ? 32 : 0,
-              ...(skin.id === 'ios'
-                ? {
-                  marginBottom: Math.max(8, insets.bottom),
-                  borderColor: 'rgba(255, 255, 255, 0.24)',
-                  borderTopColor: 'rgba(255, 255, 255, 0.50)',
-                }
-                : null),
-              ...(skin.id === 'material'
-                ? {
-                  borderWidth: 0,
-                  backgroundColor: getM3TonalContainer(palette, 'low'),
-                }
-                : null),
-              transform: [{ translateY: sheetTranslateY }],
-            },
-          ]}
-        >
-          {/* ══════════════════════════════════════════════════════════════════ */}
-          {/* 1. TOP HERO ARTWORK BANNER (Swipe-down zone; leaves body ScrollView free) */}
-          {/* ══════════════════════════════════════════════════════════════════ */}
-          <View style={styles.heroBanner} {...heroPanResponder.panHandlers}>
-            {/* Top Swipe-Down Grabber Pill */}
-            <View
-              {...dragHandlePanResponder.panHandlers}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                height: 24,
-                zIndex: 20,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <View
-                style={{
-                  width: skin.grabberWidth || 38,
-                  height: skin.grabberHeight || 4,
-                  borderRadius: 99,
-                  backgroundColor: 'rgba(255, 255, 255, 0.62)',
-                }}
-              />
-            </View>
+      <GestureHandlerRootView style={{ flex: 1 }} unstable_forceActive>
+        <Animated.View style={[styles.overlay, { opacity: backdropOpacity }]}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => animateClose()} />
+          <Animated.View
+            style={[
+              styles.modalCard,
+              {
+                width: skin.id === 'ios' ? '96%' : '100%',
+                height: Math.min(windowHeight - insets.top - 14, Math.round(windowHeight * 0.91)),
+                borderTopLeftRadius: skin.sheetRadius,
+                borderTopRightRadius: skin.sheetRadius,
+                borderBottomLeftRadius: skin.id === 'ios' ? 32 : 0,
+                borderBottomRightRadius: skin.id === 'ios' ? 32 : 0,
+                ...(skin.id === 'ios'
+                  ? {
+                    marginBottom: Math.max(8, insets.bottom),
+                    borderColor: 'rgba(255, 255, 255, 0.24)',
+                    borderTopColor: 'rgba(255, 255, 255, 0.50)',
+                  }
+                  : null),
+                ...(skin.id === 'material'
+                  ? {
+                    borderWidth: 0,
+                    backgroundColor: getM3TonalContainer(palette, 'low'),
+                  }
+                  : null),
+                transform: [{ translateY: sheetTranslateY }],
+              },
+            ]}
+          >
+            {/* ══════════════════════════════════════════════════════════════════ */}
+            {/* 1. TOP HERO ARTWORK BANNER (Always-active swipe-down zone)         */}
+            {/* ══════════════════════════════════════════════════════════════════ */}
+            <GestureDetector gesture={topPanGesture}>
+              <View style={styles.heroBanner}>
+                {/* Top Swipe-Down Grabber Pill */}
+                <View
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: 24,
+                    zIndex: 20,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <View
+                    style={{
+                      width: skin.grabberWidth || 38,
+                      height: skin.grabberHeight || 4,
+                      borderRadius: 99,
+                      backgroundColor: 'rgba(255, 255, 255, 0.62)',
+                    }}
+                  />
+                </View>
             {!imgError && avatarUrl ? (
               <Image
                 source={{ uri: avatarUrl }}
@@ -612,11 +512,15 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
               </View>
             </View>
           </View>
+          </GestureDetector>
 
-          {/* ══════════════════════════════════════════════════════════════════ */}
-          {/* 2. NAVIGATION TABS BAR (Matches Gambar 3)                           */}
-          {/* ══════════════════════════════════════════════════════════════════ */}
-          <View style={styles.tabsBar}>
+          {/* Body + Tabs + Sticky Footer (swipe down anywhere at top of scroll to close) */}
+          <GestureDetector gesture={bodyPanGesture}>
+            <View style={{ flex: 1 }}>
+              {/* ══════════════════════════════════════════════════════════════════ */}
+              {/* 2. NAVIGATION TABS BAR (Matches Gambar 3)                           */}
+              {/* ══════════════════════════════════════════════════════════════════ */}
+              <View style={styles.tabsBar}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsScroll}>
               <TouchableOpacity
                 style={[styles.tabBtn, activeTab === 'overview' && styles.tabBtnActive]}
@@ -693,7 +597,7 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* 3. SCROLLABLE TAB CONTENT AREA (Matches Gambar 3)                   */}
           {/* ══════════════════════════════════════════════════════════════════ */}
-          <View {...bodySwipePanResponder.panHandlers} style={{ flex: 1 }}>
+          <GestureDetector gesture={nativeScrollGesture}>
             <ScrollView
               style={styles.modalContent}
               contentContainerStyle={styles.modalContentInner}
@@ -704,7 +608,7 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
               scrollEnabled={!isSheetDragging}
               scrollEventThrottle={16}
               onScroll={e => {
-                scrollAtTopRef.current = e.nativeEvent.contentOffset.y <= 2;
+                setScrollAtTop(e.nativeEvent.contentOffset.y <= 2);
               }}
               showsVerticalScrollIndicator
             >
@@ -845,7 +749,7 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
               })()}
             </Animated.View>
           </ScrollView>
-          </View>
+          </GestureDetector>
 
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* 4. STICKY BOTTOM ACTION FOOTER (Matches Gambar 3)                   */}
@@ -890,8 +794,11 @@ export const CommunityCharacterModal: React.FC<CommunityCharacterModalProps> = (
               <Text style={styles.footerStartBtnText}>Start Roleplay Now</Text>
             </TouchableOpacity>
           </View>
+            </View>
+          </GestureDetector>
         </Animated.View>
       </Animated.View>
+      </GestureHandlerRootView>
 
       {/* In-App Gallery Image Lightbox */}
       <Modal

@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, Platform, ScrollView, Dimensions, Animated, Easing, BackHandler, AppState } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { BlurTargetView } from 'expo-blur';
@@ -772,9 +773,11 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AppErrorBoundary>
-      <AppContent />
-    </AppErrorBoundary>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AppErrorBoundary>
+        <AppContent />
+      </AppErrorBoundary>
+    </GestureHandlerRootView>
   );
 }
 

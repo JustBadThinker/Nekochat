@@ -2,7 +2,7 @@
  * BottomSheetModal — Reusable bottom sheet with:
  * 1. Smooth slide-up & backdrop fade entrance
  * 2. Tap/click outside backdrop to close
- * 3. Swipe down on the drag handle / top bar to dismiss
+ * 3. Native RNGH v3 swipe-down dismissal (top grabber everywhere + sheet body when scrolled to top)
  */
 
 import React, { createContext, forwardRef, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -17,13 +17,19 @@ import {
   TouchableOpacity,
   StyleSheet,
   Animated,
-  PanResponder,
   StyleProp,
   ViewStyle,
   Keyboard,
   Platform,
   useWindowDimensions,
 } from 'react-native';
+import {
+  GestureDetector,
+  GestureHandlerRootView,
+  PanGesture,
+  useNativeGesture,
+  usePanGesture,
+} from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -32,10 +38,132 @@ import { getM3TonalContainer } from '../theme/skins';
 import { useTheme } from '../theme/ThemeContext';
 import { runSheetCloseAnimation, runSheetOpenAnimation } from '../theme/animations';
 
+interface UseSheetDismissGesturesOptions {
+  translateY: Animated.Value;
+  onDismiss: () => void;
+}
+
+/**
+ * Coordinates native Android/iOS/Web pan gestures for dismissing a sheet via
+ * either its top drag handle (always enabled) or its body (enabled at top of scroll).
+ */
+export function useSheetDismissGestures({ translateY, onDismiss }: UseSheetDismissGesturesOptions) {
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+
+  const [scrollAtTop, setScrollAtTopState] = useState(true);
+  const [isSheetDragging, setIsSheetDragging] = useState(false);
+  const innerGestureLockedRef = useRef(false);
+  const isDraggingBodyRef = useRef(false);
+  const isDraggingTopRef = useRef(false);
+
+  const setScrollAtTop = useCallback((atTop: boolean) => {
+    setScrollAtTopState(prev => (prev === atTop ? prev : atTop));
+  }, []);
+
+  const setInnerGestureLocked = useCallback((locked: boolean) => {
+    innerGestureLockedRef.current = locked;
+  }, []);
+
+  const resetGestureState = useCallback(() => {
+    setScrollAtTopState(true);
+    innerGestureLockedRef.current = false;
+    isDraggingBodyRef.current = false;
+    isDraggingTopRef.current = false;
+    setIsSheetDragging(false);
+  }, []);
+
+  const springBack = useCallback(() => {
+    Animated.spring(translateY, {
+      toValue: 0,
+      useNativeDriver: true,
+      friction: 8,
+      tension: 120,
+    }).start();
+  }, [translateY]);
+
+  const bodyPanGesture = usePanGesture({
+    disableReanimated: true,
+    enabled: scrollAtTop,
+    activeOffsetY: 10,
+    failOffsetY: -8,
+    failOffsetX: [-14, 14],
+    onActivate: () => {
+      if (innerGestureLockedRef.current) return;
+      isDraggingBodyRef.current = true;
+      setIsSheetDragging(true);
+    },
+    onUpdate: e => {
+      if (innerGestureLockedRef.current || !isDraggingBodyRef.current) return;
+      translateY.setValue(e.translationY > 0 ? e.translationY : 0);
+    },
+    onDeactivate: e => {
+      const wasDragging = isDraggingBodyRef.current;
+      isDraggingBodyRef.current = false;
+      setIsSheetDragging(false);
+      innerGestureLockedRef.current = false;
+      if (!wasDragging) return;
+      if (!e.canceled && (e.translationY > 100 || (e.translationY > 40 && e.velocityY > 650))) {
+        onDismissRef.current();
+      } else {
+        springBack();
+      }
+    },
+    onFinalize: () => {
+      isDraggingBodyRef.current = false;
+      setIsSheetDragging(false);
+      innerGestureLockedRef.current = false;
+    },
+  });
+
+  const topPanGesture = usePanGesture({
+    disableReanimated: true,
+    activeOffsetY: 6,
+    failOffsetY: -8,
+    failOffsetX: [-20, 20],
+    block: bodyPanGesture,
+    onActivate: () => {
+      isDraggingTopRef.current = true;
+      setIsSheetDragging(true);
+    },
+    onUpdate: e => {
+      if (!isDraggingTopRef.current) return;
+      translateY.setValue(e.translationY > 0 ? e.translationY : 0);
+    },
+    onDeactivate: e => {
+      const wasDragging = isDraggingTopRef.current;
+      isDraggingTopRef.current = false;
+      setIsSheetDragging(false);
+      if (!wasDragging) return;
+      if (!e.canceled && (e.translationY > 90 || (e.translationY > 35 && e.velocityY > 550))) {
+        onDismissRef.current();
+      } else {
+        springBack();
+      }
+    },
+    onFinalize: () => {
+      isDraggingTopRef.current = false;
+      setIsSheetDragging(false);
+    },
+  });
+
+  return {
+    scrollAtTop,
+    setScrollAtTop,
+    isSheetDragging,
+    setInnerGestureLocked,
+    innerGestureLockedRef,
+    bodyPanGesture,
+    topPanGesture,
+    resetGestureState,
+  };
+}
+
 interface BottomSheetGestureContextValue {
   setScrollAtTop: (atTop: boolean) => void;
   setInnerGestureLocked: (locked: boolean) => void;
   isSheetDragging: boolean;
+  sheetPanGesture: PanGesture;
 }
 
 const BottomSheetGestureContext = createContext<BottomSheetGestureContextValue | null>(null);
@@ -46,6 +174,15 @@ export const BottomSheetScrollView = forwardRef<React.ComponentRef<typeof Scroll
   function BottomSheetScrollViewInner({ onScroll, scrollEnabled, scrollEventThrottle, bounces, overScrollMode, ...props }, ref) {
     const ctx = useContext(BottomSheetGestureContext);
     const setScrollAtTop = ctx?.setScrollAtTop;
+
+    const nativeScrollGesture = useNativeGesture(
+      ctx?.sheetPanGesture
+        ? {
+            disableReanimated: true,
+            simultaneousWith: ctx.sheetPanGesture,
+          }
+        : { disableReanimated: true }
+    );
 
     useEffect(() => {
       setScrollAtTop?.(true);
@@ -63,15 +200,17 @@ export const BottomSheetScrollView = forwardRef<React.ComponentRef<typeof Scroll
     );
 
     return (
-      <ScrollView
-        {...props}
-        ref={ref}
-        scrollEventThrottle={scrollEventThrottle ?? 16}
-        bounces={bounces ?? false}
-        overScrollMode={overScrollMode ?? 'never'}
-        scrollEnabled={ctx?.isSheetDragging ? false : scrollEnabled}
-        onScroll={handleScroll}
-      />
+      <GestureDetector gesture={nativeScrollGesture}>
+        <ScrollView
+          {...props}
+          ref={ref}
+          scrollEventThrottle={scrollEventThrottle ?? 16}
+          bounces={bounces ?? false}
+          overScrollMode={overScrollMode ?? 'never'}
+          scrollEnabled={ctx?.isSheetDragging ? false : scrollEnabled}
+          onScroll={handleScroll}
+        />
+      </GestureDetector>
     );
   }
 );
@@ -85,28 +224,37 @@ export const BottomSheetGestureLock: React.FC<ViewProps> = ({
   ...rest
 }) => {
   const ctx = useContext(BottomSheetGestureContext);
+  const lockGesture = useNativeGesture({
+    disableReanimated: true,
+    shouldActivateOnStart: true,
+    disallowInterruption: true,
+    ...(ctx?.sheetPanGesture ? { block: ctx.sheetPanGesture } : {}),
+  });
+
   return (
-    <View
-      {...rest}
-      onTouchStartCapture={e => {
-        ctx?.setInnerGestureLocked(true);
-        onTouchStartCapture?.(e);
-      }}
-      onTouchStart={e => {
-        ctx?.setInnerGestureLocked(true);
-        onTouchStart?.(e);
-      }}
-      onTouchEnd={e => {
-        ctx?.setInnerGestureLocked(false);
-        onTouchEnd?.(e);
-      }}
-      onTouchCancel={e => {
-        ctx?.setInnerGestureLocked(false);
-        onTouchCancel?.(e);
-      }}
-    >
-      {children}
-    </View>
+    <GestureDetector gesture={lockGesture}>
+      <View
+        {...rest}
+        onTouchStartCapture={e => {
+          ctx?.setInnerGestureLocked(true);
+          onTouchStartCapture?.(e);
+        }}
+        onTouchStart={e => {
+          ctx?.setInnerGestureLocked(true);
+          onTouchStart?.(e);
+        }}
+        onTouchEnd={e => {
+          ctx?.setInnerGestureLocked(false);
+          onTouchEnd?.(e);
+        }}
+        onTouchCancel={e => {
+          ctx?.setInnerGestureLocked(false);
+          onTouchCancel?.(e);
+        }}
+      >
+        {children}
+      </View>
+    </GestureDetector>
   );
 };
 
@@ -136,41 +284,6 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
   const [backdropOpacity] = useState(() => new Animated.Value(0));
   const onCloseRef = useRef(onClose);
   const isAnimatingOutRef = useRef(false);
-  const sheetRef = useRef<any>(null);
-  const sheetTopYRef = useRef<number | null>(null);
-  const overlayHeightRef = useRef<number>(0);
-  const sheetHeightRef = useRef<number>(0);
-  const insetsTopRef = useRef<number>(insets.top);
-  insetsTopRef.current = insets.top;
-  const scrollAtTopRef = useRef<boolean>(true);
-  const touchStartedAtTopRef = useRef<boolean>(true);
-  const innerGestureLockedRef = useRef<boolean>(false);
-  const [isSheetDragging, setIsSheetDragging] = useState(false);
-
-  const setScrollAtTop = useCallback((atTop: boolean) => {
-    scrollAtTopRef.current = atTop;
-  }, []);
-
-  const setInnerGestureLocked = useCallback((locked: boolean) => {
-    innerGestureLockedRef.current = locked;
-  }, []);
-
-  const gestureContextValue = useMemo<BottomSheetGestureContextValue>(
-    () => ({
-      setScrollAtTop,
-      setInnerGestureLocked,
-      isSheetDragging,
-    }),
-    [setScrollAtTop, setInnerGestureLocked, isSheetDragging]
-  );
-
-  const measureSheetTop = () => {
-    sheetRef.current?.measureInWindow?.((_x: number, y: number) => {
-      if (typeof y === 'number' && !Number.isNaN(y)) {
-        sheetTopYRef.current = y;
-      }
-    });
-  };
 
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -191,38 +304,7 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
     onCloseRef.current = onClose;
   }, [onClose]);
 
-  useEffect(() => {
-    if (visible) {
-      isAnimatingOutRef.current = false;
-      scrollAtTopRef.current = true;
-      touchStartedAtTopRef.current = true;
-      innerGestureLockedRef.current = false;
-      setIsSheetDragging(false);
-      setInternalVisible(true);
-      runSheetOpenAnimation(translateY, backdropOpacity, skin.animation);
-      const timer = setTimeout(measureSheetTop, 320);
-      return () => clearTimeout(timer);
-    } else if (internalVisible && !isAnimatingOutRef.current) {
-      sheetTopYRef.current = null;
-      scrollAtTopRef.current = true;
-      touchStartedAtTopRef.current = true;
-      innerGestureLockedRef.current = false;
-      setIsSheetDragging(false);
-      isAnimatingOutRef.current = true;
-      runSheetCloseAnimation(translateY, backdropOpacity, skin.animation, () => {
-        isAnimatingOutRef.current = false;
-        setInternalVisible(false);
-      });
-    }
-  }, [visible, internalVisible, translateY, backdropOpacity, skin.animation]);
-
-  useEffect(() => {
-    if (!visible) return;
-    const timer = setTimeout(measureSheetTop, 120);
-    return () => clearTimeout(timer);
-  }, [visible, keyboardHeight]);
-
-  const animateClose = () => {
+  const animateClose = useCallback(() => {
     if (isAnimatingOutRef.current) return;
     isAnimatingOutRef.current = true;
     runSheetCloseAnimation(translateY, backdropOpacity, skin.animation, () => {
@@ -230,141 +312,46 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
       setInternalVisible(false);
       onCloseRef.current();
     });
-  };
+  }, [translateY, backdropOpacity, skin.animation]);
 
-  const animateCloseRef = useRef(animateClose);
-  useEffect(() => {
-    animateCloseRef.current = animateClose;
+  const {
+    setScrollAtTop,
+    isSheetDragging,
+    setInnerGestureLocked,
+    innerGestureLockedRef,
+    bodyPanGesture,
+    topPanGesture,
+    resetGestureState,
+  } = useSheetDismissGestures({
+    translateY,
+    onDismiss: animateClose,
   });
 
-  const [panResponder] = useState(() =>
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 4,
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderMove: (_, gesture) => {
-        if (gesture.dy > 0) {
-          translateY.setValue(gesture.dy);
-        }
-      },
-      onPanResponderRelease: (_, gesture) => {
-        if (gesture.dy > 90 || gesture.vy > 0.55) {
-          animateCloseRef.current();
-        } else {
-          Animated.spring(translateY, {
-            toValue: 0,
-            useNativeDriver: true,
-            friction: 8,
-            tension: 120,
-          }).start();
-        }
-      },
-      onPanResponderTerminate: () => {
-        Animated.spring(translateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          friction: 8,
-          tension: 120,
-        }).start();
-      },
-    })
+  const gestureContextValue = useMemo<BottomSheetGestureContextValue>(
+    () => ({
+      setScrollAtTop,
+      setInnerGestureLocked,
+      isSheetDragging,
+      sheetPanGesture: bodyPanGesture,
+    }),
+    [setScrollAtTop, setInnerGestureLocked, isSheetDragging, bodyPanGesture]
   );
 
-  const [sheetPanResponder] = useState(() =>
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onStartShouldSetPanResponderCapture: () => {
-        touchStartedAtTopRef.current = scrollAtTopRef.current;
-        innerGestureLockedRef.current = false;
-        return false;
-      },
-      onMoveShouldSetPanResponderCapture: (evt, gesture) => {
-        if (innerGestureLockedRef.current) {
-          return false;
-        }
-        if (gesture.dy <= 12 || Math.abs(gesture.dy) <= Math.abs(gesture.dx) * 1.45) {
-          return false;
-        }
-        if (touchStartedAtTopRef.current && scrollAtTopRef.current) {
-          return true;
-        }
-        const measuredTop = sheetTopYRef.current;
-        const layoutTop =
-          overlayHeightRef.current > 0 && sheetHeightRef.current > 0
-            ? Math.max(0, overlayHeightRef.current - sheetHeightRef.current)
-            : null;
-        const minTop =
-          measuredTop !== null && layoutTop !== null
-            ? Math.min(measuredTop, layoutTop)
-            : (measuredTop ?? layoutTop);
-        const maxTop =
-          measuredTop !== null && layoutTop !== null
-            ? Math.max(measuredTop, layoutTop)
-            : (measuredTop ?? layoutTop);
-        if (minTop === null || maxTop === null) return false;
-        const startPageY = evt.nativeEvent.pageY - gesture.dy;
-        return startPageY >= minTop - Math.max(12, insetsTopRef.current) && startPageY <= maxTop + 96;
-      },
-      onMoveShouldSetPanResponder: (evt, gesture) => {
-        if (innerGestureLockedRef.current) {
-          return false;
-        }
-        if (gesture.dy <= 12 || Math.abs(gesture.dy) <= Math.abs(gesture.dx) * 1.45) {
-          return false;
-        }
-        if (touchStartedAtTopRef.current && scrollAtTopRef.current) {
-          return true;
-        }
-        const measuredTop = sheetTopYRef.current;
-        const layoutTop =
-          overlayHeightRef.current > 0 && sheetHeightRef.current > 0
-            ? Math.max(0, overlayHeightRef.current - sheetHeightRef.current)
-            : null;
-        const minTop =
-          measuredTop !== null && layoutTop !== null
-            ? Math.min(measuredTop, layoutTop)
-            : (measuredTop ?? layoutTop);
-        const maxTop =
-          measuredTop !== null && layoutTop !== null
-            ? Math.max(measuredTop, layoutTop)
-            : (measuredTop ?? layoutTop);
-        if (minTop === null || maxTop === null) return false;
-        const startPageY = evt.nativeEvent.pageY - gesture.dy;
-        return startPageY >= minTop - Math.max(12, insetsTopRef.current) && startPageY <= maxTop + 96;
-      },
-      onPanResponderTerminationRequest: () => false,
-      onPanResponderGrant: () => {
-        setIsSheetDragging(true);
-      },
-      onPanResponderMove: (_, gesture) => {
-        if (gesture.dy > 0) {
-          translateY.setValue(gesture.dy);
-        }
-      },
-      onPanResponderRelease: (_, gesture) => {
-        setIsSheetDragging(false);
-        if (gesture.dy > 110 || (gesture.dy > 45 && gesture.vy > 0.65)) {
-          animateCloseRef.current();
-        } else {
-          Animated.spring(translateY, {
-            toValue: 0,
-            useNativeDriver: true,
-            friction: 8,
-            tension: 120,
-          }).start();
-        }
-      },
-      onPanResponderTerminate: () => {
-        setIsSheetDragging(false);
-        Animated.spring(translateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          friction: 8,
-          tension: 120,
-        }).start();
-      },
-    })
-  );
+  useEffect(() => {
+    if (visible) {
+      isAnimatingOutRef.current = false;
+      resetGestureState();
+      setInternalVisible(true);
+      runSheetOpenAnimation(translateY, backdropOpacity, skin.animation);
+    } else if (internalVisible && !isAnimatingOutRef.current) {
+      resetGestureState();
+      isAnimatingOutRef.current = true;
+      runSheetCloseAnimation(translateY, backdropOpacity, skin.animation, () => {
+        isAnimatingOutRef.current = false;
+        setInternalVisible(false);
+      });
+    }
+  }, [visible, internalVisible, translateY, backdropOpacity, skin.animation, resetGestureState]);
 
   const isFloatingIosSheet = skin.id === 'ios' && !fullScreen;
   const safeBottomPad =
@@ -384,165 +371,162 @@ export const BottomSheetModal: React.FC<BottomSheetModalProps> = ({
       animationType="none"
       onRequestClose={animateClose}
     >
-      <Animated.View
-        style={[styles.overlay, { opacity: backdropOpacity }]}
-        onLayout={e => {
-          overlayHeightRef.current = e.nativeEvent.layout.height;
-        }}
-      >
-        {/* Progressive Dark Gradient Backdrop */}
-        <LinearGradient
-          pointerEvents="none"
-          colors={['rgba(6, 8, 14, 0.12)', 'rgba(6, 8, 14, 0.48)', 'rgba(6, 8, 14, 0.88)']}
-          locations={[0, 0.5, 1]}
-          style={StyleSheet.absoluteFill}
-        />
+      <GestureHandlerRootView style={{ flex: 1 }} unstable_forceActive>
+        <Animated.View style={[styles.overlay, { opacity: backdropOpacity }]}>
+          {/* Progressive Dark Gradient Backdrop */}
+          <LinearGradient
+            pointerEvents="none"
+            colors={['rgba(6, 8, 14, 0.12)', 'rgba(6, 8, 14, 0.48)', 'rgba(6, 8, 14, 0.88)']}
+            locations={[0, 0.5, 1]}
+            style={StyleSheet.absoluteFill}
+          />
 
-        {/* Click outside backdrop */}
-        <TouchableOpacity
-          style={StyleSheet.absoluteFill}
-          activeOpacity={1}
-          onPress={animateClose}
-        />
+          {/* Click outside backdrop */}
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={animateClose}
+          />
 
-        {/* Sheet Card (supports swiping down only from top drag bar / header zone) */}
-        <Animated.View
-          ref={sheetRef}
-          onLayout={e => {
-            sheetHeightRef.current = e.nativeEvent.layout.height;
-            measureSheetTop();
-          }}
-          {...sheetPanResponder.panHandlers}
-          style={[
-            styles.sheet,
-            {
-              borderTopLeftRadius: skin.sheetRadius,
-              borderTopRightRadius: skin.sheetRadius,
-              backgroundColor:
-                skin.id === 'ios'
-                  ? Platform.OS === 'android'
-                    ? 'rgba(20, 22, 32, 0.78)'
-                    : 'rgba(20, 22, 32, 0.56)'
-                  : skin.id === 'material'
-                    ? getM3TonalContainer(palette, 'low')
-                    : skin.surfaceBg
-                      ? skin.surfaceBg
-                      : skin.surfaceMode === 'tonal'
-                        ? palette.bgSurfaceSubtle
-                        : palette.bgSurface,
-              borderWidth: skin.id === 'material' ? 0 : 1,
-              borderColor:
-                skin.id === 'janitor'
-                  ? `rgba(${palette.accentRgb}, 0.35)`
-                  : skin.id === 'ios'
-                    ? 'rgba(255, 255, 255, 0.24)'
-                    : 'rgba(255, 255, 255, 0.12)',
-              ...(skin.id === 'ios'
-                ? {
-                    borderTopColor: 'rgba(255, 255, 255, 0.56)',
-                    borderBottomColor: 'rgba(0, 0, 0, 0.48)',
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: 14 },
-                    shadowOpacity: 0.58,
-                    shadowRadius: 28,
-                    elevation: 20,
-                    ...(!fullScreen
-                      ? {
-                          marginHorizontal: 8,
-                          borderRadius: 32,
-                          borderTopLeftRadius: 32,
-                          borderTopRightRadius: 32,
-                        }
-                      : null),
-                    ...(Platform.OS === 'web'
-                      ? ({ backdropFilter: 'blur(30px) saturate(185%)' } as any)
-                      : null),
-                  }
-                : null),
-              marginBottom: isFloatingIosSheet
-                ? keyboardHeight > 0
-                  ? keyboardHeight + 6
-                  : Platform.OS === 'android'
-                    ? Math.max(insets.bottom + 10, 32)
-                    : Math.max(10, insets.bottom)
-                : keyboardHeight,
-              maxHeight: Math.max(240, windowHeight - keyboardHeight - insets.top - (fullScreen ? 8 : 28)),
-            },
-            fullScreen && {
-              height: Math.max(280, windowHeight - keyboardHeight - insets.top - 8),
-            },
-            sheetStyle,
-            { paddingBottom: safeBottomPad },
-            { transform: [{ translateY }] },
-          ]}
-        >
-          {skin.id === 'ios' && Platform.OS === 'ios' && (
-            <BlurView
-              intensity={55}
-              tint="dark"
-              style={[StyleSheet.absoluteFill, { borderRadius: fullScreen ? 0 : 32 }]}
-            />
-          )}
-          {skin.id !== 'material' && (
-            <LinearGradient
-              pointerEvents="none"
-              colors={
-                skin.id === 'ios'
-                  ? [
-                      'rgba(255, 255, 255, 0.18)',
-                      'rgba(255, 255, 255, 0.02)',
-                      'rgba(255, 255, 255, 0.08)',
-                    ]
-                  : GLASS.sheenColors
-              }
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-          )}
-          {skin.id === 'ios' && (
-            <View
-              pointerEvents="none"
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 24,
-                right: 24,
-                height: 1.5,
-                backgroundColor: 'rgba(255, 255, 255, 0.46)',
+          {/* Sheet Card (top drag handle always dismisses; body dismisses when scrolled to top) */}
+          <GestureDetector gesture={bodyPanGesture}>
+            <Animated.View
+              onTouchStartCapture={() => {
+                innerGestureLockedRef.current = false;
               }}
-            />
-          )}
-          {/* Swipe-Down Drag Handle Zone */}
-          {showDragHandle && (
-            <View
               style={[
-                styles.dragZone,
-                Platform.OS === 'web'
-                  ? ({ touchAction: 'none', cursor: 'grab' } as any)
-                  : null,
+                styles.sheet,
+                {
+                  borderTopLeftRadius: skin.sheetRadius,
+                  borderTopRightRadius: skin.sheetRadius,
+                  backgroundColor:
+                    skin.id === 'ios'
+                      ? Platform.OS === 'android'
+                        ? 'rgba(20, 22, 32, 0.78)'
+                        : 'rgba(20, 22, 32, 0.56)'
+                      : skin.id === 'material'
+                        ? getM3TonalContainer(palette, 'low')
+                        : skin.surfaceBg
+                          ? skin.surfaceBg
+                          : skin.surfaceMode === 'tonal'
+                            ? palette.bgSurfaceSubtle
+                            : palette.bgSurface,
+                  borderWidth: skin.id === 'material' ? 0 : 1,
+                  borderColor:
+                    skin.id === 'janitor'
+                      ? `rgba(${palette.accentRgb}, 0.35)`
+                      : skin.id === 'ios'
+                        ? 'rgba(255, 255, 255, 0.24)'
+                        : 'rgba(255, 255, 255, 0.12)',
+                  ...(skin.id === 'ios'
+                    ? {
+                        borderTopColor: 'rgba(255, 255, 255, 0.56)',
+                        borderBottomColor: 'rgba(0, 0, 0, 0.48)',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 14 },
+                        shadowOpacity: 0.58,
+                        shadowRadius: 28,
+                        elevation: 20,
+                        ...(!fullScreen
+                          ? {
+                              marginHorizontal: 8,
+                              borderRadius: 32,
+                              borderTopLeftRadius: 32,
+                              borderTopRightRadius: 32,
+                            }
+                          : null),
+                        ...(Platform.OS === 'web'
+                          ? ({ backdropFilter: 'blur(30px) saturate(185%)' } as any)
+                          : null),
+                      }
+                    : null),
+                  marginBottom: isFloatingIosSheet
+                    ? keyboardHeight > 0
+                      ? keyboardHeight + 6
+                      : Platform.OS === 'android'
+                        ? Math.max(insets.bottom + 10, 32)
+                        : Math.max(10, insets.bottom)
+                    : keyboardHeight,
+                  maxHeight: Math.max(240, windowHeight - keyboardHeight - insets.top - (fullScreen ? 8 : 28)),
+                },
+                fullScreen && {
+                  height: Math.max(280, windowHeight - keyboardHeight - insets.top - 8),
+                },
+                sheetStyle,
+                { paddingBottom: safeBottomPad },
+                { transform: [{ translateY }] },
               ]}
-              {...panResponder.panHandlers}
             >
-              <View
-                style={[
-                  styles.dragPill,
-                  {
-                    width: skin.grabberWidth,
-                    height: skin.grabberHeight,
-                    borderRadius: skin.grabberHeight / 2,
-                  },
-                  skin.id === 'material' && { backgroundColor: 'rgba(255, 255, 255, 0.36)' },
-                ]}
-              />
-            </View>
-          )}
+              {skin.id === 'ios' && Platform.OS === 'ios' && (
+                <BlurView
+                  intensity={55}
+                  tint="dark"
+                  style={[StyleSheet.absoluteFill, { borderRadius: fullScreen ? 0 : 32 }]}
+                />
+              )}
+              {skin.id !== 'material' && (
+                <LinearGradient
+                  pointerEvents="none"
+                  colors={
+                    skin.id === 'ios'
+                      ? [
+                          'rgba(255, 255, 255, 0.18)',
+                          'rgba(255, 255, 255, 0.02)',
+                          'rgba(255, 255, 255, 0.08)',
+                        ]
+                      : GLASS.sheenColors
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              )}
+              {skin.id === 'ios' && (
+                <View
+                  pointerEvents="none"
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 24,
+                    right: 24,
+                    height: 1.5,
+                    backgroundColor: 'rgba(255, 255, 255, 0.46)',
+                  }}
+                />
+              )}
+              {/* Swipe-Down Drag Handle Zone */}
+              {showDragHandle && (
+                <GestureDetector gesture={topPanGesture}>
+                  <View
+                    style={[
+                      styles.dragZone,
+                      Platform.OS === 'web'
+                        ? ({ touchAction: 'none', cursor: 'grab' } as any)
+                        : null,
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.dragPill,
+                        {
+                          width: skin.grabberWidth,
+                          height: skin.grabberHeight,
+                          borderRadius: skin.grabberHeight / 2,
+                        },
+                        skin.id === 'material' && { backgroundColor: 'rgba(255, 255, 255, 0.36)' },
+                      ]}
+                    />
+                  </View>
+                </GestureDetector>
+              )}
 
-          <BottomSheetGestureContext.Provider value={gestureContextValue}>
-            {children}
-          </BottomSheetGestureContext.Provider>
+              <BottomSheetGestureContext.Provider value={gestureContextValue}>
+                {children}
+              </BottomSheetGestureContext.Provider>
+            </Animated.View>
+          </GestureDetector>
         </Animated.View>
-      </Animated.View>
+      </GestureHandlerRootView>
     </Modal>
   );
 };
