@@ -116,7 +116,7 @@ import { aiProviderService, extractCleanCharacterName } from '../services/aiProv
 import { storageService } from '../services/storageService';
 import { getSqliteConversationRepository, resolveBranchCheckpointState } from '../services/sqliteDatabase';
 import { RECENT_RAW_OVERLAP_TURNS, selectPromptHistoryWithMemory } from '../services/memoryRecall';
-import { DeveloperInspectorModal } from '../components/DeveloperInspectorModal';
+import { DeveloperInspectorModal, InspectorTab } from '../components/DeveloperInspectorModal';
 import {
   CastCandidateSuggestion,
   appendCastFact,
@@ -251,6 +251,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [customPrompt, setCustomPrompt] = useState('');
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [showDevInspector, setShowDevInspector] = useState(false);
+  const [devInspectorTab, setDevInspectorTab] = useState<InspectorTab>('prompt');
   const headerMenuAnim = useRef(new Animated.Value(0)).current;
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const scrollBottomAnim = useRef(new Animated.Value(0)).current;
@@ -2892,6 +2893,34 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                 </View>
               </TouchableOpacity>
 
+              {developerMode && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setDevInspectorTab(messages.length > 0 ? 'prompt' : 'overview');
+                    setShowDevInspector(true);
+                  }}
+                  activeOpacity={0.8}
+                  accessibilityLabel="Open Developer Console"
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                    paddingHorizontal: 9,
+                    paddingVertical: 5,
+                    borderRadius: 999,
+                    marginRight: 6,
+                    backgroundColor: `rgba(${palette.accentRgb}, 0.14)`,
+                    borderWidth: isM3 ? 0 : 1,
+                    borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+                  }}
+                >
+                  <Terminal size={12} color={palette.accent} />
+                  <Text style={{ color: palette.accent, fontSize: 10.5, fontWeight: '800' }}>
+                    DEV · {messages.length}
+                  </Text>
+                </TouchableOpacity>
+              )}
+
               {/* 3-Dot Chat Control & Menu Button */}
               <TouchableOpacity
                 style={[
@@ -3090,10 +3119,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                   ...(developerMode
                     ? [
                         {
-                          label: 'Developer Inspector',
+                          label: 'Developer Console',
                           Icon: Terminal,
                           onPress: () => {
                             setShowHeaderMenu(false);
+                            setDevInspectorTab('overview');
                             setShowDevInspector(true);
                           },
                         },
@@ -5049,6 +5079,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         }}
                         onPress={() => {
                           setShowChatControlModal(false);
+                          setDevInspectorTab('recall');
                           setShowDevInspector(true);
                         }}
                         activeOpacity={0.8}
@@ -6677,6 +6708,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         visible={showDevInspector}
         onClose={() => setShowDevInspector(false)}
         initialConversationId={activeConversationId}
+        initialTab={devInspectorTab}
         config={config}
       />
     </SafeAreaView>
