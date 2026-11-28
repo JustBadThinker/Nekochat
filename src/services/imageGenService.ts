@@ -116,7 +116,35 @@ export const DEFAULT_IMAGE_GEN_CONFIG: ImageGenConfig = {
 
 const STORAGE_KEY = '@nekochat:image_gen_config_v1';
 
-export class ImageGenService {
+/**
+ * Infers an accurate visual subject tag (1boy / 1girl / neutral character name)
+ * from character metadata instead of blindly forcing `1girl`.
+ */
+export function inferCharacterSubjectTag(character: Character): string {
+  const charName = character.name.split(' ')[0] || character.name;
+  const tagPool = [
+    ...(character.tagSlugs || []),
+    ...(character.tags || []),
+    character.tagline || '',
+    character.personality || '',
+    character.description || '',
+  ].join(' ');
+
+  const hasMaleCue =
+    /\b(male|boy|man|guy|gentleman|prince|king|emperor|duke|husband|boyfriend|brother|he\/him|1boy|ikemen|shota|otoko)\b/i.test(
+      tagPool
+    );
+  const hasFemaleCue =
+    /\b(female|girl|woman|lady|princess|queen|empress|duchess|wife|girlfriend|sister|maid|she\/her|1girl|waifu|bishoujo)\b/i.test(
+      tagPool
+    );
+
+  if (hasMaleCue && !hasFemaleCue) return `1boy, ${charName}`;
+  if (hasFemaleCue && !hasMaleCue) return `1girl, ${charName}`;
+  return charName;
+}
+
+class ImageGenService {
   private config: ImageGenConfig = { ...DEFAULT_IMAGE_GEN_CONFIG };
   private initialized = false;
 
@@ -216,15 +244,20 @@ export class ImageGenService {
     messageContent: string,
     persona?: Persona,
     overrideStyle?: ImageStylePreset,
-    customInstructions?: string
+    customInstructions?: string,
+    contextOptions?: {
+      recentMessages?: { role: string; content: string; isError?: boolean }[];
+      sceneLocation?: string;
+      sceneTime?: string;
+    }
   ): string {
     const activeStyle = overrideStyle || this.config.style || 'anime';
     const styleOption = IMAGE_STYLE_OPTIONS.find(s => s.id === activeStyle) || IMAGE_STYLE_OPTIONS[0];
 
-    // 1. Character visual highlights
+    // 1. Character visual highlights (never force 1girl blindly)
     const visualTraits: string[] = [];
     const charName = character.name.split(' ')[0] || character.name;
-    visualTraits.push(`1girl, ${charName}`);
+    visualTraits.push(inferCharacterSubjectTag(character));
 
     const descPool = `${character.description || ''} ${character.personality || ''} ${character.background || ''}`;
 
@@ -246,28 +279,50 @@ export class ImageGenService {
       }
     }
 
-    // 2. Action / Scene setting from message (actions in asterisks: *she leans back with a smile*)
+    // 2. Multi-turn Action / Scene extraction (last ~6 valid turns if supplied, else single messageContent)
+    const sourceTexts: string[] = [];
+    if (contextOptions?.recentMessages && contextOptions.recentMessages.length > 0) {
+      const validRecent = contextOptions.recentMessages
+        .filter(m => (m.role === 'user' || m.role === 'assistant') && !m.isError && String(m.content || '').trim() !== '...')
+        .slice(-6);
+      for (const m of validRecent) {
+        sourceTexts.push(String(m.content || ''));
+      }
+    }
+    if (sourceTexts.length === 0 && messageContent) {
+      sourceTexts.push(messageContent);
+    }
+
     const actionMatches: string[] = [];
-    const asteriskRegex = /\*([^*]+)\*/g;
-    let match: RegExpExecArray | null;
-    while ((match = asteriskRegex.exec(messageContent)) !== null) {
-      const cleaned = match[1].replace(/[*_#`]/g, '').trim();
-      if (cleaned.length > 5 && cleaned.length < 180) {
-        actionMatches.push(cleaned);
+    for (const txt of sourceTexts) {
+      const asteriskRegex = /\*([^*]+)\*/g;
+      let match: RegExpExecArray | null;
+      while ((match = asteriskRegex.exec(txt)) !== null) {
+        const cleaned = match[1].replace(/[*_#`]/g, '').trim();
+        if (cleaned.length > 5 && cleaned.length < 180) {
+          actionMatches.push(cleaned);
+        }
       }
     }
 
     let sceneDescription = '';
     if (actionMatches.length > 0) {
-      sceneDescription = actionMatches.slice(-2).join(', ');
+      sceneDescription = actionMatches.slice(-3).join(', ');
     } else {
-      const cleanText = messageContent
+      const fallbackRaw = sourceTexts[sourceTexts.length - 1] || messageContent || '';
+      const cleanText = fallbackRaw
         .replace(/["“「][^"”」]+["”」]/g, '')
         .replace(/[*_#`~[\]]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
-      sceneDescription = cleanText ? cleanText.slice(0, 160) : 'conversing warmly with user';
+      sceneDescription = cleanText ? cleanText.slice(0, 180) : 'conversing warmly together';
     }
+
+    const locationParts = [
+      contextOptions?.sceneLocation?.trim() ? `setting: ${contextOptions.sceneLocation.trim()}` : '',
+      contextOptions?.sceneTime?.trim() ? `time: ${contextOptions.sceneTime.trim()}` : '',
+    ].filter(Boolean);
+    const locationSnippet = locationParts.join(', ');
 
     // 3. User Persona context
     let interactionSnippet = '';
@@ -289,11 +344,12 @@ export class ImageGenService {
         : `A gorgeous ${styleOption.label.split(' ')[0].toLowerCase()} illustration of ${charName}`;
 
       const actionText = sceneDescription ? `, ${sceneDescription}` : ', in a charismatic and expressive pose';
+      const locText = locationSnippet ? `, ${locationSnippet}` : '';
       const interactionText = interactionSnippet ? `, ${interactionSnippet}` : '';
       const customNotes = customInstructions?.trim() ? `, ${customInstructions.trim()}` : '';
       const customModifiers = this.config.customStylePrompt?.trim() ? `, ${this.config.customStylePrompt.trim()}` : '';
 
-      return `${subjectIntro}${actionText}${interactionText}${customModifiers}${customNotes}. Atmospheric cinematic lighting, rich volumetric depth, expressive facial features, highly detailed environmental setting, masterpiece composition.`.replace(/\s+/g, ' ');
+      return `${subjectIntro}${actionText}${locText}${interactionText}${customModifiers}${customNotes}. Atmospheric cinematic lighting, rich volumetric depth, expressive facial features, highly detailed environmental setting, masterpiece composition.`.replace(/\s+/g, ' ');
     }
 
     const parts = [
@@ -301,6 +357,7 @@ export class ImageGenService {
       this.config.customStylePrompt?.trim() || '',
       visualTraits.join(', '),
       sceneDescription,
+      locationSnippet,
       interactionSnippet,
       customInstructions?.trim() || '',
       'cinematic lighting, detailed background, expressive emotions, high quality'

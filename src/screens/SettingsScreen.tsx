@@ -1421,12 +1421,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               }
               : skin.settingsLayout === 'ios_inset_grouped'
                 ? {
-                    borderRadius: 22,
-                    backgroundColor: 'rgba(20, 22, 32, 0.60)',
-                    borderWidth: 1,
-                    borderColor: 'rgba(255, 255, 255, 0.22)',
-                    padding: 14,
-                  }
+                  borderRadius: 22,
+                  backgroundColor: 'rgba(20, 22, 32, 0.60)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255, 255, 255, 0.22)',
+                  padding: 14,
+                }
                 : [getCardSurfaceStyle(palette, skin), { padding: 14, borderRadius: skin.cardRadius }],
             {
               marginTop: 6,
@@ -3467,309 +3467,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </BottomSheetScrollView>
         </BottomSheetModal >
 
-        <HelpCenterModal
-          visible={activeModal === 'help'}
-          onClose={() => setActiveModal(null)}
-        />
-
-        <CapabilityMatrixModal
-          visible={activeModal === 'matrix'}
-          onClose={() => setActiveModal('api')}
-          config={{
-            ...config,
-            baseUrl: customEndpoint,
-            customEndpoint,
-            apiKey,
-            model,
-          }}
-        />
-
-        <ThemeStoreModal
-          visible={activeModal === 'themeStore'}
-          activePackId={settings?.activeThemePackId}
-          onClose={() => setActiveModal('theming')}
-          onApplyPack={handleApplyThemePack}
-          onPackUninstalled={handlePackUninstalled}
-        />
-
-        <DeveloperInspectorModal
-          visible={activeModal === 'devInspector'}
-          onClose={() => setActiveModal(null)}
-          config={{
-            ...config,
-            baseUrl: customEndpoint,
-            customEndpoint,
-            apiKey,
-            model,
-          }}
-        />
-
-        {/* ══════════════════════════════════════════════════════════════════ */}
-        {/* MODAL 9: SMART NOTIFICATIONS                                       */}
-        {/* ══════════════════════════════════════════════════════════════════ */}
-        <BottomSheetModal
-          visible={activeModal === 'notifications'}
-          onClose={() => setActiveModal(null)}
-          sheetStyle={styles.modalSheet}
-        >
-          <View style={styles.modalHeader}>
-            <View style={styles.modalTitleRow}>
-              <Bell size={16} color={palette.accent} style={{ marginRight: 6 }} />
-              <Text style={styles.modalTitle}>Smart Notifications</Text>
-            </View>
-            <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
-              <X size={18} color="#9ca3af" />
-            </TouchableOpacity>
-          </View>
-
-          <BottomSheetScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 20 }}>
-            <Text style={[styles.sectionSub, { fontWeight: '500', lineHeight: 16, marginBottom: 12 }]}>
-              Local scheduled reminders register directly with your OS (no battery optimization bypass needed). Followed Creator Drops sync periodically in the background and also appear in the Chats Bell inbox.
-            </Text>
-
-            {[
-              {
-                title: 'Companion Check-ins',
-                desc: 'Send a "miss you" check-in after 48h away from an active chat',
-                value: notifyMissYouDraft,
-                onChange: setNotifyMissYouDraft,
-              },
-              {
-                title: 'Algorithm Picks',
-                desc: 'Suggest a character matching your vibes after 24h away',
-                value: notifyAlgoDraft,
-                onChange: setNotifyAlgoDraft,
-              },
-              {
-                title: 'Followed Creator Drops',
-                desc: 'Alert when creators you follow publish a new character card',
-                value: notifyCreatorsDraft,
-                onChange: setNotifyCreatorsDraft,
-              },
-              {
-                title: 'Discreet Lock-Screen Mode',
-                desc: 'Hide character/creator names on notifications & skip NSFW cards',
-                value: notifyDiscreetDraft,
-                onChange: setNotifyDiscreetDraft,
-              },
-              {
-                title: 'Quiet Hours (11 PM – 8 AM)',
-                desc: 'Shift overnight reminders to 9:00 AM local time',
-                value: notifyQuietDraft,
-                onChange: setNotifyQuietDraft,
-              },
-            ].map(row => (
-              <View key={row.title} style={styles.toggleRow}>
-                <View style={{ flex: 1, paddingRight: 10 }}>
-                  <Text style={styles.toggleTitle}>{row.title}</Text>
-                  <Text style={styles.toggleDesc}>{row.desc}</Text>
-                </View>
-                <NekoSwitch value={row.value} onValueChange={row.onChange} />
-              </View>
-            ))}
-
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
-              <TouchableOpacity
-                style={[
-                  styles.tokenPill,
-                  { flex: 1, alignItems: 'center', paddingVertical: 10 },
-                ]}
-                disabled={checkingCreatorsNow}
-                onPress={async () => {
-                  setCheckingCreatorsNow(true);
-                  setNotifyNotice(null);
-                  try {
-                    const res = await checkFollowedCreatorDropsNow(
-                      {
-                        ...settings,
-                        notifyFollowedCreators: true,
-                        notifyDiscreetMode: notifyDiscreetDraft,
-                      },
-                      false,
-                      false
-                    );
-                    onRefreshDropsInbox?.();
-                    setNotifyNotice(
-                      res.newDrops.length > 0
-                        ? `Found ${res.newDrops.length} new drop(s) — check the Bell inbox!`
-                        : 'Checked followed creators — no new drops right now.'
-                    );
-                  } catch {
-                    setNotifyNotice('Could not reach catalog right now.');
-                  } finally {
-                    setCheckingCreatorsNow(false);
-                  }
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={{ color: '#e2e8f0', fontSize: 11.5, fontWeight: '700' }}>
-                  {checkingCreatorsNow ? 'Checking...' : 'Check Creators Now'}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.tokenPill,
-                  { flex: 1, alignItems: 'center', paddingVertical: 10 },
-                ]}
-                onPress={async () => {
-                  const ok = await sendTestNotificationNow({
-                    ...settings,
-                    notifyDiscreetMode: notifyDiscreetDraft,
-                  });
-                  setNotifyNotice(
-                    ok
-                      ? 'Test notification scheduled (fires in ~2 seconds).'
-                      : Platform.OS === 'web'
-                        ? 'OS push preview is mobile-only; use the Chats Bell inbox on Web.'
-                        : 'Notification permission not granted.'
-                  );
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '700' }}>
-                  Test Notification
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {notifyNotice ? (
-              <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '600', marginTop: 10 }}>
-                {notifyNotice}
-              </Text>
-            ) : null}
-          </BottomSheetScrollView>
-
-          <View style={styles.modalFooter}>
-            <TouchableOpacity
-              style={styles.saveBtn}
-              onPress={async () => {
-                const anyEnabled = notifyMissYouDraft || notifyAlgoDraft || notifyCreatorsDraft;
-                if (anyEnabled) {
-                  const perm = await requestNotificationPermissionsAsync();
-                  if (perm === 'denied') {
-                    setNotifyNotice('Permission denied in OS settings. Preferences saved for Bell inbox.');
-                  }
-                }
-                const updated = await storageService.saveSettings({
-                  notifyMissYou: notifyMissYouDraft,
-                  notifyAlgorithmPicks: notifyAlgoDraft,
-                  notifyFollowedCreators: notifyCreatorsDraft,
-                  notifyDiscreetMode: notifyDiscreetDraft,
-                  notifyQuietHours: notifyQuietDraft,
-                });
-                onUpdateSettings(updated);
-                setActiveModal(null);
-              }}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.saveBtnText}>Save Notification Settings</Text>
-            </TouchableOpacity>
-          </View>
-        </BottomSheetModal>
-
-        {/* ══════════════════════════════════════════════════════════════════ */}
-        {/* MODAL 10: FOR YOU & TASTE (100% ON-DEVICE ALGORITHM CONTROLS)     */}
-        {/* ══════════════════════════════════════════════════════════════════ */}
-        <BottomSheetModal
-          visible={activeModal === 'taste'}
-          onClose={() => setActiveModal(null)}
-          sheetStyle={styles.modalSheet}
-        >
-          <View style={styles.modalHeader}>
-            <View style={styles.modalTitleRow}>
-              <Brain size={16} color={palette.accent} style={{ marginRight: 6 }} />
-              <Text style={styles.modalTitle}>For You & Taste</Text>
-            </View>
-            <TouchableOpacity onPress={() => setActiveModal(null)} style={styles.modalCloseBtn}>
-              <X size={18} color="#9ca3af" />
-            </TouchableOpacity>
-          </View>
-
-          <BottomSheetScrollView style={styles.modalBody} contentContainerStyle={{ paddingBottom: 24 }}>
-            {/* 100% On-Device Privacy Banner */}
-            <View
-              style={[
-                styles.toggleRow,
-                {
-                  borderColor: `rgba(${palette.accentRgb}, 0.35)`,
-                  backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
-                  justifyContent: 'flex-start',
-                  gap: 10,
-                },
-              ]}
-            >
-              <ShieldCheck size={18} color={palette.accent} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.toggleTitle}>100% On-Device Learning</Text>
-                <Text style={[styles.toggleDesc, { lineHeight: 15 }]}>
-                  Learned locally on your phone from likes, chats, searches & tags. Never uploaded or shared.
-                </Text>
-              </View>
-            </View>
-
-            {/* Insights Strip */}
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-              {[
-                {
-                  label: 'Signals',
-                  value: String(tasteProfile?.totalInteractions ?? 0),
-                },
-                {
-                  label: 'RP Depth',
-                  value:
-                    tasteProfile?.preferredDepth === 'short'
-                      ? 'Quick'
-                      : tasteProfile?.preferredDepth === 'medium'
-                        ? 'Balanced'
-                        : tasteProfile?.preferredDepth === 'deep'
-                          ? 'Deep Lore'
-                          : 'Learning',
-                },
-                {
-                  label: 'Creators',
-                  value: String(tasteProfile?.topCreators.length ?? 0),
-                },
-              ].map(stat => (
-                <View
-                  key={stat.label}
-                  style={[
-                    styles.tokenPill,
-                    {
-                      flex: 1,
-                      alignItems: 'center',
-                      paddingVertical: 10,
-                      borderRadius: 12,
-                    },
-                  ]}
-                >
-                  <Text style={{ color: palette.accent, fontSize: 13.5, fontWeight: '800' }}>
-                    {stat.value}
-                  </Text>
-                  <Text style={{ color: '#9ca3af', fontSize: 10, fontWeight: '600', marginTop: 2 }}>
-                    {stat.label}
-                  </Text>
-                </View>
-              ))}
-            </View>
-
-            {/* Pause Learning Toggle */}
-            <View style={styles.toggleRow}>
-              <View style={{ flex: 1, paddingRight: 10 }}>
-                <Text style={styles.toggleTitle}>Pause Taste Learning</Text>
-                <Text style={styles.toggleDesc}>
-                  Keep current recommendations without recording new browsing or chat signals
-                </Text>
-              </View>
-              <NekoSwitch
-                value={Boolean(tasteProfile?.learningPaused)}
-                onValueChange={async val => {
-                  await tasteEngineService.setLearningPaused(val);
-                  await loadTasteProfile(true);
-                  setTasteNotice(val ? 'Learning paused.' : 'Learning resumed.');
-                }}
-              />
-            </View>
+      <HelpCenterModal
+        visible={activeModal === 'help'}
+        onClose={() => setActiveModal(null)}
+      />
 
       <CapabilityMatrixModal
         visible={activeModal === 'matrix'}
@@ -3793,8 +3494,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
       <DeveloperInspectorModal
         visible={activeModal === 'devInspector'}
-        onClose={() => setActiveModal(null)}
         initialTab={devInspectorInitialTab}
+        onClose={() => setActiveModal(null)}
         config={{
           ...config,
           baseUrl: customEndpoint,
@@ -4096,989 +3797,1000 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             <Text style={[styles.tokenPillText, active && styles.tokenPillTextActive]}>
               {opt.label}
             </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+    <Text style={[styles.sectionSub, { fontWeight: '500', marginBottom: 10 }]}>
+      {(tasteProfile?.genderFocus || 'auto') === 'auto'
+        ? tasteProfile?.dominantGender && tasteProfile.dominantGender !== 'none'
+          ? `Auto-detected: ${tasteProfile.dominantGender} (${tasteProfile.genderConfidence}% confidence)`
+          : 'Auto: showing balanced matches until a preference emerges'
+        : `Locked to "${tasteProfile?.genderFocus}" characters in For You & Match`}
+    </Text>
 
-            {/* Learned & Boosted Tags */}
-            <Text style={styles.inputLabel}>LEARNED & BOOSTED TAGS</Text>
-            {tasteProfile && tasteProfile.topLearnedTags.length > 0 ? (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-                {tasteProfile.topLearnedTags.map(item => (
-                  <TouchableOpacity
-                    key={item.tag}
-                    style={[
-                      styles.radioChip,
-                      item.pinned && styles.radioChipActive,
-                      { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 5 },
-                    ]}
-                    onPress={async () => {
-                      await tasteEngineService.removeLearnedTag(item.tag);
-                      await loadTasteProfile(true);
-                    }}
-                    activeOpacity={0.75}
-                  >
-                    <Text
-                      style={[
-                        styles.radioChipText,
-                        item.pinned ? styles.radioChipTextActive : { color: '#e2e8f0' },
-                      ]}
-                    >
-                      {item.pinned ? `★ #${item.tag}` : `#${item.tag}`}
-                    </Text>
-                    <X size={12} color={item.pinned ? palette.accent : '#94a3b8'} />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            ) : (
-              <Text style={[styles.sectionSub, { fontWeight: '500', marginBottom: 10 }]}>
-                No learned tags yet — heart characters, search, or boost tags below.
-              </Text>
-            )}
+    {/* Learned & Boosted Tags */}
+    <Text style={styles.inputLabel}>LEARNED & BOOSTED TAGS</Text>
+    {tasteProfile && tasteProfile.topLearnedTags.length > 0 ? (
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+        {tasteProfile.topLearnedTags.map(item => (
+          <TouchableOpacity
+            key={item.tag}
+            style={[
+              styles.radioChip,
+              item.pinned && styles.radioChipActive,
+              { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 5 },
+            ]}
+            onPress={async () => {
+              await tasteEngineService.removeLearnedTag(item.tag);
+              await loadTasteProfile(true);
+            }}
+            activeOpacity={0.75}
+          >
+            <Text
+              style={[
+                styles.radioChipText,
+                item.pinned ? styles.radioChipTextActive : { color: '#e2e8f0' },
+              ]}
+            >
+              {item.pinned ? `★ #${item.tag}` : `#${item.tag}`}
+            </Text>
+            <X size={12} color={item.pinned ? palette.accent : '#94a3b8'} />
+          </TouchableOpacity>
+        ))}
+      </View>
+    ) : (
+      <Text style={[styles.sectionSub, { fontWeight: '500', marginBottom: 10 }]}>
+        No learned tags yet — heart characters, search, or boost tags below.
+      </Text>
+    )}
 
-            {/* Boost / Pin Tag Input */}
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-              <TextInput
-                style={[styles.inputBox, { flex: 1 }]}
-                value={newPinTagDraft}
-                onChangeText={setNewPinTagDraft}
-                placeholder="Boost a tag (e.g. fantasy, tsundere)..."
-                placeholderTextColor="rgba(255,255,255,0.38)"
-                returnKeyType="done"
-                onSubmitEditing={async () => {
-                  if (!newPinTagDraft.trim()) return;
-                  await tasteEngineService.pinTag(newPinTagDraft);
-                  setNewPinTagDraft('');
-                  await loadTasteProfile(true);
-                }}
-              />
-              <TouchableOpacity
-                style={[
-                  styles.tokenPill,
-                  styles.tokenPillActive,
-                  { flexDirection: 'row', alignItems: 'center', gap: 4, justifyContent: 'center' },
-                ]}
-                onPress={async () => {
-                  if (!newPinTagDraft.trim()) return;
-                  await tasteEngineService.pinTag(newPinTagDraft);
-                  setNewPinTagDraft('');
-                  await loadTasteProfile(true);
-                }}
-                activeOpacity={0.8}
-              >
-                <Plus size={13} color="#000000" />
-                <Text style={styles.tokenPillTextActive}>Boost</Text>
-              </TouchableOpacity>
-            </View>
+    {/* Boost / Pin Tag Input */}
+    <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+      <TextInput
+        style={[styles.inputBox, { flex: 1 }]}
+        value={newPinTagDraft}
+        onChangeText={setNewPinTagDraft}
+        placeholder="Boost a tag (e.g. fantasy, tsundere)..."
+        placeholderTextColor="rgba(255,255,255,0.38)"
+        returnKeyType="done"
+        onSubmitEditing={async () => {
+          if (!newPinTagDraft.trim()) return;
+          await tasteEngineService.pinTag(newPinTagDraft);
+          setNewPinTagDraft('');
+          await loadTasteProfile(true);
+        }}
+      />
+      <TouchableOpacity
+        style={[
+          styles.tokenPill,
+          styles.tokenPillActive,
+          { flexDirection: 'row', alignItems: 'center', gap: 4, justifyContent: 'center' },
+        ]}
+        onPress={async () => {
+          if (!newPinTagDraft.trim()) return;
+          await tasteEngineService.pinTag(newPinTagDraft);
+          setNewPinTagDraft('');
+          await loadTasteProfile(true);
+        }}
+        activeOpacity={0.8}
+      >
+        <Plus size={13} color="#000000" />
+        <Text style={styles.tokenPillTextActive}>Boost</Text>
+      </TouchableOpacity>
+    </View>
 
-            {/* Quick-tap Popular Suggestions */}
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-              {POPULAR_COMMUNITY_CATEGORIES.filter(
-                c =>
-                  c.value !== 'all' &&
-                  c.value !== 'female' &&
-                  c.value !== 'male' &&
-                  !tasteProfile?.pinnedTags.includes(c.value) &&
-                  !tasteProfile?.mutedTags.includes(c.value)
-              )
-                .slice(0, 6)
-                .map(cat => (
-                  <TouchableOpacity
-                    key={cat.value}
-                    style={[styles.radioChip, { paddingHorizontal: 9, paddingVertical: 4 }]}
-                    onPress={async () => {
-                      await tasteEngineService.pinTag(cat.value);
-                      await loadTasteProfile(true);
-                    }}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={[styles.radioChipText, { fontSize: 11 }]}>+ {cat.label}</Text>
-                  </TouchableOpacity>
-                ))}
-            </View>
+    {/* Quick-tap Popular Suggestions */}
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+      {POPULAR_COMMUNITY_CATEGORIES.filter(
+        c =>
+          c.value !== 'all' &&
+          c.value !== 'female' &&
+          c.value !== 'male' &&
+          !tasteProfile?.pinnedTags.includes(c.value) &&
+          !tasteProfile?.mutedTags.includes(c.value)
+      )
+        .slice(0, 6)
+        .map(cat => (
+          <TouchableOpacity
+            key={cat.value}
+            style={[styles.radioChip, { paddingHorizontal: 9, paddingVertical: 4 }]}
+            onPress={async () => {
+              await tasteEngineService.pinTag(cat.value);
+              await loadTasteProfile(true);
+            }}
+            activeOpacity={0.75}
+          >
+            <Text style={[styles.radioChipText, { fontSize: 11 }]}>+ {cat.label}</Text>
+          </TouchableOpacity>
+        ))}
+    </View>
 
-            {/* Muted Tags */}
-            <Text style={styles.inputLabel}>MUTED TAGS (HIDDEN FROM FEED)</Text>
-            {tasteProfile && tasteProfile.mutedTags.length > 0 && (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                {tasteProfile.mutedTags.map(tag => (
-                  <TouchableOpacity
-                    key={tag}
-                    style={[
-                      styles.radioChip,
-                      {
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 5,
-                        paddingVertical: 5,
-                        borderColor: 'rgba(244, 63, 94, 0.45)',
-                        backgroundColor: 'rgba(244, 63, 94, 0.10)',
-                      },
-                    ]}
-                    onPress={async () => {
-                      await tasteEngineService.unmuteTag(tag);
-                      await loadTasteProfile(true);
-                    }}
-                    activeOpacity={0.75}
-                  >
-                    <Text style={[styles.radioChipText, { color: '#fda4af' }]}>#{tag}</Text>
-                    <X size={12} color="#fda4af" />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
-              <TextInput
-                style={[styles.inputBox, { flex: 1 }]}
-                value={newMuteTagDraft}
-                onChangeText={setNewMuteTagDraft}
-                placeholder="Mute a tag you don't want to see..."
-                placeholderTextColor="rgba(255,255,255,0.38)"
-                returnKeyType="done"
-                onSubmitEditing={async () => {
-                  if (!newMuteTagDraft.trim()) return;
-                  await tasteEngineService.muteTag(newMuteTagDraft);
-                  setNewMuteTagDraft('');
-                  await loadTasteProfile(true);
-                }}
-              />
-              <TouchableOpacity
-                style={[
-                  styles.tokenPill,
-                  {
-                    justifyContent: 'center',
-                    borderColor: 'rgba(244, 63, 94, 0.4)',
-                    backgroundColor: 'rgba(244, 63, 94, 0.14)',
-                  },
-                ]}
-                onPress={async () => {
-                  if (!newMuteTagDraft.trim()) return;
-                  await tasteEngineService.muteTag(newMuteTagDraft);
-                  setNewMuteTagDraft('');
-                  await loadTasteProfile(true);
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={{ color: '#fda4af', fontSize: 11, fontWeight: '700' }}>Mute</Text>
-              </TouchableOpacity>
-            </View>
+    {/* Muted Tags */}
+    <Text style={styles.inputLabel}>MUTED TAGS (HIDDEN FROM FEED)</Text>
+    {tasteProfile && tasteProfile.mutedTags.length > 0 && (
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+        {tasteProfile.mutedTags.map(tag => (
+          <TouchableOpacity
+            key={tag}
+            style={[
+              styles.radioChip,
+              {
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 5,
+                paddingVertical: 5,
+                borderColor: 'rgba(244, 63, 94, 0.45)',
+                backgroundColor: 'rgba(244, 63, 94, 0.10)',
+              },
+            ]}
+            onPress={async () => {
+              await tasteEngineService.unmuteTag(tag);
+              await loadTasteProfile(true);
+            }}
+            activeOpacity={0.75}
+          >
+            <Text style={[styles.radioChipText, { color: '#fda4af' }]}>#{tag}</Text>
+            <X size={12} color="#fda4af" />
+          </TouchableOpacity>
+        ))}
+      </View>
+    )}
+    <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+      <TextInput
+        style={[styles.inputBox, { flex: 1 }]}
+        value={newMuteTagDraft}
+        onChangeText={setNewMuteTagDraft}
+        placeholder="Mute a tag you don't want to see..."
+        placeholderTextColor="rgba(255,255,255,0.38)"
+        returnKeyType="done"
+        onSubmitEditing={async () => {
+          if (!newMuteTagDraft.trim()) return;
+          await tasteEngineService.muteTag(newMuteTagDraft);
+          setNewMuteTagDraft('');
+          await loadTasteProfile(true);
+        }}
+      />
+      <TouchableOpacity
+        style={[
+          styles.tokenPill,
+          {
+            justifyContent: 'center',
+            borderColor: 'rgba(244, 63, 94, 0.4)',
+            backgroundColor: 'rgba(244, 63, 94, 0.14)',
+          },
+        ]}
+        onPress={async () => {
+          if (!newMuteTagDraft.trim()) return;
+          await tasteEngineService.muteTag(newMuteTagDraft);
+          setNewMuteTagDraft('');
+          await loadTasteProfile(true);
+        }}
+        activeOpacity={0.8}
+      >
+        <Text style={{ color: '#fda4af', fontSize: 11, fontWeight: '700' }}>Mute</Text>
+      </TouchableOpacity>
+    </View>
 
-            {/* Reset Actions */}
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <TouchableOpacity
-                style={[
-                  styles.tokenPill,
-                  {
-                    flex: 1,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
-                    paddingVertical: 10,
-                  },
-                ]}
-                onPress={async () => {
-                  await tasteEngineService.resetTasteProfile();
-                  await loadTasteProfile(true);
-                  setTasteNotice('Taste profile cleared (your Favorites list is preserved).');
-                }}
-                activeOpacity={0.8}
-              >
-                <Trash2 size={13} color="#fda4af" />
-                <Text style={{ color: '#fda4af', fontSize: 11.5, fontWeight: '700' }}>Reset Taste</Text>
-              </TouchableOpacity>
+    {/* Reset Actions */}
+    <View style={{ flexDirection: 'row', gap: 8 }}>
+      <TouchableOpacity
+        style={[
+          styles.tokenPill,
+          {
+            flex: 1,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            paddingVertical: 10,
+          },
+        ]}
+        onPress={async () => {
+          await tasteEngineService.resetTasteProfile();
+          await loadTasteProfile(true);
+          setTasteNotice('Taste profile cleared (your Favorites list is preserved).');
+        }}
+        activeOpacity={0.8}
+      >
+        <Trash2 size={13} color="#fda4af" />
+        <Text style={{ color: '#fda4af', fontSize: 11.5, fontWeight: '700' }}>Reset Taste</Text>
+      </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[
-                  styles.tokenPill,
-                  {
-                    flex: 1,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
-                    paddingVertical: 10,
-                  },
-                ]}
-                onPress={async () => {
-                  await matchAlgorithmService.resetSeen();
-                  setTasteNotice('Seen & swipe deck history reset.');
-                }}
-                activeOpacity={0.8}
-              >
-                <RefreshCw size={13} color={palette.accent} />
-                <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '700' }}>
-                  Reset Seen Deck
-                </Text>
-              </TouchableOpacity>
-            </View>
+      <TouchableOpacity
+        style={[
+          styles.tokenPill,
+          {
+            flex: 1,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            paddingVertical: 10,
+          },
+        ]}
+        onPress={async () => {
+          await matchAlgorithmService.resetSeen();
+          setTasteNotice('Seen & swipe deck history reset.');
+        }}
+        activeOpacity={0.8}
+      >
+        <RefreshCw size={13} color={palette.accent} />
+        <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '700' }}>
+          Reset Seen Deck
+        </Text>
+      </TouchableOpacity>
+    </View>
 
-            {tasteNotice ? (
-              <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '600', marginTop: 10 }}>
-                {tasteNotice}
-              </Text>
-            ) : null}
-          </BottomSheetScrollView>
-        </BottomSheetModal>
-      </ScrollView >
+    {tasteNotice ? (
+      <Text style={{ color: palette.accent, fontSize: 11.5, fontWeight: '600', marginTop: 10 }}>
+        {tasteNotice}
+      </Text>
+    ) : null}
+  </BottomSheetScrollView>
+</BottomSheetModal>
+    </ScrollView >
     </View >
   );
 };
 
 const createStyles = (palette: ThemePalette, skin: UiSkinTokens) => {
   const screenBg = getScreenBg(palette, skin);
-  const surfaceBg = getSurfaceBg(palette, skin);
-  const subtleSurfaceBg = getSubtleSurfaceBg(palette, skin);
-  return StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: screenBg,
+            const surfaceBg = getSurfaceBg(palette, skin);
+            const subtleSurfaceBg = getSubtleSurfaceBg(palette, skin);
+            return StyleSheet.create({
+              container: {
+              flex: 1,
+            backgroundColor: screenBg,
     },
-    contentContainer: {
-      padding: 14,
-      paddingBottom: 110,
+            contentContainer: {
+              padding: 14,
+            paddingBottom: 110,
     },
-    healthCardBig: {
-      backgroundColor: surfaceBg,
-      borderRadius: skin.cardRadius,
-      borderWidth: 1,
-      borderColor: 'rgba(255, 255, 255, 0.1)',
-      padding: 14,
-      marginBottom: 18,
+            healthCardBig: {
+              backgroundColor: surfaceBg,
+            borderRadius: skin.cardRadius,
+            borderWidth: 1,
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            padding: 14,
+            marginBottom: 18,
     },
-    healthCardHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 12,
+            healthCardHeader: {
+              flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 12,
     },
-    healthTitleRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
+            healthTitleRow: {
+              flexDirection: 'row',
+            alignItems: 'center',
     },
-    healthTitle: {
-      fontSize: 13,
-      fontWeight: '800',
-      color: '#FFFFFF',
+            healthTitle: {
+              fontSize: 13,
+            fontWeight: '800',
+            color: '#FFFFFF',
     },
-    healthPingBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: palette.accent,
-      paddingHorizontal: 9,
-      paddingVertical: 4.5,
-      borderRadius: 8,
+            healthPingBtn: {
+              flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: palette.accent,
+            paddingHorizontal: 9,
+            paddingVertical: 4.5,
+            borderRadius: 8,
     },
-    healthPingBtnText: {
-      fontSize: 10.5,
-      fontWeight: '800',
-      color: '#000000',
+            healthPingBtnText: {
+              fontSize: 10.5,
+            fontWeight: '800',
+            color: '#000000',
     },
-    healthGrid: {
-      gap: 8,
+            healthGrid: {
+              gap: 8,
     },
-    healthItemBox: {
-      backgroundColor: skin.id === 'ios' ? 'rgba(255, 255, 255, 0.06)' : subtleSurfaceBg,
-      borderRadius: skin.id === 'ios' ? 14 : 12,
-      borderWidth: 1,
-      borderColor: skin.id === 'ios' ? 'rgba(255, 255, 255, 0.14)' : 'rgba(255, 255, 255, 0.1)',
-      ...(skin.id === 'ios' ? { borderTopColor: 'rgba(255, 255, 255, 0.24)' } : null),
-      padding: 10,
+            healthItemBox: {
+              backgroundColor: skin.id === 'ios' ? 'rgba(255, 255, 255, 0.06)' : subtleSurfaceBg,
+            borderRadius: skin.id === 'ios' ? 14 : 12,
+            borderWidth: 1,
+            borderColor: skin.id === 'ios' ? 'rgba(255, 255, 255, 0.14)' : 'rgba(255, 255, 255, 0.1)',
+            ...(skin.id === 'ios' ? {borderTopColor: 'rgba(255, 255, 255, 0.24)' } : null),
+            padding: 10,
     },
-    healthItemTop: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: 2,
+            healthItemTop: {
+              flexDirection: 'row',
+            alignItems: 'center',
+            marginBottom: 2,
     },
-    statusDotGreen: {
-      width: 6,
-      height: 6,
-      borderRadius: 3,
-      backgroundColor: palette.accent,
-      marginRight: 6,
+            statusDotGreen: {
+              width: 6,
+            height: 6,
+            borderRadius: 3,
+            backgroundColor: palette.accent,
+            marginRight: 6,
     },
-    statusDotRed: {
-      width: 6,
-      height: 6,
-      borderRadius: 3,
-      backgroundColor: '#f43f5e',
-      marginRight: 6,
+            statusDotRed: {
+              width: 6,
+            height: 6,
+            borderRadius: 3,
+            backgroundColor: '#f43f5e',
+            marginRight: 6,
     },
-    statusDotGray: {
-      width: 6,
-      height: 6,
-      borderRadius: 3,
-      backgroundColor: '#64748b',
-      marginRight: 6,
+            statusDotGray: {
+              width: 6,
+            height: 6,
+            borderRadius: 3,
+            backgroundColor: '#64748b',
+            marginRight: 6,
     },
-    healthItemName: {
-      fontSize: 11.5,
-      fontWeight: '700',
-      color: '#e2e8f0',
-      flex: 1,
+            healthItemName: {
+              fontSize: 11.5,
+            fontWeight: '700',
+            color: '#e2e8f0',
+            flex: 1,
     },
-    latencyText: {
-      fontSize: 14,
-      fontWeight: '800',
-      color: palette.accent,
-      marginTop: 2,
+            latencyText: {
+              fontSize: 14,
+            fontWeight: '800',
+            color: palette.accent,
+            marginTop: 2,
     },
-    latencyTextOffline: {
-      fontSize: 14,
-      fontWeight: '800',
-      color: '#f43f5e',
-      marginTop: 2,
+            latencyTextOffline: {
+              fontSize: 14,
+            fontWeight: '800',
+            color: '#f43f5e',
+            marginTop: 2,
     },
-    statusLabelText: {
-      fontSize: 10,
-      color: '#9ca3af',
-      marginTop: 1,
+            statusLabelText: {
+              fontSize: 10,
+            color: '#9ca3af',
+            marginTop: 1,
     },
-    gridSectionHeading: {
-      fontSize: 11,
-      fontWeight: '800',
-      color: '#9ca3af',
-      letterSpacing: 0.8,
-      marginBottom: 10,
+            gridSectionHeading: {
+              fontSize: 11,
+            fontWeight: '800',
+            color: '#9ca3af',
+            letterSpacing: 0.8,
+            marginBottom: 10,
     },
-    bentoTwoGrid: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      justifyContent: 'space-between',
-      gap: 10,
+            bentoTwoGrid: {
+              flexDirection: 'row',
+            flexWrap: 'wrap',
+            justifyContent: 'space-between',
+            gap: 10,
     },
-    bentoTile: {
-      width: '48.2%',
-      backgroundColor: GLASS.bg,
-      borderRadius: 16,
-      borderWidth: 1,
-      borderColor: GLASS.borderBright,
-      padding: 12,
-      marginBottom: 2,
-      justifyContent: 'space-between',
-      ...GLASS.backdrop,
-      ...GLASS.shadow,
-      minHeight: 120,
+            bentoTile: {
+              width: '48.2%',
+            backgroundColor: GLASS.bg,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: GLASS.borderBright,
+            padding: 12,
+            marginBottom: 2,
+            justifyContent: 'space-between',
+            ...GLASS.backdrop,
+            ...GLASS.shadow,
+            minHeight: 120,
     },
-    tileIconCircle: {
-      width: 32,
-      height: 32,
-      borderRadius: 10,
-      backgroundColor: '#171c2b',
-      borderWidth: 1,
-      borderColor: '#242b3d',
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginBottom: 8,
+            tileIconCircle: {
+              width: 32,
+            height: 32,
+            borderRadius: 10,
+            backgroundColor: '#171c2b',
+            borderWidth: 1,
+            borderColor: '#242b3d',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: 8,
     },
-    tileTitle: {
-      fontSize: 12.5,
-      fontWeight: '800',
-      color: '#FFFFFF',
+            tileTitle: {
+              fontSize: 12.5,
+            fontWeight: '800',
+            color: '#FFFFFF',
     },
-    tileSubtitle: {
-      fontSize: 10,
-      color: '#9ca3af',
-      lineHeight: 14,
-      marginTop: 2,
+            tileSubtitle: {
+              fontSize: 10,
+            color: '#9ca3af',
+            lineHeight: 14,
+            marginTop: 2,
     },
-    tileBadgeLime: {
-      alignSelf: 'flex-start',
-      backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
-      borderWidth: 1,
-      borderColor: `rgba(${palette.accentRgb}, 0.4)`,
-      borderRadius: 6,
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      marginTop: 8,
+            tileBadgeLime: {
+              alignSelf: 'flex-start',
+            backgroundColor: `rgba(${palette.accentRgb}, 0.15)`,
+            borderWidth: 1,
+            borderColor: `rgba(${palette.accentRgb}, 0.4)`,
+            borderRadius: 6,
+            paddingHorizontal: 6,
+            paddingVertical: 2,
+            marginTop: 8,
     },
-    tileBadgeLimeText: {
-      fontSize: 9,
-      fontWeight: '800',
-      color: palette.accent,
+            tileBadgeLimeText: {
+              fontSize: 9,
+            fontWeight: '800',
+            color: palette.accent,
     },
-    tileBadge: {
-      alignSelf: 'flex-start',
-      backgroundColor: '#171c2b',
-      borderWidth: 1,
-      borderColor: '#242b3d',
-      borderRadius: 6,
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      marginTop: 8,
+            tileBadge: {
+              alignSelf: 'flex-start',
+            backgroundColor: '#171c2b',
+            borderWidth: 1,
+            borderColor: '#242b3d',
+            borderRadius: 6,
+            paddingHorizontal: 6,
+            paddingVertical: 2,
+            marginTop: 8,
     },
-    tileBadgeText: {
-      fontSize: 9,
-      fontWeight: '700',
-      color: '#9ca3af',
+            tileBadgeText: {
+              fontSize: 9,
+            fontWeight: '700',
+            color: '#9ca3af',
     },
-    modalOverlay: {
-      flex: 1,
-      backgroundColor: 'rgba(6, 8, 14, 0.68)',
-      justifyContent: 'flex-end',
-      ...GLASS.backdrop,
-      ...(Platform.OS === 'web'
-        ? ({
-          backgroundColor: 'transparent',
-          backgroundImage:
+            modalOverlay: {
+              flex: 1,
+            backgroundColor: 'rgba(6, 8, 14, 0.68)',
+            justifyContent: 'flex-end',
+            ...GLASS.backdrop,
+            ...(Platform.OS === 'web'
+            ? ({
+              backgroundColor: 'transparent',
+            backgroundImage:
             'linear-gradient(to bottom, rgba(6, 8, 14, 0.12) 0%, rgba(6, 8, 14, 0.48) 50%, rgba(6, 8, 14, 0.88) 100%)',
         } as any)
-        : {}),
-    },
-    modalSheet: {
-      backgroundColor: surfaceBg,
-      borderTopLeftRadius: skin.sheetRadius,
-      borderTopRightRadius: skin.sheetRadius,
-      borderWidth: 1,
-      borderColor: 'rgba(255, 255, 255, 0.1)',
-      maxHeight: '86%',
-      flex: 1,
-    },
-    modalHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      paddingHorizontal: 16,
-      paddingVertical: 14,
-      borderBottomWidth: 1,
-      borderBottomColor: 'rgba(255, 255, 255, 0.1)',
-    },
-    modalTitleRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    modalTitle: {
-      fontSize: 13.5,
-      fontWeight: '800',
-      color: '#FFFFFF',
-    },
-    modalCloseBtn: {
-      padding: 4,
-    },
-    modalBody: {
-      padding: 16,
-      flex: 1,
-    },
-    inputLabel: {
-      fontSize: 10.5,
-      fontWeight: '700',
-      color: '#9ca3af',
-      marginBottom: 5,
-      marginTop: 8,
-    },
-    inputBox: {
-      backgroundColor: subtleSurfaceBg,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: 'rgba(255, 255, 255, 0.1)',
-      paddingHorizontal: 12,
-      paddingVertical: 9,
-      fontSize: 11.5,
-      color: '#FFFFFF',
-    },
-    inputPasswordRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: subtleSurfaceBg,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: 'rgba(255, 255, 255, 0.1)',
-      paddingHorizontal: 10,
-    },
-    inputPasswordText: {
-      flex: 1,
-      fontSize: 11.5,
-      color: '#FFFFFF',
-      paddingVertical: 9,
-    },
-    autoTestBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: palette.accent,
-      borderRadius: 10,
-      paddingVertical: 10,
-      marginTop: 14,
-    },
-    autoTestBtnText: {
-      fontSize: 12,
-      fontWeight: '800',
-      color: '#000000',
-    },
-    pingResultBox: {
-      padding: 10,
-      borderRadius: 8,
-      marginTop: 8,
-    },
-    pingSuccess: {
-      backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
-      borderWidth: 1,
-      borderColor: `rgba(${palette.accentRgb}, 0.4)`,
-    },
-    pingFailure: {
-      backgroundColor: 'rgba(244, 63, 94, 0.12)',
-      borderWidth: 1,
-      borderColor: 'rgba(244, 63, 94, 0.4)',
-    },
-    pingTextSuccess: {
-      fontSize: 11,
-      fontWeight: '700',
-      color: palette.accent,
-    },
-    pingTextFailure: {
-      fontSize: 11,
-      fontWeight: '700',
-      color: '#fb7185',
-    },
-    modalFooter: {
-      padding: 14,
-      borderTopWidth: 1,
-      borderTopColor: 'rgba(255, 255, 255, 0.08)',
-      backgroundColor: 'transparent',
-    },
-    saveBtn: {
-      backgroundColor: palette.accent,
-      borderRadius: skin.buttonRadius,
-      paddingVertical: 11,
-      alignItems: 'center',
-    },
-    saveBtnText: {
-      fontSize: 12.5,
-      fontWeight: '800',
-      color: '#000000',
-    },
-    sectionSub: {
-      fontSize: 11,
-      fontWeight: '700',
-      color: '#9ca3af',
-      marginBottom: 8,
-    },
-    themeOptionCard: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      backgroundColor: GLASS.bgSubtle,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: GLASS.border,
-      padding: 12,
-      ...GLASS.backdrop,
-      marginBottom: 8,
-    },
-    themeOptionActive: {
-      borderColor: palette.accent,
-      backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
-    },
-    themeOptionName: {
-      fontSize: 12.5,
-      fontWeight: '700',
-      color: '#FFFFFF',
-    },
-    themeOptionDesc: {
-      fontSize: 10,
-      color: '#9ca3af',
-      marginTop: 2,
-    },
-    vaultInfoText: {
-      fontSize: 11,
-      lineHeight: 16,
-      color: '#9ca3af',
-      marginBottom: 12,
-    },
-    exportBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: palette.accent,
-      borderRadius: 10,
-      paddingVertical: 10,
-      marginBottom: 10,
-    },
-    exportBtnText: {
-      fontSize: 11.5,
-      fontWeight: '800',
-      color: '#000000',
-    },
-    vaultSnippetBox: {
-      backgroundColor: subtleSurfaceBg,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: 'rgba(255, 255, 255, 0.1)',
-      padding: 10,
-      marginBottom: 10,
-    },
-    copySnippetBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      alignSelf: 'flex-end',
-      backgroundColor: '#1c2232',
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      borderRadius: 6,
-      marginBottom: 4,
-    },
-    copySnippetText: {
-      fontSize: 9.5,
-      fontWeight: '700',
-      color: palette.accent,
-    },
-    vaultSnippetText: {
-      fontSize: 10,
-      fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-      color: '#9ca3af',
-    },
-    importActionBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: '#171c2b',
-      borderWidth: 1,
-      borderColor: `rgba(${palette.accentRgb}, 0.4)`,
-      borderRadius: 10,
-      paddingVertical: 10,
-      marginTop: 8,
-    },
-    importActionBtnText: {
-      fontSize: 11.5,
-      fontWeight: '800',
-      color: palette.accent,
-    },
-    vaultNoticeText: {
-      fontSize: 11,
-      fontWeight: '700',
-      color: palette.accent,
-      textAlign: 'center',
-      marginTop: 10,
-    },
-    tokenPillRow: {
-      flexDirection: 'row',
-      gap: 8,
-      flexWrap: 'wrap',
-    },
-    tokenPill: {
-      backgroundColor: subtleSurfaceBg,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: 'rgba(255, 255, 255, 0.1)',
-      paddingHorizontal: 12,
-      paddingVertical: 7,
-    },
-    tokenPillActive: {
-      backgroundColor: palette.accent,
-      borderColor: palette.accent,
-    },
-    tokenPillText: {
-      fontSize: 11,
-      fontWeight: '700',
-      color: '#9ca3af',
-    },
-    tokenPillTextActive: {
-      color: '#000000',
-    },
-    aboutCard: {
-      backgroundColor: GLASS.bgSubtle,
-      borderRadius: 14,
-      borderWidth: 1,
-      borderColor: GLASS.border,
-      padding: 14,
-      alignItems: 'center',
-      ...GLASS.backdrop,
-    },
-    aboutTitle: {
-      fontSize: 18,
-      fontWeight: '800',
-      color: palette.accent,
-    },
-    aboutVersion: {
-      fontSize: 11,
-      fontWeight: '600',
-      color: '#9ca3af',
-      marginTop: 2,
-      marginBottom: 8,
-    },
-    aboutDesc: {
-      fontSize: 11,
-      lineHeight: 16,
-      color: '#e2e8f0',
-      textAlign: 'center',
-      marginBottom: 14,
-    },
-    repoLinkBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: palette.accent,
-      borderRadius: 10,
-      paddingHorizontal: 14,
-      paddingVertical: 8,
-    },
-    repoLinkBtnText: {
-      fontSize: 11,
-      fontWeight: '800',
-      color: '#000000',
-    },
-    toggleRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      backgroundColor: subtleSurfaceBg,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: 'rgba(255, 255, 255, 0.1)',
-      padding: 12,
-      marginBottom: 10,
-    },
-    toggleTitle: {
-      color: '#FFFFFF',
-      fontSize: 13,
-      fontWeight: '700',
-    },
-    toggleDesc: {
-      color: 'rgba(255, 255, 255, 0.5)',
-      fontSize: 11,
-      marginTop: 2,
-    },
-    toggleSwitch: {
-      width: 44,
-      height: 24,
-      borderRadius: 12,
-      backgroundColor: 'rgba(255, 255, 255, 0.15)',
-      padding: 2,
-      justifyContent: 'center',
-    },
-    toggleSwitchActive: {
-      backgroundColor: palette.accent,
-    },
-    toggleThumb: {
-      width: 20,
-      height: 20,
-      borderRadius: 10,
-      backgroundColor: '#FFFFFF',
-    },
-    toggleThumbActive: {
-      alignSelf: 'flex-end',
-      backgroundColor: '#000000',
-    },
-    radioChip: {
-      paddingHorizontal: 12,
-      paddingVertical: 7,
-      borderRadius: 16,
-      backgroundColor: subtleSurfaceBg,
-      borderWidth: 1,
-      borderColor: 'rgba(255, 255, 255, 0.1)',
-    },
-    radioChipActive: {
-      borderColor: palette.accent,
-      backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
-    },
-    radioChipText: {
-      color: '#9ca3af',
-      fontSize: 12,
-      fontWeight: '600',
-    },
-    radioChipTextActive: {
-      color: palette.accent,
-    },
-    voiceItemCard: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: GLASS.bgSubtle,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: GLASS.border,
-      padding: 12,
-      ...GLASS.backdrop,
-    },
-    voiceItemCardActive: {
-      borderColor: palette.accent,
-      backgroundColor: `rgba(${palette.accentRgb}, 0.06)`,
-    },
-    voiceItemName: {
-      color: '#FFFFFF',
-      fontSize: 14,
-      fontWeight: '700',
-    },
-    voiceGenderBadge: {
-      backgroundColor: 'rgba(255, 255, 255, 0.08)',
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      borderRadius: 6,
-    },
-    voiceGenderBadgeText: {
-      color: 'rgba(255, 255, 255, 0.6)',
-      fontSize: 10,
-      textTransform: 'uppercase',
-    },
-    voiceArchetype: {
-      color: palette.accent,
-      fontSize: 11,
-      fontWeight: '600',
-      marginTop: 2,
-    },
-    voiceDesc: {
-      color: 'rgba(255, 255, 255, 0.5)',
-      fontSize: 11,
-      marginTop: 2,
-    },
-    themingHeaderSubtitle: {
-      color: '#94A3B8',
-      fontSize: 11.5,
-      fontWeight: '600',
-      marginTop: 3,
-      marginLeft: 22,
-    },
-    themingTabBar: {
-      flexDirection: 'row',
-      backgroundColor: subtleSurfaceBg,
-      borderRadius: 12,
-      padding: 3,
-      gap: 4,
-      marginHorizontal: 16,
-      marginTop: 12,
-      marginBottom: 4,
-      borderWidth: skin.id === 'material' ? 0 : 1,
-      borderColor: 'rgba(255, 255, 255, 0.08)',
-    },
-    themingTabBtn: {
-      flex: 1,
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingVertical: 7,
-      borderRadius: 9,
-    },
-    themingTabBtnActive: {
-      backgroundColor: `rgba(${palette.accentRgb}, 0.16)`,
-      borderWidth: skin.id === 'material' ? 0 : 1,
-      borderColor: `rgba(${palette.accentRgb}, 0.42)`,
-    },
-    themingTabBtnText: {
-      color: '#94A3B8',
-      fontSize: 12,
-      fontWeight: '600',
-    },
-    themingSectionDividerRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      marginTop: 6,
-      marginBottom: 10,
-    },
-    themingSectionDividerLabel: {
-      color: '#94A3B8',
-      fontSize: 10,
-      fontWeight: '800',
-      letterSpacing: 1.1,
-    },
-    themingSectionDividerLine: {
-      flex: 1,
-      height: 1,
-      backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    },
-    themingSectionCountText: {
-      color: '#64748B',
-      fontSize: 10.5,
-      fontWeight: '700',
-    },
-    themingCardMaterialUnselected: {
-      borderWidth: 0,
-      backgroundColor: subtleSurfaceBg,
-    },
-    storeBrowseBadge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 3,
-      paddingHorizontal: 9,
-      paddingVertical: 5,
-      borderRadius: 999,
-      backgroundColor: `rgba(${palette.accentRgb}, 0.16)`,
-    },
-    storeBrowseBadgeText: {
-      color: palette.accent,
-      fontSize: 11,
-      fontWeight: '800',
-    },
-    packTagPill: {
-      paddingHorizontal: 6,
-      paddingVertical: 1.5,
-      borderRadius: 5,
-      backgroundColor: `rgba(${palette.accentRgb}, 0.16)`,
-    },
-    packTagText: {
-      color: palette.accent,
-      fontSize: 9.5,
-      fontWeight: '800',
-      letterSpacing: 0.5,
-    },
-    colorSchemeGrid: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      justifyContent: 'space-between',
-      gap: 10,
-      marginBottom: 16,
-    },
-    colorSchemeCard: {
-      width: '48.2%',
-      borderRadius: Math.min(18, skin.cardRadius),
-      borderWidth: skin.id === 'material' ? 0 : 1,
-      borderColor: 'rgba(255, 255, 255, 0.08)',
-      padding: 12,
-    },
-    colorSchemeCardSelected: {
-      borderWidth: 1.75,
-      shadowOffset: { width: 0, height: 0 },
-      shadowOpacity: 0.28,
-      shadowRadius: 8,
-      elevation: 3,
-    },
-    colorSchemeTopRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 10,
-    },
-    colorSchemeOrbGroup: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    colorSchemeOrb: {
-      width: 18,
-      height: 18,
-      borderRadius: 9,
-      borderWidth: 1.5,
-    },
-    colorSchemeOrbOverlap: {
-      marginLeft: -5,
-    },
-    colorSchemeCheckBadge: {
-      width: 18,
-      height: 18,
-      borderRadius: 9,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    colorSchemeName: {
-      color: '#F8FAFC',
-      fontSize: 13,
-      fontWeight: '700',
-    },
-    colorSchemeMeta: {
-      color: '#94A3B8',
-      fontSize: 10.5,
-      fontWeight: '500',
-      marginTop: 2,
-    },
-    colorSchemeHex: {
-      fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-      letterSpacing: 0.4,
-    },
-    themingDoneBtn: {
-      backgroundColor: subtleSurfaceBg,
-      borderRadius: skin.buttonRadius,
-      borderWidth: skin.id === 'material' ? 0 : 1,
-      borderColor: 'rgba(255, 255, 255, 0.1)',
-      paddingVertical: 11,
-      alignItems: 'center',
-    },
-    themingDoneBtnText: {
-      fontSize: 12.5,
-      fontWeight: '700',
-      color: '#F1F5F9',
+            : { }),
+    },
+            modalSheet: {
+              backgroundColor: surfaceBg,
+            borderTopLeftRadius: skin.sheetRadius,
+            borderTopRightRadius: skin.sheetRadius,
+            borderWidth: 1,
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            maxHeight: '86%',
+            flex: 1,
+    },
+            modalHeader: {
+              flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingHorizontal: 16,
+            paddingVertical: 14,
+            borderBottomWidth: 1,
+            borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    },
+            modalTitleRow: {
+              flexDirection: 'row',
+            alignItems: 'center',
+    },
+            modalTitle: {
+              fontSize: 13.5,
+            fontWeight: '800',
+            color: '#FFFFFF',
+    },
+            modalCloseBtn: {
+              padding: 4,
+    },
+            modalBody: {
+              padding: 16,
+            flex: 1,
+    },
+            inputLabel: {
+              fontSize: 10.5,
+            fontWeight: '700',
+            color: '#9ca3af',
+            marginBottom: 5,
+            marginTop: 8,
+    },
+            inputBox: {
+              backgroundColor: subtleSurfaceBg,
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            paddingHorizontal: 12,
+            paddingVertical: 9,
+            fontSize: 11.5,
+            color: '#FFFFFF',
+    },
+            inputPasswordRow: {
+              flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: subtleSurfaceBg,
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            paddingHorizontal: 10,
+    },
+            inputPasswordText: {
+              flex: 1,
+            fontSize: 11.5,
+            color: '#FFFFFF',
+            paddingVertical: 9,
+    },
+            autoTestBtn: {
+              flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: palette.accent,
+            borderRadius: 10,
+            paddingVertical: 10,
+            marginTop: 14,
+    },
+            autoTestBtnText: {
+              fontSize: 12,
+            fontWeight: '800',
+            color: '#000000',
+    },
+            pingResultBox: {
+              padding: 10,
+            borderRadius: 8,
+            marginTop: 8,
+    },
+            pingSuccess: {
+              backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
+            borderWidth: 1,
+            borderColor: `rgba(${palette.accentRgb}, 0.4)`,
+    },
+            pingFailure: {
+              backgroundColor: 'rgba(244, 63, 94, 0.12)',
+            borderWidth: 1,
+            borderColor: 'rgba(244, 63, 94, 0.4)',
+    },
+            pingTextSuccess: {
+              fontSize: 11,
+            fontWeight: '700',
+            color: palette.accent,
+    },
+            pingTextFailure: {
+              fontSize: 11,
+            fontWeight: '700',
+            color: '#fb7185',
+    },
+            modalFooter: {
+              padding: 14,
+            borderTopWidth: 1,
+            borderTopColor: 'rgba(255, 255, 255, 0.08)',
+            backgroundColor: 'transparent',
+    },
+            saveBtn: {
+              backgroundColor: palette.accent,
+            borderRadius: skin.buttonRadius,
+            paddingVertical: 11,
+            alignItems: 'center',
+    },
+            saveBtnText: {
+              fontSize: 12.5,
+            fontWeight: '800',
+            color: '#000000',
+    },
+            sectionSub: {
+              fontSize: 11,
+            fontWeight: '700',
+            color: '#9ca3af',
+            marginBottom: 8,
+    },
+            themeOptionCard: {
+              flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: GLASS.bgSubtle,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: GLASS.border,
+            padding: 12,
+            ...GLASS.backdrop,
+            marginBottom: 8,
+    },
+            themeOptionActive: {
+              borderColor: palette.accent,
+            backgroundColor: `rgba(${palette.accentRgb}, 0.08)`,
+    },
+            themeOptionName: {
+              fontSize: 12.5,
+            fontWeight: '700',
+            color: '#FFFFFF',
+    },
+            themeOptionDesc: {
+              fontSize: 10,
+            color: '#9ca3af',
+            marginTop: 2,
+    },
+            vaultInfoText: {
+              fontSize: 11,
+            lineHeight: 16,
+            color: '#9ca3af',
+            marginBottom: 12,
+    },
+            exportBtn: {
+              flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: palette.accent,
+            borderRadius: 10,
+            paddingVertical: 10,
+            marginBottom: 10,
+    },
+            exportBtnText: {
+              fontSize: 11.5,
+            fontWeight: '800',
+            color: '#000000',
+    },
+            vaultSnippetBox: {
+              backgroundColor: subtleSurfaceBg,
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            padding: 10,
+            marginBottom: 10,
+    },
+            copySnippetBtn: {
+              flexDirection: 'row',
+            alignItems: 'center',
+            alignSelf: 'flex-end',
+            backgroundColor: '#1c2232',
+            paddingHorizontal: 8,
+            paddingVertical: 3,
+            borderRadius: 6,
+            marginBottom: 4,
+    },
+            copySnippetText: {
+              fontSize: 9.5,
+            fontWeight: '700',
+            color: palette.accent,
+    },
+            vaultSnippetText: {
+              fontSize: 10,
+            fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+            color: '#9ca3af',
+    },
+            importActionBtn: {
+              flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: '#171c2b',
+            borderWidth: 1,
+            borderColor: `rgba(${palette.accentRgb}, 0.4)`,
+            borderRadius: 10,
+            paddingVertical: 10,
+            marginTop: 8,
+    },
+            importActionBtnText: {
+              fontSize: 11.5,
+            fontWeight: '800',
+            color: palette.accent,
+    },
+            vaultNoticeText: {
+              fontSize: 11,
+            fontWeight: '700',
+            color: palette.accent,
+            textAlign: 'center',
+            marginTop: 10,
+    },
+            tokenPillRow: {
+              flexDirection: 'row',
+            gap: 8,
+            flexWrap: 'wrap',
+    },
+            tokenPill: {
+              backgroundColor: subtleSurfaceBg,
+            borderRadius: 8,
+            borderWidth: 1,
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            paddingHorizontal: 12,
+            paddingVertical: 7,
+    },
+            tokenPillActive: {
+              backgroundColor: palette.accent,
+            borderColor: palette.accent,
+    },
+            tokenPillText: {
+              fontSize: 11,
+            fontWeight: '700',
+            color: '#9ca3af',
+    },
+            tokenPillTextActive: {
+              color: '#000000',
+    },
+            aboutCard: {
+              backgroundColor: GLASS.bgSubtle,
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: GLASS.border,
+            padding: 14,
+            alignItems: 'center',
+            ...GLASS.backdrop,
+    },
+            aboutTitle: {
+              fontSize: 18,
+            fontWeight: '800',
+            color: palette.accent,
+    },
+            aboutVersion: {
+              fontSize: 11,
+            fontWeight: '600',
+            color: '#9ca3af',
+            marginTop: 2,
+            marginBottom: 8,
+    },
+            aboutDesc: {
+              fontSize: 11,
+            lineHeight: 16,
+            color: '#e2e8f0',
+            textAlign: 'center',
+            marginBottom: 14,
+    },
+            repoLinkBtn: {
+              flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: palette.accent,
+            borderRadius: 10,
+            paddingHorizontal: 14,
+            paddingVertical: 8,
+    },
+            repoLinkBtnText: {
+              fontSize: 11,
+            fontWeight: '800',
+            color: '#000000',
+    },
+            toggleRow: {
+              flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor: subtleSurfaceBg,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            padding: 12,
+            marginBottom: 10,
+    },
+            toggleTitle: {
+              color: '#FFFFFF',
+            fontSize: 13,
+            fontWeight: '700',
+    },
+            toggleDesc: {
+              color: 'rgba(255, 255, 255, 0.5)',
+            fontSize: 11,
+            marginTop: 2,
+    },
+            toggleSwitch: {
+              width: 44,
+            height: 24,
+            borderRadius: 12,
+            backgroundColor: 'rgba(255, 255, 255, 0.15)',
+            padding: 2,
+            justifyContent: 'center',
+    },
+            toggleSwitchActive: {
+              backgroundColor: palette.accent,
+    },
+            toggleThumb: {
+              width: 20,
+            height: 20,
+            borderRadius: 10,
+            backgroundColor: '#FFFFFF',
+    },
+            toggleThumbActive: {
+              alignSelf: 'flex-end',
+            backgroundColor: '#000000',
+    },
+            radioChip: {
+              paddingHorizontal: 12,
+            paddingVertical: 7,
+            borderRadius: 16,
+            backgroundColor: subtleSurfaceBg,
+            borderWidth: 1,
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+    },
+            radioChipActive: {
+              borderColor: palette.accent,
+            backgroundColor: `rgba(${palette.accentRgb}, 0.12)`,
+    },
+            radioChipText: {
+              color: '#9ca3af',
+            fontSize: 12,
+            fontWeight: '600',
+    },
+            radioChipTextActive: {
+              color: palette.accent,
+    },
+            voiceItemCard: {
+              flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: GLASS.bgSubtle,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: GLASS.border,
+            padding: 12,
+            ...GLASS.backdrop,
+    },
+            voiceItemCardActive: {
+              borderColor: palette.accent,
+            backgroundColor: `rgba(${palette.accentRgb}, 0.06)`,
+    },
+            voiceItemName: {
+              color: '#FFFFFF',
+            fontSize: 14,
+            fontWeight: '700',
+    },
+            voiceGenderBadge: {
+              backgroundColor: 'rgba(255, 255, 255, 0.08)',
+            paddingHorizontal: 6,
+            paddingVertical: 2,
+            borderRadius: 6,
+    },
+            voiceGenderBadgeText: {
+              color: 'rgba(255, 255, 255, 0.6)',
+            fontSize: 10,
+            textTransform: 'uppercase',
+    },
+            voiceArchetype: {
+              color: palette.accent,
+            fontSize: 11,
+            fontWeight: '600',
+            marginTop: 2,
+    },
+            voiceDesc: {
+              color: 'rgba(255, 255, 255, 0.5)',
+            fontSize: 11,
+            marginTop: 2,
+    },
+            themingHeaderSubtitle: {
+              color: '#94A3B8',
+            fontSize: 11.5,
+            fontWeight: '600',
+            marginTop: 3,
+            marginLeft: 22,
+    },
+            themingTabBar: {
+              flexDirection: 'row',
+            backgroundColor: subtleSurfaceBg,
+            borderRadius: 12,
+            padding: 3,
+            gap: 4,
+            marginHorizontal: 16,
+            marginTop: 12,
+            marginBottom: 4,
+            borderWidth: skin.id === 'material' ? 0 : 1,
+            borderColor: 'rgba(255, 255, 255, 0.08)',
+    },
+            themingTabBtn: {
+              flex: 1,
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingVertical: 7,
+            borderRadius: 9,
+    },
+            themingTabBtnActive: {
+              backgroundColor: `rgba(${palette.accentRgb}, 0.16)`,
+            borderWidth: skin.id === 'material' ? 0 : 1,
+            borderColor: `rgba(${palette.accentRgb}, 0.42)`,
+    },
+            themingTabBtnText: {
+              color: '#94A3B8',
+            fontSize: 12,
+            fontWeight: '600',
+    },
+            themingSectionDividerRow: {
+              flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+            marginTop: 6,
+            marginBottom: 10,
+    },
+            themingSectionDividerLabel: {
+              color: '#94A3B8',
+            fontSize: 10,
+            fontWeight: '800',
+            letterSpacing: 1.1,
+    },
+            themingSectionDividerLine: {
+              flex: 1,
+            height: 1,
+            backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    },
+            themingSectionCountText: {
+              color: '#64748B',
+            fontSize: 10.5,
+            fontWeight: '700',
+    },
+            themingCardMaterialUnselected: {
+              borderWidth: 0,
+            backgroundColor: subtleSurfaceBg,
+    },
+            storeBrowseBadge: {
+              flexDirection: 'row',
+            alignItems: 'center',
+            gap: 3,
+            paddingHorizontal: 9,
+            paddingVertical: 5,
+            borderRadius: 999,
+            backgroundColor: `rgba(${palette.accentRgb}, 0.16)`,
+    },
+            storeBrowseBadgeText: {
+              color: palette.accent,
+            fontSize: 11,
+            fontWeight: '800',
+    },
+            packTagPill: {
+              paddingHorizontal: 6,
+            paddingVertical: 1.5,
+            borderRadius: 5,
+            backgroundColor: `rgba(${palette.accentRgb}, 0.16)`,
+    },
+            packTagText: {
+              color: palette.accent,
+            fontSize: 9.5,
+            fontWeight: '800',
+            letterSpacing: 0.5,
+    },
+            colorSchemeGrid: {
+              flexDirection: 'row',
+            flexWrap: 'wrap',
+            justifyContent: 'space-between',
+            gap: 10,
+            marginBottom: 16,
+    },
+            colorSchemeCard: {
+              width: '48.2%',
+            borderRadius: Math.min(18, skin.cardRadius),
+            borderWidth: skin.id === 'material' ? 0 : 1,
+            borderColor: 'rgba(255, 255, 255, 0.08)',
+            padding: 12,
+    },
+            colorSchemeCardSelected: {
+              borderWidth: 1.75,
+            shadowOffset: {width: 0, height: 0 },
+            shadowOpacity: 0.28,
+            shadowRadius: 8,
+            elevation: 3,
+    },
+            colorSchemeTopRow: {
+              flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 10,
+    },
+            colorSchemeOrbGroup: {
+              flexDirection: 'row',
+            alignItems: 'center',
+    },
+            colorSchemeOrb: {
+              width: 18,
+            height: 18,
+            borderRadius: 9,
+            borderWidth: 1.5,
+    },
+            colorSchemeOrbOverlap: {
+              marginLeft: -5,
+    },
+            colorSchemeCheckBadge: {
+              width: 18,
+            height: 18,
+            borderRadius: 9,
+            alignItems: 'center',
+            justifyContent: 'center',
+    },
+            colorSchemeName: {
+              color: '#F8FAFC',
+            fontSize: 13,
+            fontWeight: '700',
+    },
+            colorSchemeMeta: {
+              color: '#94A3B8',
+            fontSize: 10.5,
+            fontWeight: '500',
+            marginTop: 2,
+    },
+            colorSchemeHex: {
+              fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+            letterSpacing: 0.4,
+    },
+            themingDoneBtn: {
+              backgroundColor: subtleSurfaceBg,
+            borderRadius: skin.buttonRadius,
+            borderWidth: skin.id === 'material' ? 0 : 1,
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            paddingVertical: 11,
+            alignItems: 'center',
+    },
+            themingDoneBtnText: {
+              fontSize: 12.5,
+            fontWeight: '700',
+            color: '#F1F5F9',
     },
   });
 };

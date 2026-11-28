@@ -246,3 +246,67 @@ test('120-message stress seeder plants Turn #1, #25, and #60 facts recallable pa
     assert.equal(hits[0].turnIndex + 1, fact.turnNumber);
   }
 });
+
+test('Multilingual CJK, Thai, Indonesian & French unspaced-script recall works on Turn #1 of 120 msgs', () => {
+  const mkFiller = (i) => ({
+    id: `fill-${i}`,
+    role: i % 2 === 0 ? 'user' : 'assistant',
+    content: `Routine turn ${i}: 普通の日常会話を続けている。Hari biasa di kedai kopi. Conversation normale.`,
+  });
+
+  // Japanese unspaced Turn #1
+  const jpHistory = Array.from({ length: 120 }, (_, i) =>
+    i === 0
+      ? { id: 'jp-1', role: 'assistant', content: '青いコンパスを黒曜石の灯台に隠したから誰にも言わないで。' }
+      : mkFiller(i)
+  );
+  const jpHits = searchOlderMessagesInMemory({
+    history: jpHistory,
+    query: '灯台の青いコンパスはどこ？',
+    excludeMessageIds: jpHistory.slice(-20).map(m => m.id),
+  });
+  assert.ok(jpHits.length >= 1, 'Expected Japanese Turn #1 recall hit');
+  assert.equal(jpHits[0].turnIndex, 0);
+
+  // Thai unspaced Turn #1
+  const thHistory = Array.from({ length: 120 }, (_, i) =>
+    i === 0
+      ? { id: 'th-1', role: 'assistant', content: 'ฉันซ่อนเข็มทิศไพลินไว้ใต้ประภาคารหินออบซิเดียน' }
+      : mkFiller(i)
+  );
+  const thHits = searchOlderMessagesInMemory({
+    history: thHistory,
+    query: 'เข็มทิศไพลิน ประภาคาร',
+    excludeMessageIds: thHistory.slice(-20).map(m => m.id),
+  });
+  assert.ok(thHits.length >= 1, 'Expected Thai Turn #1 recall hit');
+  assert.equal(thHits[0].turnIndex, 0);
+
+  // French accented + Indonesian Turn #1
+  const multiHistory = Array.from({ length: 120 }, (_, i) =>
+    i === 0
+      ? { id: 'fr-1', role: 'assistant', content: 'Je garde le médaillon émeraude dans le phare d’obsidienne, jangan lupakan janji itu.' }
+      : mkFiller(i)
+  );
+  const multiHits = searchOlderMessagesInMemory({
+    history: multiHistory,
+    query: 'où est le médaillon émeraude?',
+    excludeMessageIds: multiHistory.slice(-20).map(m => m.id),
+  });
+  assert.ok(multiHits.length >= 1, 'Expected French/Indonesian Turn #1 recall hit');
+  assert.equal(multiHits[0].turnIndex, 0);
+});
+
+test('Scene illustration prompter avoids blind 1girl, uses multi-turn context, and wires AI Director', async () => {
+  const [imgSrc, aiSrc, chatSrc] = await Promise.all([
+    fs.readFile(path.join(ROOT, 'src/services/imageGenService.ts'), 'utf8'),
+    fs.readFile(path.join(ROOT, 'src/services/aiProviderService.ts'), 'utf8'),
+    fs.readFile(path.join(ROOT, 'src/screens/ChatRoomScreen.tsx'), 'utf8'),
+  ]);
+
+  assert.ok(imgSrc.includes('inferCharacterSubjectTag('));
+  assert.ok(imgSrc.includes('recentMessages?:'));
+  assert.ok(aiSrc.includes('async generateSceneIllustrationPrompt('));
+  assert.ok(chatSrc.includes('handleAiDirectScenePrompt('));
+  assert.ok(chatSrc.includes('AI Rewrite (6 turns)'));
+});

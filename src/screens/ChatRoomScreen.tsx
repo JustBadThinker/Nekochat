@@ -268,6 +268,8 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   const [imagePrompt, setImagePrompt] = useState('');
   const [imageStyle, setImageStyle] = useState<ImageStylePreset>('anime');
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  const [isDirectingScene, setIsDirectingScene] = useState(false);
+  const scenePromptEditedRef = useRef(false);
   const [generatedImage, setGeneratedImage] = useState<{ imageUrl: string; prompt: string } | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
 
@@ -2191,19 +2193,71 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   };
 
   // Scene Depiction Functions
-  const handleOpenSceneDepict = () => {
-    let contextContent = character.firstMessage;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === 'assistant') {
-        contextContent = messages[i].content;
-        break;
+  const buildInstantScenePrompt = (targetStyle: ImageStylePreset) => {
+    const validRecent = messages.filter(
+      m => !/^⚠️ Error/.test(m.content || '') && m.content !== '...'
+    );
+    const fallbackLast =
+      validRecent[validRecent.length - 1]?.content || character.firstMessage;
+    return imageGenService.buildScenePrompt(
+      character,
+      fallbackLast,
+      persona,
+      targetStyle,
+      undefined,
+      {
+        recentMessages: validRecent.slice(-6),
+        sceneLocation: sceneState?.currentLocation,
+        sceneTime: sceneState?.establishedTime,
       }
+    );
+  };
+
+  const handleAiDirectScenePrompt = async (
+    targetStyle: ImageStylePreset,
+    forceOverwrite = false
+  ) => {
+    if (isDirectingScene) return;
+    const validRecent = messages.filter(
+      m =>
+        (m.role === 'user' || m.role === 'assistant') &&
+        !/^⚠️ Error/.test(m.content || '') &&
+        m.content !== '...'
+    );
+    if (validRecent.length === 0) return;
+
+    setIsDirectingScene(true);
+    try {
+      const activeConfig = await resolveActiveConfig();
+      const styleOpt =
+        IMAGE_STYLE_OPTIONS.find(s => s.id === targetStyle) || IMAGE_STYLE_OPTIONS[0];
+      const directed = await aiProviderService.generateSceneIllustrationPrompt({
+        character,
+        recentMessages: validRecent.slice(-6),
+        persona,
+        styleLabel: styleOpt.label,
+        stylePrefix: styleOpt.promptPrefix,
+        config: activeConfig,
+        sceneLocation: sceneState?.currentLocation,
+        sceneTime: sceneState?.establishedTime,
+        memorySnippet: chatMemory,
+      });
+      if (directed && (forceOverwrite || !scenePromptEditedRef.current)) {
+        setImagePrompt(directed);
+      }
+    } finally {
+      setIsDirectingScene(false);
     }
-    const prompt = imageGenService.buildScenePrompt(character, contextContent, persona, imageStyle);
+  };
+
+  const handleOpenSceneDepict = () => {
+    scenePromptEditedRef.current = false;
+    const prompt = buildInstantScenePrompt(imageStyle);
     setImagePrompt(prompt);
     setGeneratedImage(null);
     setImageError(null);
     setShowImageModal(true);
+    void handleAiDirectScenePrompt(imageStyle, false);
   };
 
   const handleGenerateSceneArt = async () => {
@@ -4488,12 +4542,8 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                   style={[styles.styleChip, isSel && styles.styleChipActive]}
                   onPress={() => {
                     setImageStyle(opt.id);
-                    const prompt = imageGenService.buildScenePrompt(
-                      character,
-                      messages[messages.length - 1]?.content || character.firstMessage,
-                      persona,
-                      opt.id
-                    );
+                    scenePromptEditedRef.current = false;
+                    const prompt = buildInstantScenePrompt(opt.id);
                     setImagePrompt(prompt);
                   }}
                 >
@@ -4505,12 +4555,42 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
             })}
           </ScrollView>
 
-          <Text style={styles.imageModalLabel}>Visual Scene Prompt</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <Text style={[styles.imageModalLabel, { marginBottom: 0 }]}>Visual Scene Prompt</Text>
+            <TouchableOpacity
+              onPress={() => handleAiDirectScenePrompt(imageStyle, true)}
+              disabled={isDirectingScene}
+              activeOpacity={0.8}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 5,
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                borderRadius: 999,
+                backgroundColor: `rgba(${palette.accentRgb}, 0.14)`,
+                borderWidth: isM3 ? 0 : 1,
+                borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+              }}
+            >
+              {isDirectingScene ? (
+                <ActivityIndicator size="small" color={palette.accent} />
+              ) : (
+                <Sparkles size={12} color={palette.accent} />
+              )}
+              <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>
+                {isDirectingScene ? 'Directing scene...' : 'AI Rewrite (6 turns)'}
+              </Text>
+            </TouchableOpacity>
+          </View>
           <BottomSheetGestureLock>
             <TextInput
               style={[styles.textInput, { minHeight: 70, textAlignVertical: 'top', marginBottom: 12 }]}
               value={imagePrompt}
-              onChangeText={setImagePrompt}
+              onChangeText={txt => {
+                scenePromptEditedRef.current = true;
+                setImagePrompt(txt);
+              }}
               multiline
               placeholder="Describe scene visual details..."
               placeholderTextColor={colors.textMuted}

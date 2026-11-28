@@ -32,6 +32,7 @@ const STOP_WORDS = new Set([
   'there', 'their', 'them', 'then', 'than', 'only', 'also', 'very', 'some', 'more',
   'yang', 'dan', 'ini', 'itu', 'aku', 'kamu', 'dia', 'dari', 'untuk', 'dengan',
   'tidak', 'atau', 'juga', 'bisa', 'akan', 'sudah', 'lagi', 'kalau', 'karena', 'tapi',
+  'les', 'des', 'une', 'est', 'pour', 'dans', 'avec', 'sur', 'pas', 'que', 'qui',
 ]);
 
 function stripThoughtBlocks(text: string): string {
@@ -82,14 +83,42 @@ export function selectPromptHistoryWithMemory<T>(params: {
   return sliceStart > 0 ? fullHistory.slice(sliceStart) : fullHistory;
 }
 
+const UNSPACED_SCRIPT_RUN =
+  /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\u0e00-\u0e7f\u0e80-\u0eff\u1780-\u17ff\u1000-\u109f]{2,}/g;
+
 /**
- * Extracts normalized, deduplicated query keywords for BM25 recall.
+ * Extracts normalized tokens across spaced Latin/Cyrillic/Arabic scripts AND
+ * overlapping 2-character bigrams for unspaced CJK / Thai / Southeast Asian scripts.
+ */
+export function extractTokensFromText(text: string): string[] {
+  const normalized = String(text || '').toLowerCase();
+  if (!normalized) return [];
+
+  const tokens: string[] = [];
+  const wordMatches = normalized.match(/[\p{L}\p{N}_]{2,}/gu);
+  if (wordMatches) {
+    tokens.push(...wordMatches);
+  }
+
+  const unspacedRuns = normalized.match(UNSPACED_SCRIPT_RUN);
+  if (unspacedRuns) {
+    for (const run of unspacedRuns) {
+      for (let i = 0; i <= run.length - 2; i++) {
+        tokens.push(run.slice(i, i + 2));
+      }
+    }
+  }
+
+  return tokens;
+}
+
+/**
+ * Extracts normalized, deduplicated query keywords for BM25 recall
+ * (supports English, Indonesian, European accents, Japanese, Chinese, Korean & Thai).
  */
 export function tokenizeRecallQuery(rawQuery: string): string[] {
-  const tokens = String(rawQuery || '')
-    .toLowerCase()
-    .match(/[\p{L}\p{N}_]{2,}/gu);
-  if (!tokens || tokens.length === 0) return [];
+  const tokens = extractTokensFromText(rawQuery);
+  if (tokens.length === 0) return [];
 
   const unique: string[] = [];
   const seen = new Set<string>();
@@ -97,16 +126,13 @@ export function tokenizeRecallQuery(rawQuery: string): string[] {
     if (STOP_WORDS.has(tok) || seen.has(tok)) continue;
     seen.add(tok);
     unique.push(tok);
-    if (unique.length >= 10) break;
+    if (unique.length >= 16) break;
   }
   return unique;
 }
 
 function tokenizeDocument(text: string): string[] {
-  const tokens = String(text || '')
-    .toLowerCase()
-    .match(/[\p{L}\p{N}_]{2,}/gu);
-  return tokens || [];
+  return extractTokensFromText(text);
 }
 
 /**

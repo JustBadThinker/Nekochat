@@ -2066,6 +2066,159 @@ export const aiProviderService = {
   },
 
   /**
+   * AI Scene Director: distills the latest ~6 turns of roleplay (any language) plus
+   * character/persona appearance and active scene location/time into ONE vivid English
+   * image generation prompt illustrating the current moment.
+   */
+  async generateSceneIllustrationPrompt(params: {
+    character: Character;
+    recentMessages: ChatMessage[];
+    persona?: Persona;
+    styleLabel: string;
+    stylePrefix: string;
+    config: ProviderConfig;
+    sceneLocation?: string;
+    sceneTime?: string;
+    memorySnippet?: string;
+  }): Promise<string | null> {
+    const route = resolveProviderRoute(params.config);
+    const charName =
+      params.character.customChatName?.trim() ||
+      extractCleanCharacterName(
+        params.character.chatName || params.character.name,
+        params.character.subtitle || params.character.name || params.character.tagline,
+        params.character.firstMessage,
+        params.character.personality || params.character.description
+      );
+    const userName = params.persona?.name || 'User';
+
+    const validTurns = (params.recentMessages || [])
+      .filter(m => (m.role === 'user' || m.role === 'assistant') && !isErrorMessage(m) && m.content !== '...')
+      .slice(-6);
+    if (validTurns.length === 0) return null;
+
+    const transcript = validTurns
+      .map(m => {
+        const speaker = m.role === 'assistant' ? charName : userName;
+        const cleanBody = extractThoughtAndContent(String(m.content || '')).content
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 500);
+        return `${speaker}: ${cleanBody}`;
+      })
+      .join('\n\n');
+
+    const memClean = (params.memorySnippet || '').replace(/<\/?memory>/gi, '').trim().slice(0, 400);
+    const visualContext = [
+      `Character: ${charName} — ${(params.character.description || params.character.personality || '').replace(/\s+/g, ' ').trim().slice(0, 450)}`,
+      params.persona?.appearance
+        ? `Companion (${userName}) appearance: ${params.persona.appearance.replace(/\s+/g, ' ').trim().slice(0, 200)}`
+        : '',
+      params.sceneLocation ? `Current Location: ${params.sceneLocation}` : '',
+      params.sceneTime ? `Time of Day: ${params.sceneTime}` : '',
+      memClean ? `Established Memory Context: ${memClean}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const directorPrompt =
+      `You are a cinematic visual art director turning a roleplay scene into a single image-generation prompt.\n` +
+      `Target Art Style: ${params.styleLabel} (${params.stylePrefix})\n\n` +
+      `${visualContext}\n\n` +
+      `--- LATEST CONVERSATION TURNS ---\n` +
+      `${transcript}\n` +
+      `--- END TURNS ---\n\n` +
+      `TASK: Write ONE vivid, comma-separated or descriptive ENGLISH image prompt (55–105 words) that accurately illustrates the CURRENT moment at the end of these turns.\n` +
+      `Rules:\n` +
+      `- Translate any non-English roleplay (Indonesian, Japanese, French, etc.) into crisp visual English.\n` +
+      `- Capture the character's exact gender, hair, eyes, outfit, pose, facial expression, lighting, weather, and setting.\n` +
+      `- Include ${userName} in frame only if actively visible in the current moment.\n` +
+      `- NO dialogue quotes, NO speech bubbles, NO markdown, NO intro text. Output ONLY the prompt itself.`;
+
+    const startedAt = Date.now();
+    const routeLabel = route.kind === 'gemini' ? 'Google Gemini' : route.label;
+    const endpoint =
+      route.kind === 'gemini'
+        ? `https://generativelanguage.googleapis.com/v1beta/models/${route.model || 'gemini-2.5-flash'}:generateContent`
+        : buildChatCompletionsUrl(route.endpoint || '');
+
+    try {
+      let rawResult = '';
+      if (route.kind === 'gemini') {
+        if (!route.apiKey) return null;
+        const modelName = encodeURIComponent(route.model || 'gemini-2.5-flash');
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(route.apiKey)}`;
+        const res = await platformFetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: directorPrompt }] }],
+            generationConfig: { temperature: 0.55, maxOutputTokens: 320 },
+          }),
+        });
+        if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
+        const json = await res.json();
+        const parts: any[] = json?.candidates?.[0]?.content?.parts || [];
+        rawResult = parts.filter(p => p?.text && !p?.thought).map(p => String(p.text)).join('');
+      } else {
+        if (!route.endpoint) return null;
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          ...(route.apiKey ? { Authorization: `Bearer ${route.apiKey}` } : {}),
+          ...(route.isOpenRouter ? { 'HTTP-Referer': 'https://nekochat.app', 'X-Title': 'NekoChat' } : {}),
+          ...(params.config.customHeaders || {}),
+        };
+        const res = await platformFetch(endpoint, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            model: route.model,
+            messages: [{ role: 'user', content: directorPrompt }],
+            temperature: 0.55,
+            max_tokens: 320,
+            stream: false,
+          }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        const rawChoice = String(json.choices?.[0]?.message?.content || '');
+        rawResult = extractThoughtAndContent(rawChoice).content || rawChoice;
+      }
+
+      const cleaned = rawResult
+        .replace(/^```[a-z]*\n?/i, '')
+        .replace(/\n?```$/i, '')
+        .replace(/^prompt:\s*/i, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (cleaned.length < 15) return null;
+
+      recordNetworkTelemetry({
+        kind: 'llm_summary',
+        label: `AI Scene Director (${routeLabel})`,
+        endpoint,
+        model: route.model,
+        ok: true,
+        totalMs: Date.now() - startedAt,
+        outputTokens: estimateTokens(cleaned),
+      });
+      return cleaned;
+    } catch (err: any) {
+      recordNetworkTelemetry({
+        kind: 'llm_summary',
+        label: `AI Scene Director (${routeLabel})`,
+        endpoint,
+        model: route.model,
+        ok: false,
+        totalMs: Date.now() - startedAt,
+        error: err?.message || String(err),
+      });
+      return null;
+    }
+  },
+
+  /**
    * Sends a controlled, non-streaming compatibility probe for the Capability Matrix.
    * Returns raw HTTP status / response text / network error without mutating stored keys.
    */
