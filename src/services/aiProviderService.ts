@@ -2108,12 +2108,57 @@ export const aiProviderService = {
       })
       .join('\n\n');
 
-    const memClean = (params.memorySnippet || '').replace(/<\/?memory>/gi, '').trim().slice(0, 400);
+    const cleanField = (value: string | undefined, maxLen: number): string =>
+      (value || '').replace(/\s+/g, ' ').trim().slice(0, maxLen);
+
+    const titleLine = cleanField(params.character.subtitle || params.character.tagline, 160);
+    const ageLine =
+      typeof params.character.age === 'number' && Number.isFinite(params.character.age) && params.character.age > 0
+        ? `Age: ${params.character.age} years old`
+        : '';
+    const seenTags = new Set<string>();
+    const tagList: string[] = [];
+    for (const rawTag of [...(params.character.tags || []), ...(params.character.tagSlugs || [])]) {
+      const normalized = String(rawTag || '').trim();
+      if (!normalized) continue;
+      const key = normalized.toLowerCase();
+      if (seenTags.has(key)) continue;
+      seenTags.add(key);
+      tagList.push(normalized);
+      if (tagList.length >= 14) break;
+    }
+
+    const descText = cleanField(params.character.description, 750);
+    const rawPersText = cleanField(params.character.personality, 550);
+    const persText = rawPersText && rawPersText !== descText ? rawPersText : '';
+    const bgText = cleanField(params.character.background, 350);
+    const scenarioText = cleanField(params.character.scenario, 250);
+
+    const personaPronouns = cleanField(params.persona?.pronouns || params.persona?.genderPronouns, 40);
+    const personaAppearance = cleanField(params.persona?.appearance, 300);
+    const rawPersonaDesc = cleanField(params.persona?.description || params.persona?.shortDescription, 240);
+    const personaDesc = rawPersonaDesc && rawPersonaDesc !== personaAppearance ? rawPersonaDesc : '';
+    const hasCompanionProfile = Boolean(personaPronouns || personaAppearance || personaDesc);
+
+    const memClean = cleanField((params.memorySnippet || '').replace(/<\/?memory>/gi, ''), 450);
+
     const visualContext = [
-      `Character: ${charName} — ${(params.character.description || params.character.personality || '').replace(/\s+/g, ' ').trim().slice(0, 450)}`,
-      params.persona?.appearance
-        ? `Companion (${userName}) appearance: ${params.persona.appearance.replace(/\s+/g, ' ').trim().slice(0, 200)}`
-        : '',
+      '=== CHARACTER PROFILE (MUST APPEAR VISUALLY IN PROMPT) ===',
+      `Name: ${charName}${titleLine ? ` (${titleLine})` : ''}`,
+      ageLine,
+      tagList.length > 0 ? `Tags / Archetype: ${tagList.join(', ')}` : '',
+      descText ? `Appearance & Description: ${descText}` : '',
+      persText ? `Personality & Visual Traits: ${persText}` : '',
+      bgText ? `Background: ${bgText}` : '',
+      scenarioText ? `Base Scenario: ${scenarioText}` : '',
+      ...(hasCompanionProfile
+        ? [
+            `=== COMPANION (${userName}) ===`,
+            personaPronouns ? `Pronouns: ${personaPronouns}` : '',
+            personaAppearance ? `Appearance: ${personaAppearance}` : '',
+            personaDesc ? `Description: ${personaDesc}` : '',
+          ]
+        : []),
       params.sceneLocation ? `Current Location: ${params.sceneLocation}` : '',
       params.sceneTime ? `Time of Day: ${params.sceneTime}` : '',
       memClean ? `Established Memory Context: ${memClean}` : '',
@@ -2128,11 +2173,12 @@ export const aiProviderService = {
       `--- LATEST CONVERSATION TURNS ---\n` +
       `${transcript}\n` +
       `--- END TURNS ---\n\n` +
-      `TASK: Write ONE vivid, comma-separated or descriptive ENGLISH image prompt (55–105 words) that accurately illustrates the CURRENT moment at the end of these turns.\n` +
+      `TASK: Write ONE vivid, comma-separated or descriptive ENGLISH image prompt (75–135 words) that illustrates BOTH the character's full appearance AND the CURRENT moment at the end of these turns.\n` +
       `Rules:\n` +
-      `- Translate any non-English roleplay (Indonesian, Japanese, French, etc.) into crisp visual English.\n` +
-      `- Capture the character's exact gender, hair, eyes, outfit, pose, facial expression, lighting, weather, and setting.\n` +
-      `- Include ${userName} in frame only if actively visible in the current moment.\n` +
+      `- Translate any non-English character profile or roleplay turns (Indonesian, Japanese, Korean, Chinese, French, etc.) into crisp visual English.\n` +
+      `- ALWAYS include the character's full visual description from the profile: exact gender, apparent age or age bracket (matching Age or profile cues; keep any minor strictly wholesome and age-appropriate), face, hair color/length/style, eye color, skin tone/build/height, distinctive physical traits (ears, tail, wings, scars, glasses, accessories), and exact clothing/outfit (updating the outfit only if recent turns or memory explicitly changed what they wear).\n` +
+      `- ALSO capture the current situation at the end of the latest turns: pose, action/gesture, facial expression, props/objects, lighting, weather, time of day, background environment, and camera framing.\n` +
+      `- Include ${userName} (using their Companion appearance/pronouns if provided) only if actively visible in the current moment; otherwise frame ${charName} alone.\n` +
       `- NO dialogue quotes, NO speech bubbles, NO markdown, NO intro text. Output ONLY the prompt itself.`;
 
     const startedAt = Date.now();
@@ -2153,7 +2199,7 @@ export const aiProviderService = {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: directorPrompt }] }],
-            generationConfig: { temperature: 0.55, maxOutputTokens: 320 },
+            generationConfig: { temperature: 0.55, maxOutputTokens: 440 },
           }),
         });
         if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
@@ -2175,7 +2221,7 @@ export const aiProviderService = {
             model: route.model,
             messages: [{ role: 'user', content: directorPrompt }],
             temperature: 0.55,
-            max_tokens: 320,
+            max_tokens: 440,
             stream: false,
           }),
         });

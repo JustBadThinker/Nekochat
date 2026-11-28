@@ -307,6 +307,16 @@ test('Scene illustration prompter avoids blind 1girl, uses multi-turn context, a
   assert.ok(imgSrc.includes('inferCharacterSubjectTag('));
   assert.ok(imgSrc.includes('recentMessages?:'));
   assert.ok(aiSrc.includes('async generateSceneIllustrationPrompt('));
+  assert.ok(aiSrc.includes('params.character.age'));
+  assert.ok(aiSrc.includes('params.character.description'));
+  assert.ok(aiSrc.includes('params.character.personality'));
+  assert.ok(aiSrc.includes('params.character.background'));
+  assert.ok(aiSrc.includes('params.character.tags'));
+  assert.ok(aiSrc.includes('params.persona?.pronouns'));
+  assert.ok(aiSrc.includes('params.persona?.appearance'));
+  assert.ok(aiSrc.includes('params.persona?.description'));
+  assert.ok(aiSrc.includes('apparent age or age bracket'));
+  assert.ok(aiSrc.includes("character's full visual description"));
   assert.ok(chatSrc.includes('handleAiDirectScenePrompt('));
   assert.ok(chatSrc.includes('AI Rewrite (6 turns)'));
 });
