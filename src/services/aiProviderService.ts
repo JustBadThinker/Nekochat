@@ -12,6 +12,7 @@ import { stripHistoryForPrompt, stripPromptText } from './tokenStripper';
 import { storageService } from './storageService';
 import { getSqliteConversationRepository } from './sqliteDatabase';
 import { searchOlderMessagesInMemory } from './memoryRecall';
+import { PromptSectionBreakdown, recordNetworkTelemetry, recordPromptSnapshot } from './devTelemetry';
 import { buildDynamicCastPromptSection } from './dynamicCastService';
 import { matchLorebookEntriesWithDiagnostics } from './lorebookService';
 import { getDefaultLanguagePrompt } from '../i18n/translations';
@@ -1111,7 +1112,13 @@ export const aiProviderService = {
 
     // Build rich instructions with {{char}} / {{user}} macro expansion
     // Priority 1: Application-owned safety policy (separated from character & user prompts)
-    const sections: string[] = [APPLICATION_SAFETY_POLICY];
+    const sections: string[] = [];
+    const sectionBreakdowns: PromptSectionBreakdown[] = [];
+    const pushSection = (label: string, text: string) => {
+      sections.push(text);
+      sectionBreakdowns.push({ label, tokens: estimateTokens(text), chars: text.length });
+    };
+    pushSection('Safety Policy', APPLICATION_SAFETY_POLICY);
 
     // Lorebook / JanitorAI Script keyword matching (merges character + persona attached IDs)
     let lorebookSummary = 'Lorebooks: none loaded';
@@ -1148,12 +1155,14 @@ export const aiProviderService = {
     }
 
     if (loreBeforeChar.length > 0) {
-      sections.push(
+      pushSection(
+        'World Lore (Before Char)',
         `[WORLD LORE & BACKGROUND — BEFORE CHARACTER]\n(Preserve original lore terms and proper nouns verbatim.)\n${loreBeforeChar.join('\n')}`
       );
     }
 
-    sections.push(
+    pushSection(
+      'Character Identity',
       `You are roleplaying as ${chatCharName}.\n` +
       `Identity: ${applyMacros(character.name, chatCharName, userName)} (${applyMacros(character.tagline || '', chatCharName, userName)})\n` +
       `Personality: ${stripPromptText(applyMacros(character.personality || '', chatCharName, userName), optimizerLevel)}\n` +
@@ -1161,25 +1170,36 @@ export const aiProviderService = {
     );
 
     if (character.systemPrompt) {
-      sections.push(`[CORE CHARACTER RULES]\n${stripPromptText(applyMacros(character.systemPrompt, chatCharName, userName), optimizerLevel)}`);
+      pushSection(
+        'Character Rules',
+        `[CORE CHARACTER RULES]\n${stripPromptText(applyMacros(character.systemPrompt, chatCharName, userName), optimizerLevel)}`
+      );
     }
 
     if (options?.scenario) {
-      sections.push(
+      pushSection(
+        'Active Scenario',
         `[ACTIVE SCENARIO: "${options.scenario.title}"]\nContext: ${stripPromptText(applyMacros(options.scenario.description, chatCharName, userName), optimizerLevel)}${options.scenario.scenarioInstructions
           ? `\nScenario Directives: ${stripPromptText(applyMacros(options.scenario.scenarioInstructions, chatCharName, userName), optimizerLevel)}`
           : ''
         }`
       );
     } else if (character.scenario) {
-      sections.push(`[SCENARIO CONTEXT]\n${stripPromptText(applyMacros(character.scenario, chatCharName, userName), optimizerLevel)}`);
+      pushSection(
+        'Scenario Context',
+        `[SCENARIO CONTEXT]\n${stripPromptText(applyMacros(character.scenario, chatCharName, userName), optimizerLevel)}`
+      );
     }
 
     if (options?.extraContext && options.extraContext.trim()) {
-      sections.push(`[CHAT CUSTOM RULES & OVERRIDES]\n${applyMacros(options.extraContext.trim(), chatCharName, userName)}`);
+      pushSection(
+        'Chat Custom Rules',
+        `[CHAT CUSTOM RULES & OVERRIDES]\n${applyMacros(options.extraContext.trim(), chatCharName, userName)}`
+      );
     }
 
-    sections.push(
+    pushSection(
+      'User Persona',
       `[USER PERSONA]\nName: ${userName}${persona.pronouns ? `\nPronouns: ${persona.pronouns}` : ''}${persona.appearance ? `\nAppearance: ${persona.appearance}` : ''
       }\nDescription: ${persona.description || persona.personality || ''}`
     );
@@ -1211,7 +1231,8 @@ export const aiProviderService = {
         parts.push(memBlock);
       }
       if (parts.length > 0) {
-        sections.push(
+        pushSection(
+          'Story Memory & Checkpoints',
           `[WARDEN AI STORY MEMORY & CHECKPOINTS]\n` +
           `${parts.join('\n\n')}\n` +
           `Directives:\n` +
@@ -1222,13 +1243,17 @@ export const aiProviderService = {
     }
 
     if (loreAfterChar.length > 0) {
-      sections.push(
+      pushSection(
+        'World Lore (After Char)',
         `[WORLD LORE & BACKGROUND]\n(Preserve original lore terms and proper nouns verbatim.)\n${loreAfterChar.join('\n')}`
       );
     }
 
     if (config.customPrompt && config.customPrompt.trim()) {
-      sections.push(`[USER SYSTEM PROMPT]\n${applyMacros(config.customPrompt.trim(), chatCharName, userName)}`);
+      pushSection(
+        'User System Prompt',
+        `[USER SYSTEM PROMPT]\n${applyMacros(config.customPrompt.trim(), chatCharName, userName)}`
+      );
     }
 
     try {
@@ -1237,7 +1262,10 @@ export const aiProviderService = {
         const langPrompt =
           (appSettings.languageCustomPrompt || '').trim() ||
           getDefaultLanguagePrompt(appSettings.uiLanguage || 'en');
-        sections.push(`[LANGUAGE DIRECTIVE]\n${applyMacros(langPrompt, chatCharName, userName)}`);
+        pushSection(
+          'Language Directive',
+          `[LANGUAGE DIRECTIVE]\n${applyMacros(langPrompt, chatCharName, userName)}`
+        );
       }
     } catch { }
 
@@ -1254,25 +1282,28 @@ export const aiProviderService = {
           maxTokens: 450,
         });
         if (dynamicCastBlock) {
-          sections.push(dynamicCastBlock);
+          pushSection('Dynamic Cast & Scene', dynamicCastBlock);
         }
       } catch { }
     }
 
     if (options?.isContinue) {
-      sections.push(
+      pushSection(
+        'Continue Directive',
         `[DIRECTIVE: SCENE CONTINUATION]\n` +
         `Continue seamlessly without repetition, preamble, or greeting. If the previous response ended mid-sentence, finish that sentence directly; if it ended a complete sentence or paragraph, continue on a new paragraph.`
       );
     } else if (isOoc) {
       const cleanQ = cleanOocContent(userMessage);
-      sections.push(
+      pushSection(
+        'OOC Directive',
         `[ACTIVE MODE: OUT-OF-CHARACTER (OOC) DISCUSSION]\n` +
         `The user is asking an Out-Of-Character meta-question: "${cleanQ}".\n` +
         `Respond directly starting with "[OOC]". Step outside of the persona and answer candidly as an AI assistant co-writer.`
       );
     } else {
-      sections.push(
+      pushSection(
+        'Formatting Rules',
         `[FORMATTING GUIDELINES]\n` +
         (dynamicCastBlock
           ? `- Stay in character for the AI-controlled cast member(s) present in the current scene.\n`
@@ -1310,6 +1341,7 @@ export const aiProviderService = {
     let recallEngine: 'sqlite_fts5' | 'memory_bm25' | 'none' = 'none';
     let recalledCount = 0;
     let recalledTurnLabels: string[] = [];
+    let recalledTurnNums: number[] = [];
     if (userMessage.trim() && !options?.isContinue) {
       try {
         const keptIds = turns.map(t => t.id).filter((id): id is string => Boolean(id));
@@ -1350,13 +1382,15 @@ export const aiProviderService = {
 
         if (recalled.length > 0) {
           recalledCount = recalled.length;
-          recalledTurnLabels = recalled.map(r => `#${r.turnIndex + 1}`);
+          recalledTurnNums = recalled.map(r => r.turnIndex + 1);
+          recalledTurnLabels = recalledTurnNums.map(n => `#${n}`);
           const lines = recalled.map(
             r => `- [${r.role === 'assistant' ? chatCharName : userName}, Turn ${r.turnIndex + 1}]: ${r.content}`
           );
-          sections.push(
+          pushSection(
+            'Recalled Earlier Turns',
             `[RECALLED EARLIER IN THIS SESSION]\n` +
-              lines.join('\n')
+            lines.join('\n')
           );
         }
       } catch {
@@ -1365,7 +1399,8 @@ export const aiProviderService = {
     }
 
     if (loreBeforeHistory.length > 0) {
-      sections.push(
+      pushSection(
+        'World Lore (Before History)',
         `[WORLD LORE & BACKGROUND — BEFORE HISTORY]\n(Preserve original lore terms and proper nouns verbatim.)\n${loreBeforeHistory.join('\n')}`
       );
     }
@@ -1373,6 +1408,13 @@ export const aiProviderService = {
     const systemInstruction = sections.join('\n\n');
     const trimmedCount = Math.max(0, history.filter(m => m.role === 'user' || m.role === 'assistant').length - turns.length);
     const hasCustomPrompt = Boolean((config.customPrompt && config.customPrompt.trim()) || (options?.extraContext && options.extraContext.trim()));
+    const turnsChars = turns.reduce((sum, t) => sum + t.content.length, 0);
+    const turnsTokens = turns.reduce((sum, t) => sum + estimateTokens(t.content) + 4, 0);
+    const finalBreakdowns: PromptSectionBreakdown[] = [
+      ...sectionBreakdowns,
+      { label: `Conversation Turns (${turns.length})`, tokens: turnsTokens, chars: turnsChars },
+    ];
+    const totalInputTokens = finalBreakdowns.reduce((sum, s) => sum + s.tokens, 0);
     const recallSummary =
       `Recall (${recallEngine}): ${recalledCount} hit(s)${recalledTurnLabels.length > 0 ? ` [${recalledTurnLabels.join(', ')}]` : ''}`;
     const inspectorSummary =
@@ -1380,9 +1422,29 @@ export const aiProviderService = {
       `Model: ${budget.rawModel || config.model || 'default'} · Context Limit: ${contextLimit} (${budget.contextSource}) · Max Output: ${maxOutputTokens || 'unlimited'}\n` +
       `Turns Kept: ${turns.length} (trimmed ${trimmedCount} older) · Custom Prompt Included: ${hasCustomPrompt ? 'YES' : 'NO'} · Token Stripper: ${optimizerLevel}${stripResult.savedTokens > 0 ? ` (~${stripResult.savedTokens} tok saved)` : ''} · ${recallSummary}\n` +
       lorebookSummary;
+    recordPromptSnapshot({
+      conversationId: options?.conversationId,
+      characterName: chatCharName,
+      model: budget.rawModel || config.model || 'default',
+      endpointIdentity: budget.endpointIdentity,
+      contextLimit,
+      contextSource: budget.contextSource,
+      maxOutputTokens,
+      totalInputTokens,
+      turnsKept: turns.length,
+      turnsTrimmed: trimmedCount,
+      recallEngine,
+      recalledTurns: recalledTurnNums,
+      tokenOptimizer: optimizerLevel,
+      savedTokens: stripResult.savedTokens,
+      lorebookSummary,
+      sections: finalBreakdowns,
+      fullSystemPrompt: systemInstruction,
+    });
     callbacks.onPromptBuilt?.(`${systemInstruction}\n\n${inspectorSummary}`);
 
     const route = resolveProviderRoute(config);
+    const streamStartedAt = Date.now();
 
     try {
       if (route.kind === 'gemini') {
@@ -1416,6 +1478,9 @@ export const aiProviderService = {
           throw new Error(`Gemini API HTTP ${response.status}: ${errText.slice(0, 220)}`);
         }
 
+        let geminiFirstByteAt: number | undefined = Date.now();
+        let geminiFirstDeltaAt: number | undefined;
+        let geminiStreamMode: 'sse-stream' | 'non-stream-fallback' = 'sse-stream';
         let fullText = '';
         let finishReason: string | undefined;
         let usage: StreamUsageSummary | undefined;
@@ -1445,6 +1510,7 @@ export const aiProviderService = {
             }
           }
           if (chunkText) {
+            if (geminiFirstDeltaAt === undefined) geminiFirstDeltaAt = Date.now();
             fullText += chunkText;
             callbacks.onChunk(chunkText);
           }
@@ -1502,6 +1568,7 @@ export const aiProviderService = {
           }
         } else {
           // Non-streaming fallback if runtime has no ReadableStream
+          geminiStreamMode = 'non-stream-fallback';
           const nonStreamUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(route.apiKey)}`;
           const fallbackRes = await platformFetch(nonStreamUrl, {
             method: 'POST',
@@ -1513,11 +1580,29 @@ export const aiProviderService = {
             const errText = await fallbackRes.text().catch(() => '');
             throw new Error(`Gemini API HTTP ${fallbackRes.status}: ${errText.slice(0, 220)}`);
           }
+          geminiFirstByteAt = Date.now();
           const json = await fallbackRes.json();
           processGeminiPayload(json);
         }
 
         const { thought, content } = extractThoughtAndContent(fullText);
+        const gemTotalMs = Date.now() - streamStartedAt;
+        recordNetworkTelemetry({
+          kind: 'llm_stream',
+          label: 'Google Gemini',
+          endpoint: sseUrl,
+          model: route.model || 'gemini-2.5-flash',
+          status: response.status,
+          ok: !signal.aborted,
+          streamMode: signal.aborted ? 'aborted' : geminiStreamMode,
+          ttfbMs: geminiFirstByteAt ? geminiFirstByteAt - streamStartedAt : undefined,
+          ttftMs: geminiFirstDeltaAt ? geminiFirstDeltaAt - streamStartedAt : undefined,
+          totalMs: gemTotalMs,
+          promptTokens: usage?.promptTokens ?? totalInputTokens,
+          outputTokens: usage?.outputTokens ?? estimateTokens(fullText),
+          thoughtsTokens: usage?.thoughtsTokens,
+          finishReason,
+        });
         callbacks.onComplete(content, estimateTokens(fullText), thought, {
           aborted: signal.aborted,
           finishReason,
@@ -1586,6 +1671,21 @@ export const aiProviderService = {
 
         const { thought, content } = extractThoughtAndContent(fullText);
         metrics.finalCommittedAt = Date.now();
+        recordNetworkTelemetry({
+          kind: 'llm_stream',
+          label: route.label,
+          endpoint: endpointUrl,
+          model: route.model,
+          status: res.status,
+          ok: !metrics.aborted,
+          streamMode: metrics.streamMode,
+          ttfbMs: metrics.firstByteAt ? metrics.firstByteAt - metrics.requestStartedAt : undefined,
+          ttftMs: metrics.firstDeltaAt ? metrics.firstDeltaAt - metrics.requestStartedAt : undefined,
+          totalMs: metrics.finalCommittedAt - metrics.requestStartedAt,
+          promptTokens: totalInputTokens,
+          outputTokens: estimateTokens(fullText),
+          finishReason: metrics.finishReason,
+        });
         callbacks.onStreamMetrics?.(metrics);
         callbacks.onComplete(content || fullText, estimateTokens(fullText), thought, {
           aborted: metrics.aborted,
@@ -1598,7 +1698,20 @@ export const aiProviderService = {
         callbacks.onComplete('', 0, undefined, { aborted: true, streamMode: 'aborted' });
         return;
       }
-      callbacks.onError(err instanceof Error ? err : new Error(String(err?.message || err)));
+      const errMsg = err instanceof Error ? err.message : String(err?.message || err);
+      recordNetworkTelemetry({
+        kind: 'llm_stream',
+        label: route.kind === 'gemini' ? 'Google Gemini' : route.label,
+        endpoint:
+          route.kind === 'gemini'
+            ? `https://generativelanguage.googleapis.com/v1beta/models/${route.model}`
+            : buildChatCompletionsUrl(route.endpoint || ''),
+        model: route.model,
+        ok: false,
+        totalMs: Date.now() - streamStartedAt,
+        error: errMsg,
+      });
+      callbacks.onError(err instanceof Error ? err : new Error(errMsg));
     }
   },
 
@@ -1916,13 +2029,40 @@ export const aiProviderService = {
       return finalizeMemoryBlock(content || rawChoice, finishReason);
     };
 
+    const summaryStartedAt = Date.now();
+    const summaryLabel = route.kind === 'gemini' ? 'Google Gemini' : route.label;
+    const summaryEndpoint =
+      route.kind === 'gemini'
+        ? `https://generativelanguage.googleapis.com/v1beta/models/${route.model || 'gemini-2.5-flash'}:generateContent`
+        : buildChatCompletionsUrl(route.endpoint || '');
     let rollingMemory = isIncremental ? undefined : options?.existingMemory;
-    for (let i = 0; i < chunks.length; i++) {
-      const promptText = buildSummaryPrompt(chunks[i], rollingMemory, i, chunks.length);
-      rollingMemory = await runSummaryLlmCall(promptText);
+    try {
+      for (let i = 0; i < chunks.length; i++) {
+        const promptText = buildSummaryPrompt(chunks[i], rollingMemory, i, chunks.length);
+        rollingMemory = await runSummaryLlmCall(promptText);
+      }
+      recordNetworkTelemetry({
+        kind: 'llm_summary',
+        label: `${summaryLabel} (${isIncremental ? 'incremental' : 'full'})`,
+        endpoint: summaryEndpoint,
+        model: route.model,
+        ok: true,
+        totalMs: Date.now() - summaryStartedAt,
+        outputTokens: estimateTokens(rollingMemory || ''),
+      });
+      return rollingMemory || '';
+    } catch (err: any) {
+      recordNetworkTelemetry({
+        kind: 'llm_summary',
+        label: `${summaryLabel} (${isIncremental ? 'incremental' : 'full'})`,
+        endpoint: summaryEndpoint,
+        model: route.model,
+        ok: false,
+        totalMs: Date.now() - summaryStartedAt,
+        error: err?.message || String(err),
+      });
+      throw err;
     }
-
-    return rollingMemory || '';
   },
 
   /**

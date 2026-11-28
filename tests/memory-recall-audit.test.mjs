@@ -4,12 +4,23 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  buildStressTestConversationMessages,
   extractDistinctiveQueryFromMessage,
   RECENT_RAW_OVERLAP_TURNS,
   redactSensitiveStorageValue,
   searchOlderMessagesInMemory,
   selectPromptHistoryWithMemory,
+  STRESS_TEST_PLANTED_FACTS,
 } from '../src/services/memoryRecall.ts';
+import {
+  clearDevTelemetry,
+  getLastPromptSnapshot,
+  getNetworkTelemetry,
+  getPromptSnapshots,
+  recordNetworkTelemetry,
+  recordPromptSnapshot,
+  redactTelemetryUrl,
+} from '../src/services/devTelemetry.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -144,4 +155,94 @@ test('Source regressions: Audit #1..#4 fixes and Developer Mode wiring remain in
   assert.ok(settingsSrc.includes('Developer Mode'));
   assert.ok(settingsSrc.includes('DeveloperInspectorModal'));
   assert.ok(chatSrc.includes('DeveloperInspectorModal'));
+
+  // Step 3/4 telemetry & backend diagnostics wiring
+  const backendSrc = await fs.readFile(path.join(ROOT, 'server/mysqlBackend.mjs'), 'utf8');
+  assert.ok(aiSrc.includes('recordPromptSnapshot('));
+  assert.ok(aiSrc.includes('recordNetworkTelemetry('));
+  assert.ok(backendSrc.includes("pathname === '/api/dev/stats'"));
+  const devStatsBlock = backendSrc.slice(
+    backendSrc.indexOf("pathname === '/api/dev/stats'"),
+    backendSrc.indexOf('// Only handle /api/auth/*')
+  );
+  assert.ok(!devStatsBlock.includes('password_hash'));
+  assert.ok(!devStatsBlock.includes('SELECT *'));
+});
+
+test('devTelemetry redacts sensitive URL keys and caps ring buffers cleanly', () => {
+  clearDevTelemetry();
+  assert.equal(getLastPromptSnapshot(), null);
+  assert.equal(getNetworkTelemetry().length, 0);
+
+  const safeUrl = redactTelemetryUrl(
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=AIzaSySecret1234567890'
+  );
+  assert.ok(!safeUrl.includes('AIzaSySecret1234567890'));
+  assert.ok(safeUrl.includes('key=[REDACTED]'));
+
+  for (let i = 0; i < 30; i++) {
+    recordNetworkTelemetry({
+      kind: 'llm_stream',
+      label: `Call #${i + 1}`,
+      endpoint: `https://api.example.com/v1/chat?api_key=sk-secret9999999999_${i}`,
+      ok: i % 2 === 0,
+      ttfbMs: 120 + i,
+      totalMs: 450 + i,
+    });
+  }
+  const logs = getNetworkTelemetry();
+  assert.equal(logs.length, 25);
+  assert.equal(logs[0].label, 'Call #30');
+  assert.ok(!logs[0].endpoint.includes('sk-secret'));
+
+  for (let i = 0; i < 7; i++) {
+    recordPromptSnapshot({
+      characterName: 'Lyra',
+      model: 'gpt-4o-mini',
+      endpointIdentity: 'openai:api.openai.com/v1',
+      contextLimit: 128000,
+      contextSource: 'static_registry',
+      maxOutputTokens: 4096,
+      totalInputTokens: 1000 + i,
+      turnsKept: 12,
+      turnsTrimmed: 108,
+      recallEngine: 'memory_bm25',
+      recalledTurns: [1, 25],
+      tokenOptimizer: 'off',
+      savedTokens: 0,
+      lorebookSummary: 'none',
+      sections: [{ label: 'Safety Policy', tokens: 100, chars: 400 }],
+      fullSystemPrompt: 'prompt body',
+    });
+  }
+  assert.equal(getPromptSnapshots().length, 5);
+  assert.equal(getLastPromptSnapshot()?.totalInputTokens, 1006);
+
+  clearDevTelemetry();
+  assert.equal(getLastPromptSnapshot(), null);
+  assert.equal(getNetworkTelemetry().length, 0);
+});
+
+test('120-message stress seeder plants Turn #1, #25, and #60 facts recallable past excluded tail', () => {
+  const msgs = buildStressTestConversationMessages({
+    conversationId: 'stress_test_1',
+    characterId: 'char_1',
+    charName: 'Sora',
+    userName: 'Ren',
+  });
+  assert.equal(msgs.length, 120);
+
+  const excludedRecentIds = msgs.slice(-20).map(m => m.id);
+  for (const fact of STRESS_TEST_PLANTED_FACTS) {
+    const hits = searchOlderMessagesInMemory({
+      history: msgs,
+      query: fact.query,
+      excludeMessageIds: excludedRecentIds,
+      excludeAfterTurnIndex: 100,
+      maxSnippets: 3,
+      maxTokens: 300,
+    });
+    assert.ok(hits.length >= 1, `Expected hit for ${fact.label}`);
+    assert.equal(hits[0].turnIndex + 1, fact.turnNumber);
+  }
 });

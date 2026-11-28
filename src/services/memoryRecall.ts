@@ -329,3 +329,102 @@ export function redactSensitiveStorageValue(key: string, rawValue: string): stri
     );
   }
 }
+
+export interface StressTestPlantedFact {
+  turnNumber: number;
+  query: string;
+  label: string;
+}
+
+export const STRESS_TEST_PLANTED_FACTS: StressTestPlantedFact[] = [
+  {
+    turnNumber: 1,
+    query: 'sapphire compass Obsidian Lighthouse',
+    label: 'Turn #1 (Sapphire Compass)',
+  },
+  {
+    turnNumber: 25,
+    query: 'VERMILION-774 Harbor Vault',
+    label: 'Turn #25 (Vault Passphrase)',
+  },
+  {
+    turnNumber: 60,
+    query: 'Midnight Tea House crimson scarf',
+    label: 'Turn #60 (Tea House Promise)',
+  },
+];
+
+export interface StressTestMessage {
+  id: string;
+  conversationId: string;
+  characterId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+}
+
+/**
+ * Generates a synthetic multi-turn conversation (default 120 messages) with
+ * planted facts at Turn #1, Turn #25, and Turn #60 so developers can test
+ * the 6-message UI fold, incremental checkpoints, and FTS5/BM25 top-of-chat recall.
+ */
+export function buildStressTestConversationMessages(params: {
+  conversationId: string;
+  characterId: string;
+  charName: string;
+  userName: string;
+  totalTurns?: number;
+}): StressTestMessage[] {
+  const total = Math.max(20, params.totalTurns ?? 120);
+  const baseTs = Date.now() - total * 60_000;
+  const charName = params.charName || 'Companion';
+  const userName = params.userName || 'User';
+
+  const FILLER_TOPICS = [
+    'walked past the rain-slicked cobbles near the clocktower while discussing dinner plans.',
+    'checked the weathered ledger beside the lantern and ordered two cups of roasted oolong tea.',
+    'watched the ferry lights cross the misty bay before heading back toward the archive room.',
+    'sorted through old parchment maps and compared notes on the northern mountain pass.',
+    'paused on the wooden bridge to listen to the distant bell tower chime the evening hour.',
+    'reviewed the supply manifest together while warm amber light spilled across the desk.',
+  ];
+
+  const out: StressTestMessage[] = [];
+  for (let i = 0; i < total; i++) {
+    const turnNumber = i + 1;
+    const role: 'user' | 'assistant' = i % 2 === 0 ? 'assistant' : 'user';
+    let content = '';
+
+    if (turnNumber === 1) {
+      content =
+        `*${charName} leans closer beneath the rain-lashed archways.* ` +
+        `"Listen carefully, ${userName} — I hid the heirloom sapphire compass inside the cellar of Obsidian Lighthouse behind the loose slate stone. Do not lose this detail."`;
+    } else if (turnNumber === 25) {
+      content =
+        `*${charName} slides a sealed brass envelope across the table.* ` +
+        `"When we reach Harbor Vault, tell the quartermaster the secret passphrase VERMILION-774 and ask for Ledger Nine."`;
+    } else if (turnNumber === 60) {
+      content =
+        `*${userName} ties the crimson scarf around the lantern post.* ` +
+        `"No matter what happens tonight, meet me at Midnight Tea House before dawn if we get separated."`;
+    } else {
+      const topic = FILLER_TOPICS[i % FILLER_TOPICS.length];
+      content =
+        role === 'assistant'
+          ? `*Turn #${turnNumber}: ${charName}* ${topic} Everything remains calm in the courtyard.`
+          : `*Turn #${turnNumber}: ${userName}* ${topic} Noted the route and kept moving.`;
+    }
+
+    out.push({
+      id: `${params.conversationId}_turn_${turnNumber}`,
+      conversationId: params.conversationId,
+      characterId: params.characterId,
+      role,
+      content,
+      timestamp: baseTs + i * 60_000,
+    });
+  }
+
+  return out;
+}
+

@@ -1,17 +1,19 @@
 /**
  * DeveloperInspectorModal.tsx
- * Live on-device diagnostic sheet available when Developer Mode is enabled.
+ * Live on-device + backend diagnostic sheet available when Developer Mode is enabled.
  * Inspects:
- * 1. DB & Health (SQLite WAL/FTS5 vs Web AsyncStorage, counts, active context budget)
- * 2. Messages (1 -> N) full persisted conversation inspector (verifies Turn #1..100+ exist beyond the 6-msg UI slice)
- * 3. Memory & Recall Lab (persisted <memory>, checkpoints, SQLite session_memories, & interactive Turn #1 recall test)
- * 4. Raw Storage (@nekochat:* AsyncStorage explorer with automatic secret redaction)
+ * 1. DB & Server (Local SQLite/AsyncStorage, Node + MySQL /api/health & /api/dev/stats, 120-Msg Stress Seeder)
+ * 2. Prompt & Net (Live Prompt Token Breakdown + Network/Stream Telemetry ring buffer)
+ * 3. Msgs 1->N (Full persisted conversation viewer verifying Turn #1..100+ beyond the 6-msg UI slice)
+ * 4. Recall Lab (Persisted <memory>, checkpoints, structured memories, & Top-of-Chat Turn #1 recall test)
+ * 5. Raw Keys (@nekochat:* AsyncStorage explorer with automatic secret redaction)
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
+  ScrollView,
   Share,
   StyleSheet,
   Text,
@@ -22,6 +24,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
 import {
+  Activity,
   Brain,
   Check,
   Copy,
@@ -30,20 +33,33 @@ import {
   Play,
   RefreshCw,
   Search,
+  Server,
   Terminal,
+  Trash2,
   X,
+  Zap,
 } from 'lucide-react-native';
 import { BottomSheetModal, BottomSheetScrollView } from './BottomSheetModal';
 import { useTheme } from '../theme/ThemeContext';
 import { storageService } from '../services/storageService';
 import { getSqliteConversationRepository, SessionMemoryRecord } from '../services/sqliteDatabase';
+import { BackendDevDiagnostics, mysqlBackendService } from '../services/mysqlBackendService';
+import {
+  clearDevTelemetry,
+  getLastPromptSnapshot,
+  getNetworkTelemetry,
+  LastPromptSnapshot,
+  NetworkTelemetryEntry,
+} from '../services/devTelemetry';
 import { resolveContextBudget } from '../services/promptBudget';
 import {
+  buildStressTestConversationMessages,
   extractDistinctiveQueryFromMessage,
   RECENT_RAW_OVERLAP_TURNS,
   RecalledOlderMessage,
   redactSensitiveStorageValue,
   searchOlderMessagesInMemory,
+  STRESS_TEST_PLANTED_FACTS,
 } from '../services/memoryRecall';
 import { getSubtleSurfaceBg, getSurfaceBg } from '../theme/skins';
 import type { Character, Conversation, ProviderConfig } from '../types';
@@ -55,7 +71,7 @@ export interface DeveloperInspectorModalProps {
   config?: ProviderConfig;
 }
 
-type InspectorTab = 'db' | 'messages' | 'memory' | 'storage';
+type InspectorTab = 'db' | 'prompt' | 'messages' | 'memory' | 'storage';
 type MessageSliceMode = 'top25' | 'checkpoint' | 'latest25' | 'all';
 type RecallExcludeMode = '6' | '12' | '20' | 'half';
 
@@ -77,12 +93,20 @@ interface RawKeySummary {
   rawValue: string;
 }
 
+const STRESS_CONV_PREFIX = 'dev_stress_120_';
+const STRESS_TITLE_PREFIX = '[DEV] 120-Msg Recall Stress Test';
+
 function getConversationMemoryStorageKey(convId: string) {
   return `@nekochat:chat_memory_${convId}`;
 }
 
 function getConversationCheckpointStorageKey(convId: string) {
   return `@nekochat:chat_checkpoint_idx_${convId}`;
+}
+
+function formatClockTime(ts: number): string {
+  const d = new Date(ts);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
 }
 
 export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = ({
@@ -105,6 +129,22 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
   const [activeProviderCfg, setActiveProviderCfg] = useState<ProviderConfig | undefined>(config);
 
   const [selectedConvId, setSelectedConvId] = useState<string | null>(initialConversationId || null);
+  const selectedConvIdRef = useRef<string | null>(initialConversationId || null);
+  selectedConvIdRef.current = selectedConvId;
+
+  const [selectedStorageKey, setSelectedStorageKey] = useState<string | null>(null);
+  const selectedStorageKeyRef = useRef<string | null>(null);
+  selectedStorageKeyRef.current = selectedStorageKey;
+
+  // MySQL Backend Probes + Telemetry
+  const [backendDiag, setBackendDiag] = useState<BackendDevDiagnostics | null>(null);
+  const [probingBackend, setProbingBackend] = useState(false);
+  const [lastPromptSnap, setLastPromptSnap] = useState<LastPromptSnapshot | null>(null);
+  const [netLogs, setNetLogs] = useState<NetworkTelemetryEntry[]>([]);
+
+  // 120-Msg Stress Seeder state
+  const [seedingStress, setSeedingStress] = useState(false);
+  const [statusBanner, setStatusBanner] = useState<string | null>(null);
 
   // Messages tab controls
   const [msgSliceMode, setMsgSliceMode] = useState<MessageSliceMode>('top25');
@@ -115,15 +155,27 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
   const [convCheckpointIdx, setConvCheckpointIdx] = useState<number>(-1);
   const [sessionMemories, setSessionMemories] = useState<SessionMemoryRecord[]>([]);
   const [recallQuery, setRecallQuery] = useState('');
-  const [recallExcludeMode, setRecallExcludeMode] = useState<RecallExcludeMode>('6');
+  const [recallExcludeMode, setRecallExcludeMode] = useState<RecallExcludeMode>('20');
   const [recallRunning, setRecallRunning] = useState(false);
   const [recallHits, setRecallHits] = useState<RecalledOlderMessage[]>([]);
   const [recallEngineUsed, setRecallEngineUsed] = useState<string>('');
   const [recallHasRun, setRecallHasRun] = useState(false);
 
-  // Raw Storage tab state
-  const [selectedStorageKey, setSelectedStorageKey] = useState<string | null>(null);
-  const [copiedNotice, setCopiedNotice] = useState<string | null>(null);
+  const flashBanner = (msg: string) => {
+    setStatusBanner(msg);
+    setTimeout(() => setStatusBanner(null), 2600);
+  };
+
+  const runBackendProbe = useCallback(async () => {
+    setProbingBackend(true);
+    try {
+      const diag = await mysqlBackendService.getDevDiagnostics();
+      setBackendDiag(diag);
+      setNetLogs(getNetworkTelemetry());
+    } finally {
+      setProbingBackend(false);
+    }
+  }, []);
 
   const loadSnapshot = useCallback(async () => {
     setLoading(true);
@@ -154,6 +206,8 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
       }
       setCharactersById(charMap);
       setActiveProviderCfg(config || storedCfg);
+      setLastPromptSnap(getLastPromptSnapshot());
+      setNetLogs(getNetworkTelemetry());
 
       const nekoKeys = allKeys.filter(k => k.startsWith('@nekochat:'));
       if (nekoKeys.length > 0) {
@@ -165,30 +219,32 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
           })
           .sort((a, b) => b.bytes - a.bytes);
         setRawKeys(summaries);
-        if (!selectedStorageKey && summaries.length > 0) {
+        if (!selectedStorageKeyRef.current && summaries.length > 0) {
           setSelectedStorageKey(summaries[0].key);
         }
       } else {
         setRawKeys([]);
       }
 
+      const curSelected = selectedConvIdRef.current;
       const preferredId =
         initialConversationId && sortedConvs.some(c => c.id === initialConversationId)
           ? initialConversationId
-          : selectedConvId && sortedConvs.some(c => c.id === selectedConvId)
-            ? selectedConvId
+          : curSelected && sortedConvs.some(c => c.id === curSelected)
+            ? curSelected
             : sortedConvs[0]?.id || null;
       setSelectedConvId(preferredId);
     } finally {
       setLoading(false);
     }
-  }, [config, initialConversationId, selectedConvId, selectedStorageKey]);
+  }, [config, initialConversationId]);
 
   useEffect(() => {
     if (visible) {
       loadSnapshot();
+      runBackendProbe();
     }
-  }, [visible, loadSnapshot]);
+  }, [visible, loadSnapshot, runBackendProbe]);
 
   const selectedConv = useMemo(
     () => conversations.find(c => c.id === selectedConvId) || null,
@@ -232,9 +288,11 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
       setRecallHasRun(false);
 
       const firstMsg = selectedConv.messages?.[0];
-      if (firstMsg && !recallQuery.trim()) {
+      if (firstMsg) {
         const autoKw = extractDistinctiveQueryFromMessage(firstMsg.content);
-        if (autoKw) setRecallQuery(autoKw);
+        if (autoKw) {
+          setRecallQuery(prev => (prev.trim() ? prev : autoKw));
+        }
       }
     };
 
@@ -242,7 +300,7 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
     return () => {
       active = false;
     };
-  }, [selectedConv, recallQuery]);
+  }, [selectedConv]);
 
   const totalMessagesAcrossChats = useMemo(
     () => conversations.reduce((sum, c) => sum + (c.messages?.length || 0), 0),
@@ -252,6 +310,14 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
   const totalStorageBytes = useMemo(
     () => rawKeys.reduce((sum, k) => sum + k.bytes, 0),
     [rawKeys]
+  );
+
+  const stressConversations = useMemo(
+    () =>
+      conversations.filter(
+        c => c.id.startsWith(STRESS_CONV_PREFIX) || c.title.startsWith(STRESS_TITLE_PREFIX)
+      ),
+    [conversations]
   );
 
   const resolvedBudget = useMemo(
@@ -289,11 +355,70 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
   const handleCopyText = async (label: string, text: string) => {
     try {
       await Clipboard.setStringAsync(text);
-      setCopiedNotice(`Copied ${label}`);
-      setTimeout(() => setCopiedNotice(null), 2000);
+      flashBanner(`Copied ${label}`);
     } catch {
       Share.share({ message: text }).catch(() => {});
     }
+  };
+
+  const handleSeedStressChat = async () => {
+    if (seedingStress) return;
+    setSeedingStress(true);
+    try {
+      const charList = Object.values(charactersById);
+      const targetChar = charList[0];
+      const charId = targetChar?.id || selectedConv?.characterId || 'char_stress_dev';
+      const charName = targetChar?.name || 'Lyra';
+      const personas = await storageService.getPersonas().catch(() => []);
+      const userName = personas[0]?.name || 'User';
+
+      const convId = `${STRESS_CONV_PREFIX}${Date.now()}`;
+      const seededMessages = buildStressTestConversationMessages({
+        conversationId: convId,
+        characterId: charId,
+        charName,
+        userName,
+        totalTurns: 120,
+      });
+
+      const nowIso = new Date().toISOString();
+      const syntheticConv: Conversation = {
+        id: convId,
+        userId: 'default_user',
+        characterId: charId,
+        personaId: personas[0]?.id || 'default_persona',
+        providerId: activeProviderCfg?.id || 'prov_gemini',
+        title: `${STRESS_TITLE_PREFIX} (${charName})`,
+        modelName: activeProviderCfg?.model || activeProviderCfg?.defaultModel,
+        messages: seededMessages,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+
+      await storageService.upsertConversation(syntheticConv);
+      setSelectedConvId(convId);
+      setRecallQuery(STRESS_TEST_PLANTED_FACTS[0].query);
+      setRecallExcludeMode('20');
+      await loadSnapshot();
+      setTab('memory');
+      flashBanner('Seeded 120-msg test chat! Test Turn #1 recall below.');
+    } finally {
+      setSeedingStress(false);
+    }
+  };
+
+  const handleCleanStressChats = async () => {
+    if (stressConversations.length === 0) return;
+    for (const c of stressConversations) {
+      await AsyncStorage.removeItem(getConversationMemoryStorageKey(c.id)).catch(() => {});
+      await AsyncStorage.removeItem(getConversationCheckpointStorageKey(c.id)).catch(() => {});
+      await storageService.deleteConversation(c.id).catch(() => {});
+    }
+    if (selectedConv && stressConversations.some(s => s.id === selectedConv.id)) {
+      setSelectedConvId(null);
+    }
+    await loadSnapshot();
+    flashBanner(`Deleted ${stressConversations.length} stress test chat(s).`);
   };
 
   const handlePullTurnOneKeyword = () => {
@@ -305,8 +430,12 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
     if (kw) setRecallQuery(kw);
   };
 
-  const handleRunRecallTest = async () => {
-    if (!selectedConv || !recallQuery.trim() || recallRunning) return;
+  const handleRunRecallTest = async (overrideQuery?: string) => {
+    const effectiveQuery = (overrideQuery ?? recallQuery).trim();
+    if (!selectedConv || !effectiveQuery || recallRunning) return;
+    if (overrideQuery !== undefined) {
+      setRecallQuery(overrideQuery);
+    }
     setRecallRunning(true);
     try {
       const msgs = selectedConv.messages || [];
@@ -325,7 +454,7 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
         const sqlHits = await repo.searchOlderMessagesForConversation({
           conversationId: selectedConv.id,
           characterId: selectedConv.characterId,
-          query: recallQuery.trim(),
+          query: effectiveQuery,
           excludeMessageIds: excludedIds,
           maxSnippets: 3,
           maxTokens: 300,
@@ -350,7 +479,7 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
 
       const memHits = searchOlderMessagesInMemory({
         history: msgs,
-        query: recallQuery.trim(),
+        query: effectiveQuery,
         excludeMessageIds: excludedIds,
         excludeAfterTurnIndex: tailSliceStart,
         maxSnippets: 3,
@@ -388,7 +517,7 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
       sheetStyle={[
         styles.sheet,
         {
-          backgroundColor: getSurfaceBg(palette, skin),
+          backgroundColor: surfaceBg,
           borderTopLeftRadius: Math.max(20, skin.cardRadius),
           borderTopRightRadius: Math.max(20, skin.cardRadius),
         },
@@ -398,7 +527,7 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
       <View style={styles.header}>
         <View style={{ flex: 1, marginRight: 8 }}>
           <View style={styles.titleRow}>
-            <Terminal size={16} color={palette.accent} style={{ marginRight: 7 }} />
+            <Terminal size={16} color={palette.accent} style={{ marginRight: 6 }} />
             <Text style={styles.title}>Developer Inspector</Text>
             <View style={[styles.engineBadge, { backgroundColor: `rgba(${palette.accentRgb}, 0.16)` }]}>
               <Text style={[styles.engineBadgeText, { color: palette.accent }]}>
@@ -407,10 +536,18 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
             </View>
           </View>
           <Text style={styles.subtitle} numberOfLines={1}>
-            {copiedNotice || `${conversations.length} chats · ${totalMessagesAcrossChats} msgs · ${(totalStorageBytes / 1024).toFixed(1)} KB storage`}
+            {statusBanner ||
+              `${conversations.length} chats · ${totalMessagesAcrossChats} msgs · ${(totalStorageBytes / 1024).toFixed(1)} KB local`}
           </Text>
         </View>
-        <TouchableOpacity onPress={loadSnapshot} style={styles.iconBtn} activeOpacity={0.75}>
+        <TouchableOpacity
+          onPress={() => {
+            loadSnapshot();
+            runBackendProbe();
+          }}
+          style={styles.iconBtn}
+          activeOpacity={0.75}
+        >
           <RefreshCw size={15} color="#cbd5e1" />
         </TouchableOpacity>
         <TouchableOpacity onPress={onClose} style={styles.iconBtn} activeOpacity={0.75}>
@@ -418,9 +555,12 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
         </TouchableOpacity>
       </View>
 
-      {/* 4-Tab Bar */}
-      <View
-        style={[
+      {/* 5-Tab Bar */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.tabScroll}
+        contentContainerStyle={[
           styles.tabBar,
           {
             backgroundColor: subtleBg,
@@ -429,9 +569,10 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
         ]}
       >
         {[
-          { id: 'db' as InspectorTab, label: 'DB', Icon: Database },
+          { id: 'db' as InspectorTab, label: 'DB & Server', Icon: Database },
+          { id: 'prompt' as InspectorTab, label: 'Prompt & Net', Icon: Activity },
           { id: 'messages' as InspectorTab, label: 'Msgs 1→N', Icon: Layers },
-          { id: 'memory' as InspectorTab, label: 'Recall', Icon: Brain },
+          { id: 'memory' as InspectorTab, label: 'Recall Lab', Icon: Brain },
           { id: 'storage' as InspectorTab, label: 'Raw Keys', Icon: Terminal },
         ].map(tItem => {
           const active = tab === tItem.id;
@@ -457,7 +598,7 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
             </TouchableOpacity>
           );
         })}
-      </View>
+      </ScrollView>
 
       <BottomSheetScrollView
         style={styles.body}
@@ -472,14 +613,16 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
           </View>
         )}
 
-        {/* Conversation Selector for Messages & Memory tabs */}
+        {/* Conversation Selector for Messages & Recall Lab */}
         {(tab === 'messages' || tab === 'memory') && conversations.length > 0 && (
           <View style={{ marginBottom: 12 }}>
             <Text style={styles.sectionLabel}>INSPECT CONVERSATION</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
               {conversations.slice(0, 12).map(conv => {
                 const active = conv.id === selectedConvId;
-                const cName = charactersById[conv.characterId]?.name || conv.title || 'Chat';
+                const cName = conv.title.startsWith(STRESS_TITLE_PREFIX)
+                  ? 'Stress 120'
+                  : charactersById[conv.characterId]?.name || conv.title || 'Chat';
                 const count = conv.messages?.length || 0;
                 return (
                   <TouchableOpacity
@@ -511,11 +654,12 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
           </View>
         )}
 
-        {/* TAB 1: DB & HEALTH */}
+        {/* TAB 1: DB, SERVER PROBES & 120-MSG SEEDER */}
         {tab === 'db' && (
-          <View style={{ gap: 10 }}>
+          <View style={{ gap: 12 }}>
+            {/* Local Engine */}
             <View style={[styles.card, { backgroundColor: subtleBg }]}>
-              <Text style={styles.sectionLabel}>STORAGE ENGINE</Text>
+              <Text style={styles.sectionLabel}>LOCAL DATABASE & RECALL ENGINE</Text>
               <View style={styles.kvGrid}>
                 <View style={styles.kvBox}>
                   <Text style={styles.kvLabel}>Platform</Text>
@@ -546,14 +690,6 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
                   </Text>
                 </View>
                 <View style={styles.kvBox}>
-                  <Text style={styles.kvLabel}>SQLite Memories</Text>
-                  <Text style={styles.kvValue}>{sqliteDiag ? sqliteDiag.sessionMemoryCount : 0}</Text>
-                </View>
-                <View style={styles.kvBox}>
-                  <Text style={styles.kvLabel}>Cast Members</Text>
-                  <Text style={styles.kvValue}>{sqliteDiag ? sqliteDiag.castMemberCount : 'N/A (Web)'}</Text>
-                </View>
-                <View style={styles.kvBox}>
                   <Text style={styles.kvLabel}>AsyncStorage Keys</Text>
                   <Text style={styles.kvValue}>
                     {rawKeys.length} ({(totalStorageBytes / 1024).toFixed(1)} KB)
@@ -562,9 +698,158 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
               </View>
             </View>
 
+            {/* Node + MySQL Backend & Proxy Diagnostics */}
+            <View style={[styles.card, { backgroundColor: subtleBg }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Server size={13} color={palette.accent} />
+                  <Text style={styles.sectionLabel}>MYSQL SERVER & PROXY HEALTH</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={runBackendProbe}
+                  disabled={probingBackend}
+                  style={[styles.miniBtn, { borderColor: `rgba(${palette.accentRgb}, 0.4)` }]}
+                >
+                  {probingBackend ? (
+                    <ActivityIndicator size="small" color={palette.accent} />
+                  ) : (
+                    <Text style={{ color: palette.accent, fontSize: 10.5, fontWeight: '800' }}>Ping Probes</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              {backendDiag ? (
+                <>
+                  <Text style={[styles.detailLine, { fontFamily: monoFont, fontSize: 11 }]} numberOfLines={1}>
+                    {backendDiag.baseUrl}
+                  </Text>
+                  <View style={styles.probeList}>
+                    {[
+                      {
+                        name: '/api/health (MySQL)',
+                        probe: backendDiag.health,
+                        extra: backendDiag.health.mysqlConnected
+                          ? `DB=${backendDiag.health.database || 'nekochat'}`
+                          : 'Disconnected',
+                      },
+                      {
+                        name: '/api/dev/stats',
+                        probe: backendDiag.stats,
+                        extra: backendDiag.stats.uptimeSec !== undefined ? `up ${backendDiag.stats.uptimeSec}s` : '',
+                      },
+                      {
+                        name: '/api/community (Catalog)',
+                        probe: backendDiag.communityProxy,
+                        extra: '',
+                      },
+                      {
+                        name: '/health (Proxy Root)',
+                        probe: backendDiag.rootProxy,
+                        extra: '',
+                      },
+                      {
+                        name: '/api/auth/me',
+                        probe: backendDiag.authProbe,
+                        extra: backendDiag.storedUser
+                          ? `@${backendDiag.storedUser.username} (${backendDiag.storedUser.role})`
+                          : 'Guest',
+                      },
+                    ].map(row => (
+                      <View key={row.name} style={styles.probeRow}>
+                        <View
+                          style={[
+                            styles.statusDot,
+                            { backgroundColor: row.probe.ok ? '#34d399' : '#f87171' },
+                          ]}
+                        />
+                        <Text style={styles.probeName} numberOfLines={1}>{row.name}</Text>
+                        <Text style={styles.probeMeta} numberOfLines={1}>
+                          {row.probe.status ? `${row.probe.status} · ` : ''}
+                          {row.probe.latencyMs}ms{row.extra ? ` · ${row.extra}` : ''}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  {backendDiag.stats.ok && backendDiag.stats.counts && (
+                    <View style={styles.kvGrid}>
+                      <View style={styles.kvBox}>
+                        <Text style={styles.kvLabel}>MySQL Users / Sessions</Text>
+                        <Text style={styles.kvValue}>
+                          {backendDiag.stats.counts.users} / {backendDiag.stats.counts.sessions}
+                        </Text>
+                      </View>
+                      <View style={styles.kvBox}>
+                        <Text style={styles.kvLabel}>MySQL Characters (Pub/Priv)</Text>
+                        <Text style={styles.kvValue}>
+                          {backendDiag.stats.counts.characters} ({backendDiag.stats.counts.publicCharacters}/{backendDiag.stats.counts.privateCharacters})
+                        </Text>
+                      </View>
+                      <View style={[styles.kvBox, { width: '100%' }]}>
+                        <Text style={styles.kvLabel}>Uploads Folder</Text>
+                        <Text style={styles.kvValue}>
+                          {backendDiag.stats.uploads?.fileCount ?? 0} file(s) ·{' '}
+                          {((backendDiag.stats.uploads?.totalBytes ?? 0) / 1024).toFixed(1)} KB
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                </>
+              ) : (
+                <Text style={styles.mutedText}>Probing backend server...</Text>
+              )}
+            </View>
+
+            {/* 120-Message Stress Seeder */}
+            <View style={[styles.card, { backgroundColor: subtleBg, borderColor: `rgba(${palette.accentRgb}, 0.28)` }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Zap size={13} color={palette.accent} />
+                <Text style={[styles.sectionLabel, { color: palette.accent }]}>
+                  120-MESSAGE MEMORY STRESS SEEDER
+                </Text>
+              </View>
+              <Text style={styles.helperText}>
+                Creates a synthetic 120-turn test chat with planted facts on Turn #1, Turn #25, and Turn #60 so you can verify 100+ message persistence, the 6-msg UI fold, and Recall Lab instantly.
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                <TouchableOpacity
+                  onPress={handleSeedStressChat}
+                  disabled={seedingStress}
+                  activeOpacity={0.85}
+                  style={[styles.primaryBtn, { flex: 1, backgroundColor: palette.accent }]}
+                >
+                  {seedingStress ? (
+                    <ActivityIndicator size="small" color={palette.bgDark} />
+                  ) : (
+                    <>
+                      <Zap size={13} color={palette.bgDark} />
+                      <Text style={{ color: palette.bgDark, fontSize: 12, fontWeight: '800' }}>
+                        Seed 120-Msg Stress Chat
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                {stressConversations.length > 0 && (
+                  <TouchableOpacity
+                    onPress={handleCleanStressChats}
+                    activeOpacity={0.8}
+                    style={[styles.secondaryBtn, { flex: 0, paddingHorizontal: 12, borderColor: 'rgba(248,113,113,0.4)' }]}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                      <Trash2 size={13} color="#fda4af" />
+                      <Text style={{ color: '#fda4af', fontSize: 11.5, fontWeight: '700' }}>
+                        Clean ({stressConversations.length})
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
+            {/* Active Budget */}
             {resolvedBudget && (
               <View style={[styles.card, { backgroundColor: subtleBg }]}>
-                <Text style={styles.sectionLabel}>ACTIVE MODEL CONTEXT & CONTINUITY</Text>
+                <Text style={styles.sectionLabel}>ACTIVE MODEL BUDGET & CONTINUITY</Text>
                 <Text style={styles.detailLine}>
                   Model: <Text style={{ color: '#fff', fontWeight: '700' }}>{resolvedBudget.rawModel || 'default'}</Text>
                 </Text>
@@ -575,14 +860,188 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
                   Context Limit: <Text style={{ color: palette.accent, fontWeight: '700' }}>{resolvedBudget.contextLimit}</Text> ({resolvedBudget.contextSource}) · Max Output: {resolvedBudget.maxOutputTokens || 'Unlimited'}
                 </Text>
                 <Text style={styles.detailLine}>
-                  Raw Continuity Buffer: <Text style={{ color: '#fff', fontWeight: '700' }}>Last {RECENT_RAW_OVERLAP_TURNS} turns</Text> kept even with &quot;Memory replaces old messages&quot; ON.
+                  Raw Continuity Buffer: <Text style={{ color: '#fff', fontWeight: '700' }}>Last {RECENT_RAW_OVERLAP_TURNS} turns</Text> kept when Memory replaces old messages.
                 </Text>
               </View>
             )}
           </View>
         )}
 
-        {/* TAB 2: MESSAGES (1 -> N) */}
+        {/* TAB 2: LIVE PROMPT BREAKDOWN & NETWORK TELEMETRY */}
+        {tab === 'prompt' && (
+          <View style={{ gap: 12 }}>
+            {/* Live Prompt Breakdown */}
+            <View style={[styles.card, { backgroundColor: subtleBg }]}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={styles.sectionLabel}>LAST SENT PROMPT BREAKDOWN</Text>
+                {lastPromptSnap && (
+                  <TouchableOpacity
+                    onPress={() => handleCopyText('system prompt', lastPromptSnap.fullSystemPrompt)}
+                  >
+                    <Copy size={13} color={palette.accent} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {lastPromptSnap ? (
+                <>
+                  <Text style={styles.detailLine}>
+                    <Text style={{ color: '#fff', fontWeight: '700' }}>{lastPromptSnap.characterName}</Text> ·{' '}
+                    {lastPromptSnap.model} ({formatClockTime(lastPromptSnap.timestamp)})
+                  </Text>
+                  <Text style={styles.detailLine}>
+                    Budget:{' '}
+                    <Text style={{ color: palette.accent, fontWeight: '700' }}>
+                      {lastPromptSnap.totalInputTokens}
+                    </Text>{' '}
+                    / {lastPromptSnap.contextLimit} tok · Turns kept: {lastPromptSnap.turnsKept} (trimmed{' '}
+                    {lastPromptSnap.turnsTrimmed})
+                  </Text>
+                  <Text style={styles.detailLine}>
+                    Recall ({lastPromptSnap.recallEngine}):{' '}
+                    {lastPromptSnap.recalledTurns.length > 0
+                      ? lastPromptSnap.recalledTurns.map(n => `#${n}`).join(', ')
+                      : '0 hits'}{' '}
+                    · Stripper: {lastPromptSnap.tokenOptimizer}
+                    {lastPromptSnap.savedTokens > 0 ? ` (-${lastPromptSnap.savedTokens} tok)` : ''}
+                  </Text>
+
+                  {/* Context Utilization Bar */}
+                  <View style={styles.utilTrack}>
+                    <View
+                      style={[
+                        styles.utilFill,
+                        {
+                          backgroundColor: palette.accent,
+                          width: `${Math.min(
+                            100,
+                            Math.max(2, Math.round((lastPromptSnap.totalInputTokens / Math.max(1, lastPromptSnap.contextLimit)) * 100))
+                          )}%`,
+                        },
+                      ]}
+                    />
+                  </View>
+
+                  {/* Per-Section Breakdown */}
+                  <View style={{ gap: 6, marginTop: 4 }}>
+                    {lastPromptSnap.sections.map(sec => {
+                      const pct = Math.max(
+                        2,
+                        Math.round((sec.tokens / Math.max(1, lastPromptSnap.totalInputTokens)) * 100)
+                      );
+                      return (
+                        <View key={sec.label} style={{ gap: 3 }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                            <Text style={{ color: '#e2e8f0', fontSize: 11.5, fontWeight: '600' }}>
+                              {sec.label}
+                            </Text>
+                            <Text style={{ color: '#94a3b8', fontSize: 11, fontFamily: monoFont }}>
+                              {sec.tokens} tok ({pct}%)
+                            </Text>
+                          </View>
+                          <View style={styles.secTrack}>
+                            <View
+                              style={[
+                                styles.secFill,
+                                { width: `${Math.min(100, pct)}%`, backgroundColor: palette.accent },
+                              ]}
+                            />
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+
+                  <Text style={[styles.codePreview, { fontFamily: monoFont }]} numberOfLines={12}>
+                    {lastPromptSnap.fullSystemPrompt}
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.mutedText}>
+                  Send one chat message first — every section&apos;s token cost, trimmed turns, and recall hits will appear here automatically.
+                </Text>
+              )}
+            </View>
+
+            {/* Network & Stream Telemetry Ring Buffer */}
+            <View style={[styles.card, { backgroundColor: subtleBg }]}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={styles.sectionLabel}>NETWORK & STREAM TELEMETRY ({netLogs.length})</Text>
+                {netLogs.length > 0 && (
+                  <TouchableOpacity
+                    onPress={() => {
+                      clearDevTelemetry();
+                      setNetLogs([]);
+                      setLastPromptSnap(null);
+                      flashBanner('Cleared telemetry logs');
+                    }}
+                  >
+                    <Text style={{ color: '#94a3b8', fontSize: 11, fontWeight: '700' }}>Clear</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {netLogs.length > 0 ? (
+                <View style={{ gap: 8, marginTop: 4 }}>
+                  {netLogs.map(entry => (
+                    <View
+                      key={entry.id}
+                      style={[
+                        styles.msgRow,
+                        { backgroundColor: surfaceBg, borderColor: entry.ok ? 'rgba(255,255,255,0.08)' : 'rgba(248,113,113,0.4)' },
+                      ]}
+                    >
+                      <View style={styles.msgMetaRow}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                          <View
+                            style={[
+                              styles.pillBadge,
+                              { backgroundColor: entry.ok ? 'rgba(52,211,153,0.16)' : 'rgba(248,113,113,0.18)' },
+                            ]}
+                          >
+                            <Text style={{ color: entry.ok ? '#34d399' : '#f87171', fontSize: 9.5, fontWeight: '800' }}>
+                              {entry.ok ? (entry.status ? `OK ${entry.status}` : 'OK') : `ERR${entry.status ? ` ${entry.status}` : ''}`}
+                            </Text>
+                          </View>
+                          <Text style={{ color: '#f8fafc', fontSize: 11.5, fontWeight: '700' }} numberOfLines={1}>
+                            {entry.label}{entry.model ? ` · ${entry.model}` : ''}
+                          </Text>
+                        </View>
+                        <Text style={{ color: '#64748b', fontSize: 10.5, fontFamily: monoFont }}>
+                          {formatClockTime(entry.timestamp)}
+                        </Text>
+                      </View>
+                      <Text style={{ color: '#94a3b8', fontSize: 10.5, fontFamily: monoFont }} numberOfLines={1}>
+                        {entry.endpoint}
+                      </Text>
+                      <Text style={{ color: '#cbd5e1', fontSize: 11 }}>
+                        {[
+                          entry.streamMode ? `mode=${entry.streamMode}` : '',
+                          typeof entry.ttfbMs === 'number' ? `TTFB=${entry.ttfbMs}ms` : '',
+                          typeof entry.ttftMs === 'number' ? `TTFT=${entry.ttftMs}ms` : '',
+                          typeof entry.totalMs === 'number' ? `total=${entry.totalMs}ms` : '',
+                          typeof entry.promptTokens === 'number' ? `in=${entry.promptTokens}` : '',
+                          typeof entry.outputTokens === 'number' ? `out=${entry.outputTokens}` : '',
+                          typeof entry.thoughtsTokens === 'number' ? `think=${entry.thoughtsTokens}` : '',
+                          entry.finishReason ? `end=${entry.finishReason}` : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </Text>
+                      {entry.error && (
+                        <Text style={{ color: '#f87171', fontSize: 11 }}>{entry.error}</Text>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.mutedText}>No LLM streams or backend probes logged in this session yet.</Text>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* TAB 3: MESSAGES (1 -> N) */}
         {tab === 'messages' && (
           <View style={{ gap: 10 }}>
             {selectedConv ? (
@@ -671,7 +1130,7 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
                     return (
                       <View
                         key={msg.id || `m-${turnIndex}`}
-                        style={[styles.msgRow, { backgroundColor: surfaceBg, borderColor: 'rgba(255,255,255,0.08)' }]}
+                        style={[styles.msgRow, { backgroundColor: subtleBg, borderColor: 'rgba(255,255,255,0.08)' }]}
                       >
                         <View style={styles.msgMetaRow}>
                           <Text style={[styles.msgTurnTag, { color: palette.accent, fontFamily: monoFont }]}>
@@ -698,7 +1157,7 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
           </View>
         )}
 
-        {/* TAB 3: MEMORY & RECALL LAB */}
+        {/* TAB 4: MEMORY & RECALL LAB */}
         {tab === 'memory' && (
           <View style={{ gap: 12 }}>
             {selectedConv ? (
@@ -747,6 +1206,29 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
                   <Text style={styles.helperText}>
                     Tests whether keywords from Turn #1 at the very top of this chat can still be recalled when the recent prompt window is excluded.
                   </Text>
+
+                  {(selectedConv.id.startsWith(STRESS_CONV_PREFIX) ||
+                    selectedConv.title.startsWith(STRESS_TITLE_PREFIX)) && (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                      {STRESS_TEST_PLANTED_FACTS.map(f => (
+                        <TouchableOpacity
+                          key={f.turnNumber}
+                          onPress={() => handleRunRecallTest(f.query)}
+                          style={[
+                            styles.sliceChip,
+                            {
+                              backgroundColor: `rgba(${palette.accentRgb}, 0.14)`,
+                              borderColor: `rgba(${palette.accentRgb}, 0.45)`,
+                            },
+                          ]}
+                        >
+                          <Text style={{ color: palette.accent, fontSize: 11, fontWeight: '700' }}>
+                            Test {f.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
 
                   <View style={[styles.searchWrap, { marginTop: 8 }]}>
                     <Search size={14} color="#64748b" />
@@ -798,7 +1280,7 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      onPress={handleRunRecallTest}
+                      onPress={() => handleRunRecallTest()}
                       style={[styles.primaryBtn, { backgroundColor: palette.accent }]}
                       disabled={recallRunning || !recallQuery.trim()}
                       activeOpacity={0.85}
@@ -838,7 +1320,7 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
                         </>
                       ) : (
                         <Text style={styles.mutedText}>
-                          No older turns outside the excluded tail matched &quot;{recallQuery}&quot;. Try &quot;Pull Keyword from Turn #1&quot; or a larger chat.
+                          No older turns outside the excluded tail matched &quot;{recallQuery}&quot;. Try &quot;Pull Keyword from Turn #1&quot; or seed a 120-msg test chat in DB & Server.
                         </Text>
                       )}
                     </View>
@@ -851,7 +1333,7 @@ export const DeveloperInspectorModal: React.FC<DeveloperInspectorModalProps> = (
           </View>
         )}
 
-        {/* TAB 4: RAW STORAGE (REDACTED) */}
+        {/* TAB 5: RAW STORAGE (REDACTED) */}
         {tab === 'storage' && (
           <View style={{ gap: 10 }}>
             <Text style={styles.helperText}>
@@ -955,22 +1437,25 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: 'rgba(255, 255, 255, 0.06)',
   },
+  tabScroll: {
+    flexGrow: 0,
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 4,
+  },
   tabBar: {
     flexDirection: 'row',
     borderRadius: 12,
     padding: 3,
     gap: 4,
-    marginHorizontal: 16,
-    marginTop: 10,
-    marginBottom: 4,
     borderColor: 'rgba(255, 255, 255, 0.08)',
   },
   tabBtn: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
+    paddingHorizontal: 11,
     paddingVertical: 7,
     borderRadius: 9,
   },
@@ -1001,6 +1486,41 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.08)',
     padding: 12,
     gap: 6,
+  },
+  miniBtn: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  probeList: {
+    gap: 6,
+    marginTop: 4,
+  },
+  probeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    borderRadius: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  probeName: {
+    color: '#F8FAFC',
+    fontSize: 11.5,
+    fontWeight: '700',
+    flex: 1,
+  },
+  probeMeta: {
+    color: '#94A3B8',
+    fontSize: 10.5,
+    maxWidth: '52%',
   },
   kvGrid: {
     flexDirection: 'row',
@@ -1034,6 +1554,33 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontSize: 11.5,
     lineHeight: 16,
+  },
+  utilTrack: {
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    overflow: 'hidden',
+    marginTop: 4,
+  },
+  utilFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  secTrack: {
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    overflow: 'hidden',
+  },
+  secFill: {
+    height: '100%',
+    borderRadius: 999,
+    opacity: 0.8,
+  },
+  pillBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
   convPill: {
     paddingHorizontal: 10,
