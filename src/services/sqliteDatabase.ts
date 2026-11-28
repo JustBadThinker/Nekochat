@@ -1499,6 +1499,51 @@ export class SqliteConversationRepository {
 
     return lines.join('\n');
   }
+
+  /**
+   * Read-only database diagnostics summary for Developer Inspector.
+   */
+  async getDiagnosticsSummary(): Promise<{
+    engine: 'sqlite';
+    dbName: string;
+    schemaVersion: number;
+    fts5Supported: boolean;
+    conversationCount: number;
+    messageCount: number;
+    ftsRowCount: number;
+    sessionMemoryCount: number;
+    castMemberCount: number;
+  }> {
+    const readCount = async (table: string): Promise<number> => {
+      try {
+        const row = await this.db.getFirstAsync<{ cnt: number }>(`SELECT COUNT(*) AS cnt FROM ${table}`);
+        return Number(row?.cnt ?? 0);
+      } catch {
+        return 0;
+      }
+    };
+
+    const [conversationCount, messageCount, ftsRowCount, sessionMemoryCount, castMemberCount] =
+      await Promise.all([
+        readCount('conversations'),
+        readCount('messages'),
+        this.fts5Supported ? readCount('messages_fts') : Promise.resolve(0),
+        readCount('session_memories'),
+        readCount('cast_members'),
+      ]);
+
+    return {
+      engine: 'sqlite',
+      dbName: SQLITE_DB_NAME,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      fts5Supported: this.fts5Supported,
+      conversationCount,
+      messageCount,
+      ftsRowCount,
+      sessionMemoryCount,
+      castMemberCount,
+    };
+  }
 }
 
 export function resolveBranchCheckpointState(params: {

@@ -165,6 +165,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   notifyFollowedCreators: false,
   notifyDiscreetMode: true,
   notifyQuietHours: true,
+  developerMode: false,
 };
 
 const DEFAULT_PROVIDER_CONFIG: ProviderConfig = {

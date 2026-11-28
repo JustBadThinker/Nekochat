@@ -749,6 +749,7 @@ function AppContent() {
                   setCharacters(prev => prev.map(c => (c.id === updatedChar.id ? updatedChar : c)));
                 }}
                 config={config}
+                developerMode={Boolean(settings?.developerMode)}
                 initialConversationId={activeConversationId || undefined}
                 onBack={() => {
                   runScreenExitAnimation(chatRoomEnterAnim, activeSkinTokens.animation, async () => {

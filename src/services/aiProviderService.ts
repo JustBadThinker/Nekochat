@@ -11,6 +11,7 @@ import { isOocMessage, cleanOocContent, estimateTokens } from './tokenOptimizerS
 import { stripHistoryForPrompt, stripPromptText } from './tokenStripper';
 import { storageService } from './storageService';
 import { getSqliteConversationRepository } from './sqliteDatabase';
+import { searchOlderMessagesInMemory } from './memoryRecall';
 import { buildDynamicCastPromptSection } from './dynamicCastService';
 import { matchLorebookEntriesWithDiagnostics } from './lorebookService';
 import { getDefaultLanguagePrompt } from '../i18n/translations';
@@ -136,7 +137,7 @@ async function platformFetch(url: string, init: RequestInit & { signal?: AbortSi
       if (init.signal?.aborted || proxyErr?.name === 'AbortError') throw proxyErr;
       throw new Error(
         `The browser blocked the request to ${new URL(url).host} (CORS / network). ` +
-          `Run "node server.mjs" so the web build can relay it, or use the mobile app (no CORS on native).`
+        `Run "node server.mjs" so the web build can relay it, or use the mobile app (no CORS on native).`
       );
     }
   }
@@ -586,13 +587,13 @@ export const aiProviderService = {
                       };
                     }
                   }
-                  storageService.upsertProvider({ ...provider, cachedModelMetadata: nextCache }).catch(() => {});
+                  storageService.upsertProvider({ ...provider, cachedModelMetadata: nextCache }).catch(() => { });
                 }
                 return geminiList;
               }
             }
           }
-        } catch {}
+        } catch { }
       }
       return [
         { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Fast & Recommended)' },
@@ -640,7 +641,7 @@ export const aiProviderService = {
             };
           }
         }
-        storageService.upsertProvider({ ...provider, cachedModelMetadata: nextCache }).catch(() => {});
+        storageService.upsertProvider({ ...provider, cachedModelMetadata: nextCache }).catch(() => { });
       }
       return mapped;
     } catch (err: any) {
@@ -868,7 +869,7 @@ export const aiProviderService = {
         if (errJson?.error?.message) {
           errMsg = errJson.error.message;
         }
-      } catch {}
+      } catch { }
       return { ok: false, latencyMs: latency, error: errMsg };
     } catch (err: any) {
       return { ok: false, latencyMs: Date.now() - start, error: err?.message || 'Network Error' };
@@ -1165,10 +1166,9 @@ export const aiProviderService = {
 
     if (options?.scenario) {
       sections.push(
-        `[ACTIVE SCENARIO: "${options.scenario.title}"]\nContext: ${stripPromptText(applyMacros(options.scenario.description, chatCharName, userName), optimizerLevel)}${
-          options.scenario.scenarioInstructions
-            ? `\nScenario Directives: ${stripPromptText(applyMacros(options.scenario.scenarioInstructions, chatCharName, userName), optimizerLevel)}`
-            : ''
+        `[ACTIVE SCENARIO: "${options.scenario.title}"]\nContext: ${stripPromptText(applyMacros(options.scenario.description, chatCharName, userName), optimizerLevel)}${options.scenario.scenarioInstructions
+          ? `\nScenario Directives: ${stripPromptText(applyMacros(options.scenario.scenarioInstructions, chatCharName, userName), optimizerLevel)}`
+          : ''
         }`
       );
     } else if (character.scenario) {
@@ -1180,8 +1180,7 @@ export const aiProviderService = {
     }
 
     sections.push(
-      `[USER PERSONA]\nName: ${userName}${persona.pronouns ? `\nPronouns: ${persona.pronouns}` : ''}${
-        persona.appearance ? `\nAppearance: ${persona.appearance}` : ''
+      `[USER PERSONA]\nName: ${userName}${persona.pronouns ? `\nPronouns: ${persona.pronouns}` : ''}${persona.appearance ? `\nAppearance: ${persona.appearance}` : ''
       }\nDescription: ${persona.description || persona.personality || ''}`
     );
 
@@ -1197,7 +1196,7 @@ export const aiProviderService = {
             350
           );
         }
-      } catch {}
+      } catch { }
     }
 
     if ((options?.memory && options.memory.trim()) || structuredSessionBlock) {
@@ -1214,10 +1213,10 @@ export const aiProviderService = {
       if (parts.length > 0) {
         sections.push(
           `[WARDEN AI STORY MEMORY & CHECKPOINTS]\n` +
-            `${parts.join('\n\n')}\n` +
-            `Directives:\n` +
-            `- The memory block above documents established facts, relationship state, and past milestones.\n` +
-            `- Never contradict, forget, or overwrite active details recorded above.`
+          `${parts.join('\n\n')}\n` +
+          `Directives:\n` +
+          `- The memory block above documents established facts, relationship state, and past milestones.\n` +
+          `- Never contradict, forget, or overwrite active details recorded above.`
         );
       }
     }
@@ -1240,7 +1239,7 @@ export const aiProviderService = {
           getDefaultLanguagePrompt(appSettings.uiLanguage || 'en');
         sections.push(`[LANGUAGE DIRECTIVE]\n${applyMacros(langPrompt, chatCharName, userName)}`);
       }
-    } catch {}
+    } catch { }
 
     // Dynamic Cast & Scene Continuity (Phase 7)
     let dynamicCastBlock = '';
@@ -1257,7 +1256,7 @@ export const aiProviderService = {
         if (dynamicCastBlock) {
           sections.push(dynamicCastBlock);
         }
-      } catch {}
+      } catch { }
     }
 
     if (options?.isContinue) {
@@ -1306,29 +1305,59 @@ export const aiProviderService = {
       userName,
     });
 
-    // Phase 4: Per-session FTS5/BM25 retrieval of older messages not already in `turns`
-    if (options?.conversationId && userMessage.trim() && !options?.isContinue) {
+    // Phase 4: Per-session retrieval of older messages not already in `turns`
+    // Native SQLite FTS5/BM25 primary path + Web/fallback in-memory BM25 search from Turn #1 upward
+    let recallEngine: 'sqlite_fts5' | 'memory_bm25' | 'none' = 'none';
+    let recalledCount = 0;
+    let recalledTurnLabels: string[] = [];
+    if (userMessage.trim() && !options?.isContinue) {
       try {
-        const repo = await getSqliteConversationRepository();
-        if (repo) {
-          const keptIds = turns.map(t => t.id).filter((id): id is string => Boolean(id));
-          const recalled = await repo.searchOlderMessagesForConversation({
-            conversationId: options.conversationId,
-            characterId: character.id,
+        const keptIds = turns.map(t => t.id).filter((id): id is string => Boolean(id));
+        let recalled: { role: string; turnIndex: number; content: string }[] = [];
+
+        if (options?.conversationId) {
+          const repo = await getSqliteConversationRepository();
+          if (repo) {
+            recallEngine = 'sqlite_fts5';
+            recalled = await repo.searchOlderMessagesForConversation({
+              conversationId: options.conversationId,
+              characterId: character.id,
+              query: userMessage,
+              excludeMessageIds: keptIds,
+              maxSnippets: 3,
+              maxTokens: recallTokenBudget,
+            });
+          }
+        }
+
+        if (recalled.length === 0) {
+          const fallbackHits = searchOlderMessagesInMemory({
+            history,
             query: userMessage,
             excludeMessageIds: keptIds,
+            excludeAfterTurnIndex:
+              keptIds.length === 0 ? Math.max(0, history.length - turns.length) : undefined,
             maxSnippets: 3,
             maxTokens: recallTokenBudget,
           });
-          if (recalled.length > 0) {
-            const lines = recalled.map(
-              r => `- [${r.role === 'assistant' ? chatCharName : userName}, Turn ${r.turnIndex + 1}]: ${r.content}`
-            );
-            sections.push(
-              `[RECALLED EARLIER IN THIS SESSION]\n` +
-                lines.join('\n')
-            );
+          if (fallbackHits.length > 0) {
+            recallEngine = 'memory_bm25';
+            recalled = fallbackHits;
+          } else if (recallEngine === 'none') {
+            recallEngine = 'memory_bm25';
           }
+        }
+
+        if (recalled.length > 0) {
+          recalledCount = recalled.length;
+          recalledTurnLabels = recalled.map(r => `#${r.turnIndex + 1}`);
+          const lines = recalled.map(
+            r => `- [${r.role === 'assistant' ? chatCharName : userName}, Turn ${r.turnIndex + 1}]: ${r.content}`
+          );
+          sections.push(
+            `[RECALLED EARLIER IN THIS SESSION]\n` +
+              lines.join('\n')
+          );
         }
       } catch {
         // Local recall failure must never block chat generation
@@ -1344,10 +1373,12 @@ export const aiProviderService = {
     const systemInstruction = sections.join('\n\n');
     const trimmedCount = Math.max(0, history.filter(m => m.role === 'user' || m.role === 'assistant').length - turns.length);
     const hasCustomPrompt = Boolean((config.customPrompt && config.customPrompt.trim()) || (options?.extraContext && options.extraContext.trim()));
+    const recallSummary =
+      `Recall (${recallEngine}): ${recalledCount} hit(s)${recalledTurnLabels.length > 0 ? ` [${recalledTurnLabels.join(', ')}]` : ''}`;
     const inspectorSummary =
       `[PROMPT BUDGET & PAYLOAD SUMMARY]\n` +
       `Model: ${budget.rawModel || config.model || 'default'} · Context Limit: ${contextLimit} (${budget.contextSource}) · Max Output: ${maxOutputTokens || 'unlimited'}\n` +
-      `Turns Kept: ${turns.length} (trimmed ${trimmedCount} older) · Custom Prompt Included: ${hasCustomPrompt ? 'YES' : 'NO'} · Token Stripper: ${optimizerLevel}${stripResult.savedTokens > 0 ? ` (~${stripResult.savedTokens} tok saved)` : ''}\n` +
+      `Turns Kept: ${turns.length} (trimmed ${trimmedCount} older) · Custom Prompt Included: ${hasCustomPrompt ? 'YES' : 'NO'} · Token Stripper: ${optimizerLevel}${stripResult.savedTokens > 0 ? ` (~${stripResult.savedTokens} tok saved)` : ''} · ${recallSummary}\n` +
       lorebookSummary;
     callbacks.onPromptBuilt?.(`${systemInstruction}\n\n${inspectorSummary}`);
 
@@ -1426,7 +1457,7 @@ export const aiProviderService = {
           if (!dataStr || dataStr === '[DONE]') return;
           try {
             processGeminiPayload(JSON.parse(dataStr));
-          } catch {}
+          } catch { }
         };
 
         if (response.body && typeof response.body.getReader === 'function') {
@@ -1436,7 +1467,7 @@ export const aiProviderService = {
           const onGeminiAbort = () => {
             try {
               reader.cancel();
-            } catch {}
+            } catch { }
           };
           signal.addEventListener('abort', onGeminiAbort, { once: true });
           if (signal.aborted) onGeminiAbort();
@@ -1590,10 +1621,10 @@ export const aiProviderService = {
       `User Playing As: ${persona.name} (${persona.description || persona.personality || ''})\n\n` +
       (hasDraft
         ? `User's rough draft: "${draft}"\n\n` +
-          `TASK: Polish and enrich this draft into an immersive, literary roleplay reply that fits the user's persona and current tension. ` +
-          `Include expressive actions in *italics* and spoken dialogue in "quotes". Keep it natural, not overly pretentious. Output ONLY the polished reply with no introductory text.`
+        `TASK: Polish and enrich this draft into an immersive, literary roleplay reply that fits the user's persona and current tension. ` +
+        `Include expressive actions in *italics* and spoken dialogue in "quotes". Keep it natural, not overly pretentious. Output ONLY the polished reply with no introductory text.`
         : `TASK: Write an immersive, in-character roleplay reply from ${persona.name}'s perspective responding naturally to the current scene situation. ` +
-          `Include expressive actions in *italics* and spoken dialogue in "quotes". Keep it 1-2 engaging paragraphs. Output ONLY the reply with no introductory text.`);
+        `Include expressive actions in *italics* and spoken dialogue in "quotes". Keep it 1-2 engaging paragraphs. Output ONLY the reply with no introductory text.`);
 
     const route = resolveProviderRoute(config);
 
@@ -1705,37 +1736,69 @@ export const aiProviderService = {
 
     const buildSummaryPrompt = (
       transcriptChunk: string,
-      priorMemory: string | undefined,
+      rollingArcMemory: string | undefined,
       chunkIdx: number,
       totalChunks: number
     ) => {
-      const useIncrementalStyle = isIncremental || chunkIdx > 0;
       const isFinalChunk = chunkIdx === totalChunks - 1;
       const headerLabel =
         isFinalChunk && !isIncremental
           ? `[Master Checkpoint - Complete Story Arc]`
           : `[Checkpoint #${cpNum}${totalChunks > 1 ? ` - Part ${chunkIdx + 1}/${totalChunks}` : ''} - <Descriptive Milestone Title>]`;
 
-      if (useIncrementalStyle) {
+      if (isIncremental) {
+        const backgroundRef = options?.existingMemory
+          ? `Prior Established Story Checkpoints (CONTEXT ONLY — DO NOT REPEAT OR RE-SUMMARIZE OLD EVENTS):\n${options.existingMemory}\n\n`
+          : '';
+        const rollingNewNote = rollingArcMemory
+          ? `Earlier Draft of New Turns in This Update:\n${rollingArcMemory}\n\n`
+          : '';
         return (
           `You are an elite roleplay archivist and memory synthesizer (JanitorAI & Warden AI standard).\n` +
-          `Update the story memory with the LATEST turns between ${charName} and ${userName}.\n\n` +
-          (priorMemory ? `Prior Established Story Checkpoints:\n${priorMemory}\n\n` : '') +
-          `--- DIALOGUE & ACTIONS TO SUMMARIZE ---\n` +
+          `Append ONLY a compact incremental delta for the NEW turns between ${charName} and ${userName}.\n\n` +
+          backgroundRef +
+          rollingNewNote +
+          `--- NEW DIALOGUE & ACTIONS TO SUMMARIZE ---\n` +
           `${transcriptChunk}\n` +
           `--- END CONVERSATION ---\n\n` +
-          `TASK: Consolidate the prior memory (if any) and these turns into a clear, factual summary. Strictly capture:\n` +
-          `1. Events${!isIncremental && isFinalChunk ? ' Arc' : ''}: Concrete plot developments, actions, revelations, and turning points.\n` +
-          `2. Promises & Secrets: Specific agreements, vows, debts, lies, or uncovered secrets.\n` +
+          `TASK: Summarize ONLY the NEW events, promises, situation shifts, and appearance/state changes from the new dialogue above into Checkpoint #${cpNum}. ` +
+          `Do NOT copy, re-list, or re-summarize events already recorded in the prior checkpoints above. Strictly capture:\n` +
+          `1. Events: Concrete NEW plot developments, actions, revelations, and turning points.\n` +
+          `2. Promises & Secrets: Specific NEW agreements, vows, debts, lies, or uncovered secrets.\n` +
           `3. Current Situation: Immediate location, mood/tension, relationship dynamic, and active goals.\n` +
           `4. Appearance & Condition: Notable changes in clothing, injuries, emotional state, or physical details.\n\n` +
           `FORMAT REQUIREMENT: Output MUST be wrapped strictly in <memory>...</memory> tags like this:\n` +
           `<memory>\n` +
           `${headerLabel}\n` +
-          `- Events${!isIncremental && isFinalChunk ? ' Arc' : ''}: <Summary of concrete events and plot turns>\n` +
-          `- Promises & Secrets: <Specific commitments, vows, or secrets revealed>\n` +
+          `- Events: <Summary of ONLY new concrete events and plot turns>\n` +
+          `- Promises & Secrets: <Specific new commitments, vows, or secrets revealed>\n` +
           `- Current Situation: <Setting, atmosphere, dynamic, or immediate conflict>\n` +
           `- Appearance & Condition: <Physical, clothing, or condition shifts for both>\n` +
+          `</memory>\n` +
+          `Output ONLY the <memory> block, no conversational chatter.`
+        );
+      }
+
+      if (chunkIdx > 0 && rollingArcMemory) {
+        return (
+          `You are an elite roleplay archivist and memory synthesizer (JanitorAI & Warden AI standard).\n` +
+          `Consolidate the story memory so far with the next chronicle segment between ${charName} and ${userName}.\n\n` +
+          `Story Arc Summarized So Far:\n${rollingArcMemory}\n\n` +
+          `--- NEXT CONVERSATION SEGMENT ---\n` +
+          `${transcriptChunk}\n` +
+          `--- END CONVERSATION ---\n\n` +
+          `TASK: Merge prior milestones and these turns into a unified factual Master Story Arc. Strictly capture:\n` +
+          `1. Events Arc: Chronological recap of concrete plot developments, actions, and turning points.\n` +
+          `2. Standing Promises & Agreements: Specific agreements, vows, debts, or uncovered secrets.\n` +
+          `3. Current Active Situation: Exact ongoing location, mood/tension, relationship dynamic, and immediate goals.\n` +
+          `4. Appearance & Dynamic: Notable changes in clothing, injuries, emotional state, or physical details.\n\n` +
+          `FORMAT REQUIREMENT: Output MUST be wrapped strictly in <memory>...</memory> tags like this:\n` +
+          `<memory>\n` +
+          `${headerLabel}\n` +
+          `- Events Arc: <Chronological summary of actual plot milestones>\n` +
+          `- Standing Promises & Agreements: <Specific vows, promises, and secrets>\n` +
+          `- Current Active Situation: <Exact current location, active dilemma, and atmosphere>\n` +
+          `- Appearance & Dynamic: <Established physical state, clothing, and current dynamic>\n` +
           `</memory>\n` +
           `Output ONLY the <memory> block, no conversational chatter.`
         );
@@ -1853,7 +1916,7 @@ export const aiProviderService = {
       return finalizeMemoryBlock(content || rawChoice, finishReason);
     };
 
-    let rollingMemory = options?.existingMemory;
+    let rollingMemory = isIncremental ? undefined : options?.existingMemory;
     for (let i = 0; i < chunks.length; i++) {
       const promptText = buildSummaryPrompt(chunks[i], rollingMemory, i, chunks.length);
       rollingMemory = await runSummaryLlmCall(promptText);

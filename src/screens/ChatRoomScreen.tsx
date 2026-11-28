@@ -79,6 +79,7 @@ import {
   Users,
   BookOpen,
   HelpCircle,
+  Terminal,
 } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { compressImageFile } from '../utils/imageUtils';
@@ -114,6 +115,8 @@ import { ttsService, TtsPlaybackState } from '../services/ttsService';
 import { aiProviderService, extractCleanCharacterName } from '../services/aiProviderService';
 import { storageService } from '../services/storageService';
 import { getSqliteConversationRepository, resolveBranchCheckpointState } from '../services/sqliteDatabase';
+import { RECENT_RAW_OVERLAP_TURNS, selectPromptHistoryWithMemory } from '../services/memoryRecall';
+import { DeveloperInspectorModal } from '../components/DeveloperInspectorModal';
 import {
   CastCandidateSuggestion,
   appendCastFact,
@@ -148,6 +151,7 @@ interface ChatRoomScreenProps {
   onSelectPersona: (p: Persona) => void;
   onUpdateCharacter?: (updated: Character) => void;
   config: ProviderConfig;
+  developerMode?: boolean;
   onBack: () => void;
   initialConversationId?: string;
 }
@@ -204,6 +208,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   onSelectPersona,
   onUpdateCharacter,
   config,
+  developerMode = false,
   onBack,
   initialConversationId,
 }) => {
@@ -245,6 +250,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
   // Per-chat Custom Prompt / Rules & Header Menu & Scroll-to-Bottom FAB
   const [customPrompt, setCustomPrompt] = useState('');
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
+  const [showDevInspector, setShowDevInspector] = useState(false);
   const headerMenuAnim = useRef(new Animated.Value(0)).current;
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const scrollBottomAnim = useRef(new Animated.Value(0)).current;
@@ -879,12 +885,14 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     return undefined;
   };
 
-  const getPromptHistory = (fullHistory: ChatMessage[]) => {
-    if (memoryReplacesOld && chatMemory.trim() && lastCheckpointIndex >= 0 && lastCheckpointIndex < fullHistory.length - 1) {
-      return fullHistory.slice(lastCheckpointIndex + 1);
-    }
-    return fullHistory;
-  };
+  const getPromptHistory = (fullHistory: ChatMessage[]) =>
+    selectPromptHistoryWithMemory({
+      fullHistory,
+      memoryReplacesOld,
+      chatMemory,
+      lastCheckpointIndex,
+      minRecentRawTurns: RECENT_RAW_OVERLAP_TURNS,
+    });
 
   // Note: Session memory is injected once via aiProviderService.streamChat(..., { memory: chatMemory }),
   // never duplicated into effectiveChar.scenario here.
@@ -1156,6 +1164,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     setActiveConversationId(newConv.id);
     setActiveScenarioId(newConv.scenarioId || null);
     setCustomPrompt(newConv.customPrompt || '');
+    initialScrollSettledRef.current = false;
+    isNearBottomRef.current = true;
+    prevMsgCountRef.current = 0;
+    chatListOpacity.setValue(0);
+    setVisibleMessageCount(6);
     setMessages(newConv.messages || []);
     setGreetingIndex(0);
   };
@@ -1165,6 +1178,11 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
     setActiveConversationId(conv.id);
     setActiveScenarioId(conv.scenarioId || null);
     setCustomPrompt(conv.customPrompt || '');
+    initialScrollSettledRef.current = false;
+    isNearBottomRef.current = true;
+    prevMsgCountRef.current = 0;
+    chatListOpacity.setValue(0);
+    setVisibleMessageCount(6);
     setMessages(conv.messages || []);
   };
 
@@ -3069,6 +3087,18 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                       handleStartNewSession();
                     },
                   },
+                  ...(developerMode
+                    ? [
+                        {
+                          label: 'Developer Inspector',
+                          Icon: Terminal,
+                          onPress: () => {
+                            setShowHeaderMenu(false);
+                            setShowDevInspector(true);
+                          },
+                        },
+                      ]
+                    : []),
                   {
                     label: 'All Chats',
                     Icon: ArrowLeft,
@@ -4881,7 +4911,7 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                     <View style={{ flex: 1 }}>
                       <Text style={styles.settingsCardTitle}>Memory replaces old messages</Text>
                       <Text style={styles.settingsHelperText}>
-                        When on, messages already covered by your saved Memory are left out of the prompt to free up context. Off keeps the classic behavior: Memory is added on top and nothing is removed.
+                        When on, older messages covered by your saved Memory are left out of the prompt (always keeping the latest {RECENT_RAW_OVERLAP_TURNS} turns for flow). Off sends as many turns as fit your context limit.
                       </Text>
                     </View>
                     <NekoSwitch
@@ -5002,6 +5032,33 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
                         Auto summary (as far as possible)
                       </Text>
                     </TouchableOpacity>
+
+                    {developerMode && (
+                      <TouchableOpacity
+                        style={{
+                          paddingVertical: 10,
+                          paddingHorizontal: 14,
+                          borderRadius: 12,
+                          borderWidth: 1,
+                          borderColor: `rgba(${palette.accentRgb}, 0.35)`,
+                          backgroundColor: `rgba(${palette.accentRgb}, 0.10)`,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 8,
+                        }}
+                        onPress={() => {
+                          setShowChatControlModal(false);
+                          setShowDevInspector(true);
+                        }}
+                        activeOpacity={0.8}
+                      >
+                        <Terminal size={14} color={palette.accent} />
+                        <Text style={{ color: palette.accent, fontSize: 12.5, fontWeight: '700' }}>
+                          Inspect DB, Messages (1→N) & Recall Lab
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
 
                   {/* Per-chat Auto-Memory Switch & Customizable Interval */}
@@ -6615,6 +6672,12 @@ export const ChatRoomScreen: React.FC<ChatRoomScreenProps> = ({
         visible={helpLorebookVisible}
         onClose={() => setHelpLorebookVisible(false)}
         initialArticleId="lorebooks"
+      />
+      <DeveloperInspectorModal
+        visible={showDevInspector}
+        onClose={() => setShowDevInspector(false)}
+        initialConversationId={activeConversationId}
+        config={config}
       />
     </SafeAreaView>
   );

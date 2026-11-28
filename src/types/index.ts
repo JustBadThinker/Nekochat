@@ -464,6 +464,7 @@ export interface AppSettings {
   notifyFollowedCreators?: boolean;
   notifyDiscreetMode?: boolean;
   notifyQuietHours?: boolean;
+  developerMode?: boolean;
 }
 
 export interface CreatorDropNotificationItem {
